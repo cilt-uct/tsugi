@@ -38,13 +38,11 @@ class SmartDeviceManagement extends \Google\Service
   /** See and/or control the devices that you selected. */
   const SDM_SERVICE =
       "https://www.googleapis.com/auth/sdm.service";
-  /** See your primary Google Account email address. */
-  const USERINFO_EMAIL =
-      "https://www.googleapis.com/auth/userinfo.email";
 
   public $enterprises_devices;
   public $enterprises_structures;
   public $enterprises_structures_rooms;
+  public $rootUrlTemplate;
 
   /**
    * Constructs the internal representation of the SmartDeviceManagement
@@ -58,6 +56,7 @@ class SmartDeviceManagement extends \Google\Service
   {
     parent::__construct($clientOrConfig);
     $this->rootUrl = $rootUrl ?: 'https://smartdevicemanagement.googleapis.com/';
+    $this->rootUrlTemplate = $rootUrl ?: 'https://smartdevicemanagement.UNIVERSE_DOMAIN/';
     $this->servicePath = '';
     $this->batchPath = 'batch';
     $this->version = 'v1';

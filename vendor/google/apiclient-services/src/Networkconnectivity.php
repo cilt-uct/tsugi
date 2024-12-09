@@ -51,6 +51,7 @@ class Networkconnectivity extends \Google\Service
   public $projects_locations_serviceConnectionPolicies;
   public $projects_locations_serviceConnectionTokens;
   public $projects_locations_spokes;
+  public $rootUrlTemplate;
 
   /**
    * Constructs the internal representation of the Networkconnectivity service.
@@ -63,6 +64,7 @@ class Networkconnectivity extends \Google\Service
   {
     parent::__construct($clientOrConfig);
     $this->rootUrl = $rootUrl ?: 'https://networkconnectivity.googleapis.com/';
+    $this->rootUrlTemplate = $rootUrl ?: 'https://networkconnectivity.UNIVERSE_DOMAIN/';
     $this->servicePath = '';
     $this->batchPath = 'batch';
     $this->version = 'v1';
@@ -116,7 +118,17 @@ class Networkconnectivity extends \Google\Service
         'hubs',
         [
           'methods' => [
-            'create' => [
+            'acceptSpoke' => [
+              'path' => 'v1/{+name}:acceptSpoke',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'create' => [
               'path' => 'v1/{+parent}/hubs',
               'httpMethod' => 'POST',
               'parameters' => [
@@ -249,6 +261,16 @@ class Networkconnectivity extends \Google\Service
                 'updateMask' => [
                   'location' => 'query',
                   'type' => 'string',
+                ],
+              ],
+            ],'rejectSpoke' => [
+              'path' => 'v1/{+name}:rejectSpoke',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
                 ],
               ],
             ],'setIamPolicy' => [
@@ -1189,17 +1211,7 @@ class Networkconnectivity extends \Google\Service
         'spokes',
         [
           'methods' => [
-            'accept' => [
-              'path' => 'v1/{+name}:accept',
-              'httpMethod' => 'POST',
-              'parameters' => [
-                'name' => [
-                  'location' => 'path',
-                  'type' => 'string',
-                  'required' => true,
-                ],
-              ],
-            ],'create' => [
+            'create' => [
               'path' => 'v1/{+parent}/spokes',
               'httpMethod' => 'POST',
               'parameters' => [
@@ -1297,16 +1309,6 @@ class Networkconnectivity extends \Google\Service
                 'updateMask' => [
                   'location' => 'query',
                   'type' => 'string',
-                ],
-              ],
-            ],'reject' => [
-              'path' => 'v1/{+name}:reject',
-              'httpMethod' => 'POST',
-              'parameters' => [
-                'name' => [
-                  'location' => 'path',
-                  'type' => 'string',
-                  'required' => true,
                 ],
               ],
             ],'setIamPolicy' => [

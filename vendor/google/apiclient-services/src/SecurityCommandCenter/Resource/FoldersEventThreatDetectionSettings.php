@@ -31,7 +31,7 @@ use Google\Service\SecurityCommandCenter\ValidateEventThreatDetectionCustomModul
 class FoldersEventThreatDetectionSettings extends \Google\Service\Resource
 {
   /**
-   * Validates the given Event Threat Detection Custom Module.
+   * Validates the given Event Threat Detection custom module.
    * (eventThreatDetectionSettings.validateCustomModule)
    *
    * @param string $parent Required. Resource name of the parent to validate the
@@ -42,6 +42,7 @@ class FoldersEventThreatDetectionSettings extends \Google\Service\Resource
    * @param ValidateEventThreatDetectionCustomModuleRequest $postBody
    * @param array $optParams Optional parameters.
    * @return ValidateEventThreatDetectionCustomModuleResponse
+   * @throws \Google\Service\Exception
    */
   public function validateCustomModule($parent, ValidateEventThreatDetectionCustomModuleRequest $postBody, $optParams = [])
   {

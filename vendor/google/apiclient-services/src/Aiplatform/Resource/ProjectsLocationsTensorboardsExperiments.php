@@ -17,6 +17,8 @@
 
 namespace Google\Service\Aiplatform\Resource;
 
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1ListTensorboardExperimentsResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1TensorboardExperiment;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1WriteTensorboardExperimentDataRequest;
@@ -34,6 +36,27 @@ use Google\Service\Aiplatform\GoogleLongrunningOperation;
 class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
 {
   /**
+   * Batch create TensorboardTimeSeries that belong to a TensorboardExperiment.
+   * (experiments.batchCreate)
+   *
+   * @param string $parent Required. The resource name of the
+   * TensorboardExperiment to create the TensorboardTimeSeries in. Format: `projec
+   * ts/{project}/locations/{location}/tensorboards/{tensorboard}/experiments/{exp
+   * eriment}` The TensorboardRuns referenced by the parent fields in the
+   * CreateTensorboardTimeSeriesRequest messages must be sub resources of this
+   * TensorboardExperiment.
+   * @param GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse
+   * @throws \Google\Service\Exception
+   */
+  public function batchCreate($parent, GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest $postBody, $optParams = [])
+  {
+    $params = ['parent' => $parent, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('batchCreate', [$params], GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse::class);
+  }
+  /**
    * Creates a TensorboardExperiment. (experiments.create)
    *
    * @param string $parent Required. The resource name of the Tensorboard to
@@ -45,8 +68,9 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * @opt_param string tensorboardExperimentId Required. The ID to use for the
    * Tensorboard experiment, which becomes the final component of the Tensorboard
    * experiment's resource name. This value should be 1-128 characters, and valid
-   * characters are /a-z-/.
+   * characters are `/a-z-/`.
    * @return GoogleCloudAiplatformV1TensorboardExperiment
+   * @throws \Google\Service\Exception
    */
   public function create($parent, GoogleCloudAiplatformV1TensorboardExperiment $postBody, $optParams = [])
   {
@@ -62,6 +86,7 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * rboard}/experiments/{experiment}`
    * @param array $optParams Optional parameters.
    * @return GoogleLongrunningOperation
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -77,6 +102,7 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * xperiments/{experiment}`
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1TensorboardExperiment
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -107,6 +133,7 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * provided the page token.
    * @opt_param string readMask Mask specifying which fields to read.
    * @return GoogleCloudAiplatformV1ListTensorboardExperimentsResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsTensorboardsExperiments($parent, $optParams = [])
   {
@@ -130,6 +157,7 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * not provide a mask then all fields are overwritten if new values are
    * specified.
    * @return GoogleCloudAiplatformV1TensorboardExperiment
+   * @throws \Google\Service\Exception
    */
   public function patch($name, GoogleCloudAiplatformV1TensorboardExperiment $postBody, $optParams = [])
   {
@@ -148,6 +176,7 @@ class ProjectsLocationsTensorboardsExperiments extends \Google\Service\Resource
    * @param GoogleCloudAiplatformV1WriteTensorboardExperimentDataRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1WriteTensorboardExperimentDataResponse
+   * @throws \Google\Service\Exception
    */
   public function write($tensorboardExperiment, GoogleCloudAiplatformV1WriteTensorboardExperimentDataRequest $postBody, $optParams = [])
   {

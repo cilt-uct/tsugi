@@ -17,10 +17,10 @@
 
 namespace Google\Service\DiscoveryEngine\Resource;
 
-use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1betaRecommendRequest;
-use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1betaRecommendResponse;
-use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1betaSearchRequest;
-use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1betaSearchResponse;
+use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1RecommendRequest;
+use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1RecommendResponse;
+use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1SearchRequest;
+use Google\Service\DiscoveryEngine\GoogleCloudDiscoveryengineV1SearchResponse;
 
 /**
  * The "servingConfigs" collection of methods.
@@ -36,37 +36,45 @@ class ProjectsLocationsDataStoresServingConfigs extends \Google\Service\Resource
    * Makes a recommendation, which requires a contextual user event.
    * (servingConfigs.recommend)
    *
-   * @param string $servingConfig Required. Full resource name of the format:
-   * `projects/locations/global/collections/dataStores/servingConfigs` Before you
-   * can request recommendations from your model, you must create at least one
-   * serving config for it.
-   * @param GoogleCloudDiscoveryengineV1betaRecommendRequest $postBody
+   * @param string $servingConfig Required. Full resource name of a ServingConfig:
+   * `projects/locations/global/collections/engines/servingConfigs`, or
+   * `projects/locations/global/collections/dataStores/servingConfigs` One default
+   * serving config is created along with your recommendation engine creation. The
+   * engine ID will be used as the ID of the default serving config. For example,
+   * for Engine `projects/locations/global/collections/engines/my-engine`, you can
+   * use `projects/locations/global/collections/engines/my-
+   * engine/servingConfigs/my-engine` for your RecommendationService.Recommend
+   * requests.
+   * @param GoogleCloudDiscoveryengineV1RecommendRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return GoogleCloudDiscoveryengineV1betaRecommendResponse
+   * @return GoogleCloudDiscoveryengineV1RecommendResponse
+   * @throws \Google\Service\Exception
    */
-  public function recommend($servingConfig, GoogleCloudDiscoveryengineV1betaRecommendRequest $postBody, $optParams = [])
+  public function recommend($servingConfig, GoogleCloudDiscoveryengineV1RecommendRequest $postBody, $optParams = [])
   {
     $params = ['servingConfig' => $servingConfig, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('recommend', [$params], GoogleCloudDiscoveryengineV1betaRecommendResponse::class);
+    return $this->call('recommend', [$params], GoogleCloudDiscoveryengineV1RecommendResponse::class);
   }
   /**
    * Performs a search. (servingConfigs.search)
    *
    * @param string $servingConfig Required. The resource name of the Search
    * serving config, such as `projects/locations/global/collections/default_collec
-   * tion/dataStores/default_data_store/servingConfigs/default_serving_config`.
-   * This field is used to identify the serving configuration name, set of models
-   * used to make the search.
-   * @param GoogleCloudDiscoveryengineV1betaSearchRequest $postBody
+   * tion/engines/servingConfigs/default_serving_config`, or `projects/locations/g
+   * lobal/collections/default_collection/dataStores/default_data_store/servingCon
+   * figs/default_serving_config`. This field is used to identify the serving
+   * configuration name, set of models used to make the search.
+   * @param GoogleCloudDiscoveryengineV1SearchRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return GoogleCloudDiscoveryengineV1betaSearchResponse
+   * @return GoogleCloudDiscoveryengineV1SearchResponse
+   * @throws \Google\Service\Exception
    */
-  public function search($servingConfig, GoogleCloudDiscoveryengineV1betaSearchRequest $postBody, $optParams = [])
+  public function search($servingConfig, GoogleCloudDiscoveryengineV1SearchRequest $postBody, $optParams = [])
   {
     $params = ['servingConfig' => $servingConfig, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('search', [$params], GoogleCloudDiscoveryengineV1betaSearchResponse::class);
+    return $this->call('search', [$params], GoogleCloudDiscoveryengineV1SearchResponse::class);
   }
 }
 

@@ -18,9 +18,16 @@
 namespace Google\Service\Aiplatform\Resource;
 
 use Google\Service\Aiplatform\GoogleApiHttpBody;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1ComputeTokensRequest;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1ComputeTokensResponse;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1CountTokensRequest;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1CountTokensResponse;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1GenerateContentRequest;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1GenerateContentResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1PredictRequest;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1PredictResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1RawPredictRequest;
+use Google\Service\Aiplatform\GoogleCloudAiplatformV1StreamRawPredictRequest;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1StreamingPredictRequest;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1StreamingPredictResponse;
 
@@ -35,6 +42,56 @@ use Google\Service\Aiplatform\GoogleCloudAiplatformV1StreamingPredictResponse;
 class ProjectsLocationsPublishersModels extends \Google\Service\Resource
 {
   /**
+   * Return a list of tokens based on the input text. (models.computeTokens)
+   *
+   * @param string $endpoint Required. The name of the Endpoint requested to get
+   * lists of tokens and token ids.
+   * @param GoogleCloudAiplatformV1ComputeTokensRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudAiplatformV1ComputeTokensResponse
+   * @throws \Google\Service\Exception
+   */
+  public function computeTokens($endpoint, GoogleCloudAiplatformV1ComputeTokensRequest $postBody, $optParams = [])
+  {
+    $params = ['endpoint' => $endpoint, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('computeTokens', [$params], GoogleCloudAiplatformV1ComputeTokensResponse::class);
+  }
+  /**
+   * Perform a token counting. (models.countTokens)
+   *
+   * @param string $endpoint Required. The name of the Endpoint requested to
+   * perform token counting. Format:
+   * `projects/{project}/locations/{location}/endpoints/{endpoint}`
+   * @param GoogleCloudAiplatformV1CountTokensRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudAiplatformV1CountTokensResponse
+   * @throws \Google\Service\Exception
+   */
+  public function countTokens($endpoint, GoogleCloudAiplatformV1CountTokensRequest $postBody, $optParams = [])
+  {
+    $params = ['endpoint' => $endpoint, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('countTokens', [$params], GoogleCloudAiplatformV1CountTokensResponse::class);
+  }
+  /**
+   * Generate content with multimodal inputs. (models.generateContent)
+   *
+   * @param string $model Required. The name of the publisher model requested to
+   * serve the prediction. Format:
+   * `projects/{project}/locations/{location}/publishers/models`
+   * @param GoogleCloudAiplatformV1GenerateContentRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudAiplatformV1GenerateContentResponse
+   * @throws \Google\Service\Exception
+   */
+  public function generateContent($model, GoogleCloudAiplatformV1GenerateContentRequest $postBody, $optParams = [])
+  {
+    $params = ['model' => $model, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('generateContent', [$params], GoogleCloudAiplatformV1GenerateContentResponse::class);
+  }
+  /**
    * Perform an online prediction. (models.predict)
    *
    * @param string $endpoint Required. The name of the Endpoint requested to serve
@@ -43,6 +100,7 @@ class ProjectsLocationsPublishersModels extends \Google\Service\Resource
    * @param GoogleCloudAiplatformV1PredictRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1PredictResponse
+   * @throws \Google\Service\Exception
    */
   public function predict($endpoint, GoogleCloudAiplatformV1PredictRequest $postBody, $optParams = [])
   {
@@ -63,6 +121,7 @@ class ProjectsLocationsPublishersModels extends \Google\Service\Resource
    * @param GoogleCloudAiplatformV1RawPredictRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleApiHttpBody
+   * @throws \Google\Service\Exception
    */
   public function rawPredict($endpoint, GoogleCloudAiplatformV1RawPredictRequest $postBody, $optParams = [])
   {
@@ -80,12 +139,49 @@ class ProjectsLocationsPublishersModels extends \Google\Service\Resource
    * @param GoogleCloudAiplatformV1StreamingPredictRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1StreamingPredictResponse
+   * @throws \Google\Service\Exception
    */
   public function serverStreamingPredict($endpoint, GoogleCloudAiplatformV1StreamingPredictRequest $postBody, $optParams = [])
   {
     $params = ['endpoint' => $endpoint, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
     return $this->call('serverStreamingPredict', [$params], GoogleCloudAiplatformV1StreamingPredictResponse::class);
+  }
+  /**
+   * Generate content with multimodal inputs with streaming support.
+   * (models.streamGenerateContent)
+   *
+   * @param string $model Required. The name of the publisher model requested to
+   * serve the prediction. Format:
+   * `projects/{project}/locations/{location}/publishers/models`
+   * @param GoogleCloudAiplatformV1GenerateContentRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudAiplatformV1GenerateContentResponse
+   * @throws \Google\Service\Exception
+   */
+  public function streamGenerateContent($model, GoogleCloudAiplatformV1GenerateContentRequest $postBody, $optParams = [])
+  {
+    $params = ['model' => $model, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('streamGenerateContent', [$params], GoogleCloudAiplatformV1GenerateContentResponse::class);
+  }
+  /**
+   * Perform a streaming online prediction with an arbitrary HTTP payload.
+   * (models.streamRawPredict)
+   *
+   * @param string $endpoint Required. The name of the Endpoint requested to serve
+   * the prediction. Format:
+   * `projects/{project}/locations/{location}/endpoints/{endpoint}`
+   * @param GoogleCloudAiplatformV1StreamRawPredictRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return GoogleApiHttpBody
+   * @throws \Google\Service\Exception
+   */
+  public function streamRawPredict($endpoint, GoogleCloudAiplatformV1StreamRawPredictRequest $postBody, $optParams = [])
+  {
+    $params = ['endpoint' => $endpoint, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('streamRawPredict', [$params], GoogleApiHttpBody::class);
   }
 }
 

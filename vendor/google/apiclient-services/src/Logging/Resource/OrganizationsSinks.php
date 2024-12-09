@@ -61,6 +61,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * by the sinks with the same parent. For more information, see writer_identity
    * in LogSink.
    * @return LogSink
+   * @throws \Google\Service\Exception
    */
   public function create($parent, LogSink $postBody, $optParams = [])
   {
@@ -81,6 +82,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * project/sinks/my-sink"
    * @param array $optParams Optional parameters.
    * @return LoggingEmpty
+   * @throws \Google\Service\Exception
    */
   public function delete($sinkName, $optParams = [])
   {
@@ -99,6 +101,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * project/sinks/my-sink"
    * @param array $optParams Optional parameters.
    * @return LogSink
+   * @throws \Google\Service\Exception
    */
   public function get($sinkName, $optParams = [])
   {
@@ -114,6 +117,13 @@ class OrganizationsSinks extends \Google\Service\Resource
    * "billingAccounts/[BILLING_ACCOUNT_ID]" "folders/[FOLDER_ID]"
    * @param array $optParams Optional parameters.
    *
+   * @opt_param string filter Optional. A filter expression to constrain the sinks
+   * returned. Today, this only supports the following strings: ''
+   * 'in_scope("ALL")', 'in_scope("ANCESTOR")', 'in_scope("DEFAULT")'.Description
+   * of scopes below. ALL: Includes all of the sinks which can be returned in any
+   * other scope. ANCESTOR: Includes intercepting sinks owned by ancestor
+   * resources. DEFAULT: Includes sinks owned by parent.When the empty string is
+   * provided, then the filter 'in_scope("DEFAULT")' is applied.
    * @opt_param int pageSize Optional. The maximum number of results to return
    * from this request. Non-positive values are ignored. The presence of
    * nextPageToken in the response indicates that more results might be available.
@@ -122,6 +132,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * the value of nextPageToken from the previous response. The values of other
    * method parameters should be identical to those in the previous call.
    * @return ListSinksResponse
+   * @throws \Google\Service\Exception
    */
   public function listOrganizationsSinks($parent, $optParams = [])
   {
@@ -130,10 +141,10 @@ class OrganizationsSinks extends \Google\Service\Resource
     return $this->call('list', [$params], ListSinksResponse::class);
   }
   /**
-   * Updates a sink. This method replaces the following fields in the existing
-   * sink with values from the new sink: destination, and filter.The updated sink
-   * might also have a new writer_identity; see the unique_writer_identity field.
-   * (sinks.patch)
+   * Updates a sink. This method replaces the values of the destination and filter
+   * fields of the existing sink with the corresponding values from the new
+   * sink.The updated sink might also have a new writer_identity; see the
+   * unique_writer_identity field. (sinks.patch)
    *
    * @param string $sinkName Required. The full resource name of the sink to
    * update, including the parent resource and the sink identifier:
@@ -146,10 +157,10 @@ class OrganizationsSinks extends \Google\Service\Resource
    * @param array $optParams Optional parameters.
    *
    * @opt_param string customWriterIdentity Optional. A service account provided
-   * by the caller that will be used to write the log entries. Must be of format
-   * serviceAccount:some@email. This can only be specified if writing to a
-   * destination outside the sink's project. If not specified, a p4 service
-   * account will automatically be generated.
+   * by the caller that will be used to write the log entries. The format must be
+   * serviceAccount:some@email. This field can only be specified if you are
+   * routing logs to a destination outside this sink's project. If not specified,
+   * a Logging service account will automatically be generated.
    * @opt_param bool uniqueWriterIdentity Optional. See sinks.create for a
    * description of this field. When updating a sink, the effect of this field on
    * the value of writer_identity in the updated sink depends on both the old and
@@ -171,6 +182,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * buffers/docs/reference/google.protobuf#google.protobuf.FieldMaskFor example:
    * updateMask=filter
    * @return LogSink
+   * @throws \Google\Service\Exception
    */
   public function patch($sinkName, LogSink $postBody, $optParams = [])
   {
@@ -179,10 +191,10 @@ class OrganizationsSinks extends \Google\Service\Resource
     return $this->call('patch', [$params], LogSink::class);
   }
   /**
-   * Updates a sink. This method replaces the following fields in the existing
-   * sink with values from the new sink: destination, and filter.The updated sink
-   * might also have a new writer_identity; see the unique_writer_identity field.
-   * (sinks.update)
+   * Updates a sink. This method replaces the values of the destination and filter
+   * fields of the existing sink with the corresponding values from the new
+   * sink.The updated sink might also have a new writer_identity; see the
+   * unique_writer_identity field. (sinks.update)
    *
    * @param string $sinkName Required. The full resource name of the sink to
    * update, including the parent resource and the sink identifier:
@@ -195,10 +207,10 @@ class OrganizationsSinks extends \Google\Service\Resource
    * @param array $optParams Optional parameters.
    *
    * @opt_param string customWriterIdentity Optional. A service account provided
-   * by the caller that will be used to write the log entries. Must be of format
-   * serviceAccount:some@email. This can only be specified if writing to a
-   * destination outside the sink's project. If not specified, a p4 service
-   * account will automatically be generated.
+   * by the caller that will be used to write the log entries. The format must be
+   * serviceAccount:some@email. This field can only be specified if you are
+   * routing logs to a destination outside this sink's project. If not specified,
+   * a Logging service account will automatically be generated.
    * @opt_param bool uniqueWriterIdentity Optional. See sinks.create for a
    * description of this field. When updating a sink, the effect of this field on
    * the value of writer_identity in the updated sink depends on both the old and
@@ -220,6 +232,7 @@ class OrganizationsSinks extends \Google\Service\Resource
    * buffers/docs/reference/google.protobuf#google.protobuf.FieldMaskFor example:
    * updateMask=filter
    * @return LogSink
+   * @throws \Google\Service\Exception
    */
   public function update($sinkName, LogSink $postBody, $optParams = [])
   {

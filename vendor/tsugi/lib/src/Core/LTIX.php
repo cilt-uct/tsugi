@@ -153,6 +153,7 @@ class LTIX {
     public static function encrypt_secret($secret)
     {
         global $CFG;
+        if ( ! is_string($secret) ) return null;
         if ( startsWith($secret,'AES::') ) return $secret;
         $encr = AesOpenSSL::encrypt($secret, $CFG->cookiesecret) ;
         return 'AES::'.$encr;
@@ -445,7 +446,7 @@ class LTIX {
                 session_start();
             // if we're using a cookie session, the session may already have been started; if not, start it now
             // (if we call session_start() and the session has already been started, php will generate a notice, which we don't want)
-            } else if (U::isEmpty($_SESSION)) {
+            } else if (U::isEmpty($_SESSION ?? null)) {
                 session_start();
             }
             $session_id = session_id();
@@ -481,17 +482,17 @@ class LTIX {
             self::abort_with_error_log('Found issuer, but did not find corresponding deployment: '.htmlentities(U::get($post,'deployment_id')));
         }
 
-        // Copy the deployment_id into run=time data for later
-        if ( $LTI13 && U::get($post,'deployment_id') ) {
-            $row['deployment_id'] = $post['deployment_id'];
-        }
-
         if ( ! $row || ! U::get($row, 'key_id') ) {
             if ( U::get($post,'key') ) {  // LTI 1.1
                 self::abort_with_error_log('Launch could not find key: '.htmlentities(U::get($post,'key')));
             } else {
                 self::abort_with_error_log('Launch could not find issuer: '.htmlentities(U::get($post,'issuer_key')));
             }
+        }
+
+        // Copy the deployment_id into run=time data for later
+        if ( $LTI13 && U::get($post,'deployment_id') ) {
+            $row['deployment_id'] = $post['deployment_id'];
         }
 
         $delta = 0;
@@ -611,14 +612,21 @@ class LTIX {
                 self::abort_with_error_log('JWT validation fail key='.$issuer_key.' error='.$e->getMessage());
             }
 
-            // Check validity of LTI 1.1 transition data if it exists
+            // Check validity of LTI 1.1 transition data if it exists, if validation fails,
+            // just ignore it - don't fail.  Some LMS's seem to drop in an LTI 1.1 transition claim
+            // with not real data "just in case".  It it verifies, we are cool, if not ignore it.
             $lti11_transition_user_id = U::get($post, 'lti11_transition_user_id');
             if ( U::isNotEmpty($lti11_transition_user_id) ) {
                 $lti11_oauth_consumer_key = $row['key_key'];  // From the join
                 $lti11_oauth_consumer_secret = self::decrypt_secret($row['secret']);
                 $check = LTI13::checkLTI11Transition($jwt->body, $lti11_oauth_consumer_key, $lti11_oauth_consumer_secret);
-                if ( is_string($check) ) self::abort_with_error_log('LTI 1.1 Transition error: '.$check);
-                if ( ! $check ) self::abort_with_error_log('LTI 1.1 Transition signature mis-match key='.$lti11_oauth_consumer_key);
+                if ( is_string($check) ) {
+                    error_log('LTI 1.1 Transition error: '.$check);
+                    unset($post['lti11_transition_user_id']);
+                } else if ( ! $check ) {
+                    error_log('LTI 1.1 Transition signature mis-match key='.$lti11_oauth_consumer_key);
+                    unset($post['lti11_transition_user_id']);
+                }
             }
 
             $row['lti13_token_url'] = $token_url;
@@ -796,11 +804,11 @@ class LTIX {
             self::wrapped_session_put($session_object, 'HTTP_USER_AGENT', $_SERVER['HTTP_USER_AGENT']);
         }
         $ipaddr = Net::getIP();
-        if ( $ipaddr ) {
+        if ( is_string($ipaddr) ) {
             self::wrapped_session_put($session_object, 'REMOTE_ADDR', $ipaddr);
             // Check our list of IP address history
             // TODO: decrypt
-            $iphistory = U::get($_COOKIE, "TSUGI-HISTORY");
+            $iphistory = U::get($_COOKIE, "TSUGI-HISTORY",'');
             // Add this IP Address to the Tsugi IP History if it is not there
             if ( strpos($iphistory, $ipaddr) === false ) {
                 $iphistory .= '!' . $ipaddr;
@@ -1122,6 +1130,9 @@ class LTIX {
                 $retval['lti11_transition_user_id'] = $lti11_transition->user_id;
                 $retval['lti11_transition_oauth_consumer_key'] = $lti11_transition->oauth_consumer_key;
                 $retval['lti11_transition_oauth_consumer_key_sign'] = $lti11_transition->oauth_consumer_key_sign;
+                if (isset($lti11_transition->resource_link_id)) {
+                    $retval['lti11_transition_resource_link_id'] = $lti11_transition->resource_link_id;
+                }
             }
         }
 
@@ -1204,6 +1215,18 @@ class LTIX {
             in_array("2.0", $body->{LTI13::NAMESANDROLES_CLAIM}->service_versions)
         ) {
             $retval['lti13_membership_url'] = $body->{LTI13::NAMESANDROLES_CLAIM}->context_memberships_url;
+        }
+
+        // Get data from the groups claim
+        $retval['lti13_context_groups_url'] = null;
+        if ( isset($body->{LTI13::GROUPS_CLAIM}) &&
+            isset($body->{LTI13::GROUPS_CLAIM}->context_groups_url) &&
+            is_string($body->{LTI13::GROUPS_CLAIM}->context_groups_url) &&
+            isset($body->{LTI13::GROUPS_CLAIM}->service_versions) &&
+            is_array($body->{LTI13::GROUPS_CLAIM}->service_versions) &&
+            in_array("1.0", $body->{LTI13::GROUPS_CLAIM}->service_versions)
+        ) {
+            $retval['lti13_context_groups_url'] = $body->{LTI13::GROUPS_CLAIM}->context_groups_url;
         }
 
         // Get the error url...
@@ -1303,6 +1326,9 @@ class LTIX {
         $LTI13 = $issuer_key !== false;
         $for_user_subject = U::get($post, "for_user_subject", false);
 
+        // TODO: Remove this some time after 2024-07-30
+        $PDOX->insureColumnExists("{$CFG->dbprefix}lti_context", "lti13_context_groups_url", "TEXT NULL");
+
         if ( $LTI13 ) {
             $sql = "SELECT i.issuer_id, i.issuer_key, i.issuer_client, i.lti13_kid, i.lti13_keyset_url, i.lti13_keyset,
                 i.lti13_platform_pubkey, i.lti13_token_url, i.lti13_token_audience,
@@ -1322,6 +1348,7 @@ class LTIX {
             c.ext_memberships_id AS ext_memberships_id, c.ext_memberships_url AS ext_memberships_url,
             c.lineitems_url AS lineitems_url, c.memberships_url AS memberships_url,
             c.lti13_lineitems AS lti13_lineitems, c.lti13_membership_url AS lti13_membership_url,
+            c.lti13_context_groups_url AS lti13_context_groups_url,
             c.settings AS context_settings,
             l.link_id, l.path AS link_path, l.title AS link_title, l.settings AS link_settings, l.settings_url AS link_settings_url,
             l.lti13_lineitem AS lti13_lineitem, l.settings AS link_settings,
@@ -1766,6 +1793,7 @@ class LTIX {
         if ( ! isset($post['result_url']) ) $post['result_url'] = null;
         if ( ! isset($post['lti13_lineitem']) ) $post['lti13_lineitem'] = null;
         if ( ! isset($post['lti13_membership_url']) ) $post['lti13_membership_url'] = null;
+        if ( ! isset($post['lti13_context_groups_url']) ) $post['lti13_context_groups_url'] = null;
         if ( ! isset($post['lti13_lineitems']) ) $post['lti13_lineitems'] = null;
         if ( ! isset($row['service']) ) {
             $row['service'] = null;
@@ -1818,6 +1846,20 @@ class LTIX {
             $row['lti13_membership_url'] = $post['lti13_membership_url'];
             $actions[] = "=== Updated result id=".$row['result_id']." lti13_membership_url=".$row['lti13_membership_url'];
         }
+
+        // Here we handle lti13_context_groups_url
+        if ( isset($row['context_id']) && isset($post['lti13_context_groups_url']) &&
+            array_key_exists('lti13_context_groups_url',$row) && $post['lti13_context_groups_url'] != $row['lti13_context_groups_url'] ) {
+            $sql = "UPDATE {$p}lti_context
+                SET lti13_context_groups_url = :lti13_context_groups_url, updated_at = NOW()
+                WHERE context_id = :context_id";
+            $PDOX->queryDie($sql, array(
+                ':lti13_context_groups_url' => $post['lti13_context_groups_url'],
+                ':context_id' => $row['context_id']));
+            $row['lti13_context_groups_url'] = $post['lti13_context_groups_url'];
+            $actions[] = "=== Updated result id=".$row['result_id']." lti13_context_groups_url=".$row['lti13_context_groups_url'];
+        }
+
 
         // Here we handle lti13_lineitems
         if ( isset($row['context_id']) && isset($post['lti13_lineitems']) &&
@@ -1974,70 +2016,6 @@ class LTIX {
     }
 
     /**
-     * Restore an LTI session and check if it worked
-     *
-     * If we are using memcached with php_serialize serialization,
-     * we take a wild guess that we might be having a race condition
-     * with memcache.  So we wait a tic, and re-try the read.
-     */
-    public static function restoreLTISession($session_id) {
-        global $CFG;
-
-        // You would think that this would just work :)
-        if ( session_id() == "" ) {
-            session_id($session_id);
-            session_start();
-        }
-
-        if ( U::get($_SESSION, 'lti') && U::get($_SESSION, 'lti_post') ) return;
-
-        // https://stackoverflow.com/questions/35728486/read-php-session-without-actually-starting-it
-        $serializer = ini_get('session.serialize_handler');
-        if ( ! isset($CFG->memcached) || U::isEmpty($CFG->memcached) || $serializer != 'php_serialize') return;
-
-        sleep(1);
-        try {
-            $servers = explode(',', $CFG->memcached);
-            $c = count($servers);
-            for ($i = 0; $i < $c; ++$i) {
-                $servers[$i] = explode(':', $servers[$i]);
-            }
-
-            $memcached = new \Memcached();
-            $memcached->addServers($servers);
-            $sessionPrefix = ini_get('memcached.sess_prefix');
-
-            $rawData = $memcached->get($sessionPrefix.$session_id);
-            if ( ! $rawData ) {
-                error_log("restoreLTISession - nothing to retrieve from memcached ".$session_id);
-                return;
-            }
-
-            // Keep unserialize() from issuing a notice
-            $data = $rawData ? @unserialize($rawData) : false;
-            if ( ! is_array($data) ) {
-                error_log("restoreLTISession - could not unserialize () ".$session_id);
-                return;
-            }
-
-            if ( count($data) < 1 ) {
-                error_log("restoreLTISession - empty memcached data ".$session_id);
-                return;
-            }
-
-            // Copy into session
-            $fields = "";
-            foreach($data as $k => $v) {
-                $_SESSION[$k] = $data[$k];
-                if ( strlen($fields) < 50 && is_string($data[$k]) ) $fields .= ' '.$k.'='.$data[$k];
-            }
-            error_log("restoreLTISession copied ".count($data)." ".$session_id.$fields);
-        } catch(\Exception $e) {
-            error_log("restoreLTISession exception ".$e->getMessage());
-        }
-    }
-
-    /**
      * Internal method to handle the data setup
      */
     public static function requireDataPrivate($needed=self::ALL,
@@ -2098,7 +2076,10 @@ class LTIX {
                 if ( $newlaunch || isset($_POST[$sess]) || isset($_GET[$sess]) ) {
                     $session_id = $_POST[$sess] ?? $_GET[$sess] ?? null;
                     // Do our best to restore a session
-                    if ( $session_id ) self::restoreLTISession($session_id);
+                    if ( $session_id && session_id() == "" ) {
+                        session_id($session_id);
+                        session_start();
+                    }
                 } else {
                     self::wrapped_session_flush($session_object);
                     self::send403();

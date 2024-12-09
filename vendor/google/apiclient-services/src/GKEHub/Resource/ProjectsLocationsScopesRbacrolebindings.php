@@ -47,6 +47,7 @@ class ProjectsLocationsScopesRbacrolebindings extends \Google\Service\Resource
    * character Which can be expressed as the regex:
    * `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, with a maximum length of 63 characters.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function create($parent, RBACRoleBinding $postBody, $optParams = [])
   {
@@ -61,6 +62,7 @@ class ProjectsLocationsScopesRbacrolebindings extends \Google\Service\Resource
    * `projects/locations/scopes/rbacrolebindings`.
    * @param array $optParams Optional parameters.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -75,6 +77,7 @@ class ProjectsLocationsScopesRbacrolebindings extends \Google\Service\Resource
    * `projects/locations/scopes/rbacrolebindings`.
    * @param array $optParams Optional parameters.
    * @return RBACRoleBinding
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -97,6 +100,7 @@ class ProjectsLocationsScopesRbacrolebindings extends \Google\Service\Resource
    * `ListScopeRBACRoleBindings` which specifies the position in the list from
    * where to continue listing the resources.
    * @return ListScopeRBACRoleBindingsResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsScopesRbacrolebindings($parent, $optParams = [])
   {
@@ -108,14 +112,15 @@ class ProjectsLocationsScopesRbacrolebindings extends \Google\Service\Resource
    * Updates a Scope RBACRoleBinding. (rbacrolebindings.patch)
    *
    * @param string $name The resource name for the rbacrolebinding `projects/{proj
-   * ect}/locations/{location}/namespaces/{namespace}/rbacrolebindings/{rbacrolebi
-   * nding}` or `projects/{project}/locations/{location}/memberships/{membership}/
-   * rbacrolebindings/{rbacrolebinding}`
+   * ect}/locations/{location}/scopes/{scope}/rbacrolebindings/{rbacrolebinding}`
+   * or `projects/{project}/locations/{location}/memberships/{membership}/rbacrole
+   * bindings/{rbacrolebinding}`
    * @param RBACRoleBinding $postBody
    * @param array $optParams Optional parameters.
    *
    * @opt_param string updateMask Required. The fields to be updated.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function patch($name, RBACRoleBinding $postBody, $optParams = [])
   {

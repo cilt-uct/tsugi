@@ -44,6 +44,7 @@ class FoldersPolicies extends \Google\Service\Resource
    * @param GoogleCloudOrgpolicyV2Policy $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudOrgpolicyV2Policy
+   * @throws \Google\Service\Exception
    */
   public function create($parent, GoogleCloudOrgpolicyV2Policy $postBody, $optParams = [])
   {
@@ -59,7 +60,12 @@ class FoldersPolicies extends \Google\Service\Resource
    * @param string $name Required. Name of the policy to delete. See the policy
    * entry for naming rules.
    * @param array $optParams Optional parameters.
+   *
+   * @opt_param string etag Optional. The current etag of policy. If an etag is
+   * provided and does not match the current etag of the policy, deletion will be
+   * blocked and an ABORTED error will be returned.
    * @return GoogleProtobufEmpty
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -76,6 +82,7 @@ class FoldersPolicies extends \Google\Service\Resource
    * naming requirements.
    * @param array $optParams Optional parameters.
    * @return GoogleCloudOrgpolicyV2Policy
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -95,6 +102,7 @@ class FoldersPolicies extends \Google\Service\Resource
    * naming requirements.
    * @param array $optParams Optional parameters.
    * @return GoogleCloudOrgpolicyV2Policy
+   * @throws \Google\Service\Exception
    */
   public function getEffectivePolicy($name, $optParams = [])
   {
@@ -120,6 +128,7 @@ class FoldersPolicies extends \Google\Service\Resource
    * is currently unsupported and will be ignored. The server may at any point
    * start using this field.
    * @return GoogleCloudOrgpolicyV2ListPoliciesResponse
+   * @throws \Google\Service\Exception
    */
   public function listFoldersPolicies($parent, $optParams = [])
   {
@@ -152,6 +161,7 @@ class FoldersPolicies extends \Google\Service\Resource
    * overwritten in the policy by the set. The fields specified in the update_mask
    * are relative to the policy, not the full request.
    * @return GoogleCloudOrgpolicyV2Policy
+   * @throws \Google\Service\Exception
    */
   public function patch($name, GoogleCloudOrgpolicyV2Policy $postBody, $optParams = [])
   {

@@ -19,7 +19,7 @@ namespace Google\Service\Contentwarehouse;
 
 class RepositoryWebrefSimplifiedCompositeDoc extends \Google\Collection
 {
-  protected $collection_key = 'forwardingDups';
+  protected $collection_key = 'pageContent';
   protected $anchorsType = RepositoryWebrefSimplifiedAnchors::class;
   protected $anchorsDataType = '';
   protected $cdocContainerType = Proto2BridgeMessageSet::class;
@@ -30,6 +30,10 @@ class RepositoryWebrefSimplifiedCompositeDoc extends \Google\Collection
   protected $forwardingDupsDataType = 'array';
   protected $matchingMetadataType = RepositoryWebrefPreprocessingUrlMatchingMetadata::class;
   protected $matchingMetadataDataType = '';
+  /**
+   * @var string[]
+   */
+  public $pageContent;
   protected $refconDocumentMetadataType = RepositoryWebrefRefconRefconDocumentMetadata::class;
   protected $refconDocumentMetadataDataType = '';
   /**
@@ -42,8 +46,6 @@ class RepositoryWebrefSimplifiedCompositeDoc extends \Google\Collection
   public $url;
   protected $webrefOutlinkInfosType = RepositoryWebrefWebrefOutlinkInfos::class;
   protected $webrefOutlinkInfosDataType = '';
-  protected $webrefOutlinksLegacyType = Proto2BridgeMessageSet::class;
-  protected $webrefOutlinksLegacyDataType = '';
 
   /**
    * @param RepositoryWebrefSimplifiedAnchors
@@ -116,6 +118,20 @@ class RepositoryWebrefSimplifiedCompositeDoc extends \Google\Collection
     return $this->matchingMetadata;
   }
   /**
+   * @param string[]
+   */
+  public function setPageContent($pageContent)
+  {
+    $this->pageContent = $pageContent;
+  }
+  /**
+   * @return string[]
+   */
+  public function getPageContent()
+  {
+    return $this->pageContent;
+  }
+  /**
    * @param RepositoryWebrefRefconRefconDocumentMetadata
    */
   public function setRefconDocumentMetadata(RepositoryWebrefRefconRefconDocumentMetadata $refconDocumentMetadata)
@@ -170,20 +186,6 @@ class RepositoryWebrefSimplifiedCompositeDoc extends \Google\Collection
   public function getWebrefOutlinkInfos()
   {
     return $this->webrefOutlinkInfos;
-  }
-  /**
-   * @param Proto2BridgeMessageSet
-   */
-  public function setWebrefOutlinksLegacy(Proto2BridgeMessageSet $webrefOutlinksLegacy)
-  {
-    $this->webrefOutlinksLegacy = $webrefOutlinksLegacy;
-  }
-  /**
-   * @return Proto2BridgeMessageSet
-   */
-  public function getWebrefOutlinksLegacy()
-  {
-    return $this->webrefOutlinksLegacy;
   }
 }
 

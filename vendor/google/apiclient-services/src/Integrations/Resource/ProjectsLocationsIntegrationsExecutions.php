@@ -17,6 +17,8 @@
 
 namespace Google\Service\Integrations\Resource;
 
+use Google\Service\Integrations\GoogleCloudIntegrationsV1alphaDownloadExecutionResponse;
+use Google\Service\Integrations\GoogleCloudIntegrationsV1alphaExecution;
 use Google\Service\Integrations\GoogleCloudIntegrationsV1alphaListExecutionsResponse;
 
 /**
@@ -29,6 +31,38 @@ use Google\Service\Integrations\GoogleCloudIntegrationsV1alphaListExecutionsResp
  */
 class ProjectsLocationsIntegrationsExecutions extends \Google\Service\Resource
 {
+  /**
+   * Download the execution. (executions.download)
+   *
+   * @param string $name Required. The execution resource name. Format: projects/{
+   * gcp_project_id}/locations/{location}/products/{product}/integrations/{integra
+   * tion_id}/executions/{execution_id}
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudIntegrationsV1alphaDownloadExecutionResponse
+   * @throws \Google\Service\Exception
+   */
+  public function download($name, $optParams = [])
+  {
+    $params = ['name' => $name];
+    $params = array_merge($params, $optParams);
+    return $this->call('download', [$params], GoogleCloudIntegrationsV1alphaDownloadExecutionResponse::class);
+  }
+  /**
+   * Get an execution in the specified project. (executions.get)
+   *
+   * @param string $name Required. The execution resource name. Format: projects/{
+   * gcp_project_id}/locations/{location}/products/{product}/integrations/{integra
+   * tion_id}/executions/{execution_id}
+   * @param array $optParams Optional parameters.
+   * @return GoogleCloudIntegrationsV1alphaExecution
+   * @throws \Google\Service\Exception
+   */
+  public function get($name, $optParams = [])
+  {
+    $params = ['name' => $name];
+    $params = array_merge($params, $optParams);
+    return $this->call('get', [$params], GoogleCloudIntegrationsV1alphaExecution::class);
+  }
   /**
    * Lists the results of all the integration executions. The response includes
    * the same information as the [execution
@@ -78,11 +112,15 @@ class ProjectsLocationsIntegrationsExecutions extends \Google\Service\Resource
    * recent acl information to list event execution infos and renew the acl cache.
    * Note that fetching the most recent acl is synchronous, so it will increase
    * RPC call latency.
+   * @opt_param bool snapshotMetadataWithoutParams Optional. If true, the service
+   * will provide execution info with snapshot metadata only i.e. without event
+   * parameters.
    * @opt_param bool truncateParams Optional. If true, the service will truncate
    * the params to only keep the first 1000 characters of string params and empty
    * the executions in order to make response smaller. Only works for UI and when
    * the params fields are not filtered out.
    * @return GoogleCloudIntegrationsV1alphaListExecutionsResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsIntegrationsExecutions($parent, $optParams = [])
   {

@@ -17,8 +17,9 @@
 
 namespace Google\Service\CCAIPlatform;
 
-class ContactCenter extends \Google\Model
+class ContactCenter extends \Google\Collection
 {
+  protected $collection_key = 'privateComponents';
   protected $adminUserType = AdminUser::class;
   protected $adminUserDataType = '';
   /**
@@ -37,6 +38,8 @@ class ContactCenter extends \Google\Model
    * @var string
    */
   public $displayName;
+  protected $earlyType = Early::class;
+  protected $earlyDataType = '';
   protected $instanceConfigType = InstanceConfig::class;
   protected $instanceConfigDataType = '';
   /**
@@ -51,6 +54,12 @@ class ContactCenter extends \Google\Model
    * @var string
    */
   public $name;
+  protected $normalType = Normal::class;
+  protected $normalDataType = '';
+  /**
+   * @var string[]
+   */
+  public $privateComponents;
   protected $samlParamsType = SAMLParams::class;
   protected $samlParamsDataType = '';
   /**
@@ -139,6 +148,20 @@ class ContactCenter extends \Google\Model
     return $this->displayName;
   }
   /**
+   * @param Early
+   */
+  public function setEarly(Early $early)
+  {
+    $this->early = $early;
+  }
+  /**
+   * @return Early
+   */
+  public function getEarly()
+  {
+    return $this->early;
+  }
+  /**
    * @param InstanceConfig
    */
   public function setInstanceConfig(InstanceConfig $instanceConfig)
@@ -193,6 +216,34 @@ class ContactCenter extends \Google\Model
   public function getName()
   {
     return $this->name;
+  }
+  /**
+   * @param Normal
+   */
+  public function setNormal(Normal $normal)
+  {
+    $this->normal = $normal;
+  }
+  /**
+   * @return Normal
+   */
+  public function getNormal()
+  {
+    return $this->normal;
+  }
+  /**
+   * @param string[]
+   */
+  public function setPrivateComponents($privateComponents)
+  {
+    $this->privateComponents = $privateComponents;
+  }
+  /**
+   * @return string[]
+   */
+  public function getPrivateComponents()
+  {
+    return $this->privateComponents;
   }
   /**
    * @param SAMLParams

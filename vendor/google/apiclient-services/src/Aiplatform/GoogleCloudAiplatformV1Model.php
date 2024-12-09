@@ -24,12 +24,16 @@ class GoogleCloudAiplatformV1Model extends \Google\Collection
    * @var string
    */
   public $artifactUri;
+  protected $baseModelSourceType = GoogleCloudAiplatformV1ModelBaseModelSource::class;
+  protected $baseModelSourceDataType = '';
   protected $containerSpecType = GoogleCloudAiplatformV1ModelContainerSpec::class;
   protected $containerSpecDataType = '';
   /**
    * @var string
    */
   public $createTime;
+  protected $dataStatsType = GoogleCloudAiplatformV1ModelDataStats::class;
+  protected $dataStatsDataType = '';
   protected $deployedModelsType = GoogleCloudAiplatformV1DeployedModelRef::class;
   protected $deployedModelsDataType = 'array';
   /**
@@ -136,6 +140,20 @@ class GoogleCloudAiplatformV1Model extends \Google\Collection
     return $this->artifactUri;
   }
   /**
+   * @param GoogleCloudAiplatformV1ModelBaseModelSource
+   */
+  public function setBaseModelSource(GoogleCloudAiplatformV1ModelBaseModelSource $baseModelSource)
+  {
+    $this->baseModelSource = $baseModelSource;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1ModelBaseModelSource
+   */
+  public function getBaseModelSource()
+  {
+    return $this->baseModelSource;
+  }
+  /**
    * @param GoogleCloudAiplatformV1ModelContainerSpec
    */
   public function setContainerSpec(GoogleCloudAiplatformV1ModelContainerSpec $containerSpec)
@@ -162,6 +180,20 @@ class GoogleCloudAiplatformV1Model extends \Google\Collection
   public function getCreateTime()
   {
     return $this->createTime;
+  }
+  /**
+   * @param GoogleCloudAiplatformV1ModelDataStats
+   */
+  public function setDataStats(GoogleCloudAiplatformV1ModelDataStats $dataStats)
+  {
+    $this->dataStats = $dataStats;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1ModelDataStats
+   */
+  public function getDataStats()
+  {
+    return $this->dataStats;
   }
   /**
    * @param GoogleCloudAiplatformV1DeployedModelRef[]

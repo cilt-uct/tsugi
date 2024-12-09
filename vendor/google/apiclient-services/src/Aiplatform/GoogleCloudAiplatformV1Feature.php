@@ -49,11 +49,19 @@ class GoogleCloudAiplatformV1Feature extends \Google\Collection
   /**
    * @var string
    */
+  public $pointOfContact;
+  /**
+   * @var string
+   */
   public $updateTime;
   /**
    * @var string
    */
   public $valueType;
+  /**
+   * @var string
+   */
+  public $versionColumnName;
 
   /**
    * @param string
@@ -156,6 +164,20 @@ class GoogleCloudAiplatformV1Feature extends \Google\Collection
   /**
    * @param string
    */
+  public function setPointOfContact($pointOfContact)
+  {
+    $this->pointOfContact = $pointOfContact;
+  }
+  /**
+   * @return string
+   */
+  public function getPointOfContact()
+  {
+    return $this->pointOfContact;
+  }
+  /**
+   * @param string
+   */
   public function setUpdateTime($updateTime)
   {
     $this->updateTime = $updateTime;
@@ -180,6 +202,20 @@ class GoogleCloudAiplatformV1Feature extends \Google\Collection
   public function getValueType()
   {
     return $this->valueType;
+  }
+  /**
+   * @param string
+   */
+  public function setVersionColumnName($versionColumnName)
+  {
+    $this->versionColumnName = $versionColumnName;
+  }
+  /**
+   * @return string
+   */
+  public function getVersionColumnName()
+  {
+    return $this->versionColumnName;
   }
 }
 

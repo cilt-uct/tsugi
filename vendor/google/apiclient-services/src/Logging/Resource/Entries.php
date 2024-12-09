@@ -43,6 +43,7 @@ class Entries extends \Google\Service\Resource
    * @param CopyLogEntriesRequest $postBody
    * @param array $optParams Optional parameters.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function copy(CopyLogEntriesRequest $postBody, $optParams = [])
   {
@@ -59,6 +60,7 @@ class Entries extends \Google\Service\Resource
    * @param ListLogEntriesRequest $postBody
    * @param array $optParams Optional parameters.
    * @return ListLogEntriesResponse
+   * @throws \Google\Service\Exception
    */
   public function listEntries(ListLogEntriesRequest $postBody, $optParams = [])
   {
@@ -73,6 +75,7 @@ class Entries extends \Google\Service\Resource
    * @param TailLogEntriesRequest $postBody
    * @param array $optParams Optional parameters.
    * @return TailLogEntriesResponse
+   * @throws \Google\Service\Exception
    */
   public function tail(TailLogEntriesRequest $postBody, $optParams = [])
   {
@@ -85,12 +88,14 @@ class Entries extends \Google\Service\Resource
    * entries to Logging. This method is used, directly or indirectly, by the
    * Logging agent (fluentd) and all logging libraries configured to use Logging.
    * A single request may contain log entries for a maximum of 1000 different
-   * resources (projects, organizations, billing accounts or folders)
+   * resource names (projects, organizations, billing accounts or folders), where
+   * the resource name for a log entry is determined from its logName field.
    * (entries.write)
    *
    * @param WriteLogEntriesRequest $postBody
    * @param array $optParams Optional parameters.
    * @return WriteLogEntriesResponse
+   * @throws \Google\Service\Exception
    */
   public function write(WriteLogEntriesRequest $postBody, $optParams = [])
   {

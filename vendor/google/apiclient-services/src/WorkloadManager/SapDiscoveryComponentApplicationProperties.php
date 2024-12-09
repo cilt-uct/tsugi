@@ -20,9 +20,21 @@ namespace Google\Service\WorkloadManager;
 class SapDiscoveryComponentApplicationProperties extends \Google\Model
 {
   /**
+   * @var bool
+   */
+  public $abap;
+  /**
+   * @var string
+   */
+  public $appInstanceNumber;
+  /**
    * @var string
    */
   public $applicationType;
+  /**
+   * @var string
+   */
+  public $ascsInstanceNumber;
   /**
    * @var string
    */
@@ -30,8 +42,40 @@ class SapDiscoveryComponentApplicationProperties extends \Google\Model
   /**
    * @var string
    */
+  public $kernelVersion;
+  /**
+   * @var string
+   */
   public $nfsUri;
 
+  /**
+   * @param bool
+   */
+  public function setAbap($abap)
+  {
+    $this->abap = $abap;
+  }
+  /**
+   * @return bool
+   */
+  public function getAbap()
+  {
+    return $this->abap;
+  }
+  /**
+   * @param string
+   */
+  public function setAppInstanceNumber($appInstanceNumber)
+  {
+    $this->appInstanceNumber = $appInstanceNumber;
+  }
+  /**
+   * @return string
+   */
+  public function getAppInstanceNumber()
+  {
+    return $this->appInstanceNumber;
+  }
   /**
    * @param string
    */
@@ -49,6 +93,20 @@ class SapDiscoveryComponentApplicationProperties extends \Google\Model
   /**
    * @param string
    */
+  public function setAscsInstanceNumber($ascsInstanceNumber)
+  {
+    $this->ascsInstanceNumber = $ascsInstanceNumber;
+  }
+  /**
+   * @return string
+   */
+  public function getAscsInstanceNumber()
+  {
+    return $this->ascsInstanceNumber;
+  }
+  /**
+   * @param string
+   */
   public function setAscsUri($ascsUri)
   {
     $this->ascsUri = $ascsUri;
@@ -59,6 +117,20 @@ class SapDiscoveryComponentApplicationProperties extends \Google\Model
   public function getAscsUri()
   {
     return $this->ascsUri;
+  }
+  /**
+   * @param string
+   */
+  public function setKernelVersion($kernelVersion)
+  {
+    $this->kernelVersion = $kernelVersion;
+  }
+  /**
+   * @return string
+   */
+  public function getKernelVersion()
+  {
+    return $this->kernelVersion;
   }
   /**
    * @param string

@@ -616,12 +616,26 @@ $('a').each(function (x) {
     }
 
     function footerEnd() {
-        $end = "\n</div></body>\n</html>\n";
-        if ( $this->buffer ) {
-            return $end;
-        } else {
-            echo($end);
+        ob_start();
+
+        if ( $this->session_get('lti.gradeChangeNotify') ) {
+?>
+<script>
+            if ( typeof lti_gradeChangeNotify === 'function' ) {
+                console.debug('Tsugi sending lti.gradeChangeNotify');
+                lti_gradeChangeNotify();
+            }
+</script>
+<?php
+            $this->session_forget('lti.gradeChangeNotify');
         }
+
+        echo("\n</div></body>\n</html>\n");
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
     }
 
     function footer() {
@@ -771,7 +785,11 @@ $('a').each(function (x) {
 
         $R = $CFG->wwwroot . '/';
         $set = new \Tsugi\UI\MenuSet();
-        $set->setHome($CFG->servicename, $CFG->apphome);
+        if ( is_string($CFG->apphome) ) {
+            $set->setHome($CFG->servicename, $CFG->apphome);
+        } else {
+            $set->setHome($CFG->servicename, $R);
+        }
         $set->addLeft(_m('Tools'), $R.'store');
         if ( $this->session_get('id') ) {
                 $set->addLeft(_m('Settings'), $R . 'settings');
@@ -1221,7 +1239,7 @@ EOF;
         self::safe_var_cleanup($x, 0);
         var_dump($x);
         $result = ob_get_clean();
-        return $result;
+        return htmlent_utf8($result);
     }
 
     public static function safe_print_r($x) {
@@ -1229,7 +1247,7 @@ EOF;
         self::safe_var_cleanup($x, 0);
         print_r($x);
         $result = ob_get_clean();
-        return $result;
+        return htmlent_utf8($result);
     }
 
     public static function htmlError($message,$detail,$next=false) {

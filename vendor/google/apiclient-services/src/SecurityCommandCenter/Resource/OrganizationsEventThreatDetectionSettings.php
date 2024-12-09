@@ -36,10 +36,13 @@ class OrganizationsEventThreatDetectionSettings extends \Google\Service\Resource
    *
    * @param string $parent Required. Resource name of the parent to validate the
    * Custom Module under. Its format is: *
-   * "organizations/{organization}/eventThreatDetectionSettings".
+   * "organizations/{organization}/eventThreatDetectionSettings". *
+   * "folders/{folder}/eventThreatDetectionSettings". *
+   * "projects/{project}/eventThreatDetectionSettings".
    * @param ValidateEventThreatDetectionCustomModuleRequest $postBody
    * @param array $optParams Optional parameters.
    * @return ValidateEventThreatDetectionCustomModuleResponse
+   * @throws \Google\Service\Exception
    */
   public function validateCustomModule($parent, ValidateEventThreatDetectionCustomModuleRequest $postBody, $optParams = [])
   {

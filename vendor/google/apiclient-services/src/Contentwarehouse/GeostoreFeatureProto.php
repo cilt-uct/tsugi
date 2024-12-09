@@ -26,6 +26,8 @@ class GeostoreFeatureProto extends \Google\Collection
   protected $addressDataType = 'array';
   protected $anchoredGeometryType = GeostoreAnchoredGeometryProto::class;
   protected $anchoredGeometryDataType = '';
+  protected $associatedEvChargingStationType = GeostoreFeatureIdProto::class;
+  protected $associatedEvChargingStationDataType = 'array';
   protected $attachmentType = GeostoreAttachmentsAttachmentProto::class;
   protected $attachmentDataType = 'array';
   protected $attributeType = GeostoreAttributeProto::class;
@@ -48,8 +50,12 @@ class GeostoreFeatureProto extends \Google\Collection
   protected $coveringDataType = '';
   protected $dataSourceType = GeostoreDataSourceProto::class;
   protected $dataSourceDataType = '';
+  protected $detailed3dModelType = GeostoreGeometryStoreReferenceProto::class;
+  protected $detailed3dModelDataType = '';
   protected $displayDataType = GeostoreDisplayDataProto::class;
   protected $displayDataDataType = '';
+  protected $disputedAreaType = GeostoreDisputedAreaProto::class;
+  protected $disputedAreaDataType = '';
   protected $doodleType = GeostoreDoodleProto::class;
   protected $doodleDataType = '';
   protected $elevationType = GeostoreElevationProto::class;
@@ -69,6 +75,8 @@ class GeostoreFeatureProto extends \Google\Collection
   protected $geometry3dType = GeostoreGeometryStoreReferenceProto::class;
   protected $geometry3dDataType = '';
   public $geometryPrecisionMeters;
+  protected $geopoliticalType = GeostoreGeopoliticalProto::class;
+  protected $geopoliticalDataType = '';
   protected $geopoliticalGeometryType = GeostoreGeopoliticalGeometryProto::class;
   protected $geopoliticalGeometryDataType = '';
   protected $htmlTextType = GeostoreHtmlTextProto::class;
@@ -173,6 +181,8 @@ class GeostoreFeatureProto extends \Google\Collection
   protected $statusDataType = '';
   protected $storefrontGeometryType = GeostoreAnchoredGeometryProto::class;
   protected $storefrontGeometryDataType = 'array';
+  protected $storefrontGeometryModelType = GeostoreGeometryStoreReferenceProto::class;
+  protected $storefrontGeometryModelDataType = '';
   /**
    * @var bool
    */
@@ -183,6 +193,8 @@ class GeostoreFeatureProto extends \Google\Collection
   protected $threeDimModelDataType = '';
   protected $tollClusterType = GeostoreTollClusterProto::class;
   protected $tollClusterDataType = '';
+  protected $tollPathType = GeostoreTollPathProto::class;
+  protected $tollPathDataType = '';
   protected $trackType = GeostoreTrackProto::class;
   protected $trackDataType = 'array';
   protected $transitLineType = GeostoreTransitLineProto::class;
@@ -245,6 +257,20 @@ class GeostoreFeatureProto extends \Google\Collection
   public function getAnchoredGeometry()
   {
     return $this->anchoredGeometry;
+  }
+  /**
+   * @param GeostoreFeatureIdProto[]
+   */
+  public function setAssociatedEvChargingStation($associatedEvChargingStation)
+  {
+    $this->associatedEvChargingStation = $associatedEvChargingStation;
+  }
+  /**
+   * @return GeostoreFeatureIdProto[]
+   */
+  public function getAssociatedEvChargingStation()
+  {
+    return $this->associatedEvChargingStation;
   }
   /**
    * @param GeostoreAttachmentsAttachmentProto[]
@@ -401,6 +427,20 @@ class GeostoreFeatureProto extends \Google\Collection
     return $this->dataSource;
   }
   /**
+   * @param GeostoreGeometryStoreReferenceProto
+   */
+  public function setDetailed3dModel(GeostoreGeometryStoreReferenceProto $detailed3dModel)
+  {
+    $this->detailed3dModel = $detailed3dModel;
+  }
+  /**
+   * @return GeostoreGeometryStoreReferenceProto
+   */
+  public function getDetailed3dModel()
+  {
+    return $this->detailed3dModel;
+  }
+  /**
    * @param GeostoreDisplayDataProto
    */
   public function setDisplayData(GeostoreDisplayDataProto $displayData)
@@ -413,6 +453,20 @@ class GeostoreFeatureProto extends \Google\Collection
   public function getDisplayData()
   {
     return $this->displayData;
+  }
+  /**
+   * @param GeostoreDisputedAreaProto
+   */
+  public function setDisputedArea(GeostoreDisputedAreaProto $disputedArea)
+  {
+    $this->disputedArea = $disputedArea;
+  }
+  /**
+   * @return GeostoreDisputedAreaProto
+   */
+  public function getDisputedArea()
+  {
+    return $this->disputedArea;
   }
   /**
    * @param GeostoreDoodleProto
@@ -547,6 +601,20 @@ class GeostoreFeatureProto extends \Google\Collection
   public function getGeometryPrecisionMeters()
   {
     return $this->geometryPrecisionMeters;
+  }
+  /**
+   * @param GeostoreGeopoliticalProto
+   */
+  public function setGeopolitical(GeostoreGeopoliticalProto $geopolitical)
+  {
+    $this->geopolitical = $geopolitical;
+  }
+  /**
+   * @return GeostoreGeopoliticalProto
+   */
+  public function getGeopolitical()
+  {
+    return $this->geopolitical;
   }
   /**
    * @param GeostoreGeopoliticalGeometryProto
@@ -1263,6 +1331,20 @@ class GeostoreFeatureProto extends \Google\Collection
     return $this->storefrontGeometry;
   }
   /**
+   * @param GeostoreGeometryStoreReferenceProto
+   */
+  public function setStorefrontGeometryModel(GeostoreGeometryStoreReferenceProto $storefrontGeometryModel)
+  {
+    $this->storefrontGeometryModel = $storefrontGeometryModel;
+  }
+  /**
+   * @return GeostoreGeometryStoreReferenceProto
+   */
+  public function getStorefrontGeometryModel()
+  {
+    return $this->storefrontGeometryModel;
+  }
+  /**
    * @param bool
    */
   public function setSyntheticGeometry($syntheticGeometry)
@@ -1317,6 +1399,20 @@ class GeostoreFeatureProto extends \Google\Collection
   public function getTollCluster()
   {
     return $this->tollCluster;
+  }
+  /**
+   * @param GeostoreTollPathProto
+   */
+  public function setTollPath(GeostoreTollPathProto $tollPath)
+  {
+    $this->tollPath = $tollPath;
+  }
+  /**
+   * @return GeostoreTollPathProto
+   */
+  public function getTollPath()
+  {
+    return $this->tollPath;
   }
   /**
    * @param GeostoreTrackProto[]

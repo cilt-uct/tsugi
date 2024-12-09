@@ -18,6 +18,7 @@
 namespace Google\Service\SecurityCommandCenter\Resource;
 
 use Google\Service\SecurityCommandCenter\ListValuedResourcesResponse;
+use Google\Service\SecurityCommandCenter\ValuedResource;
 
 /**
  * The "valuedResources" collection of methods.
@@ -29,6 +30,22 @@ use Google\Service\SecurityCommandCenter\ListValuedResourcesResponse;
  */
 class OrganizationsSimulationsValuedResources extends \Google\Service\Resource
 {
+  /**
+   * Get the valued resource by name (valuedResources.get)
+   *
+   * @param string $name Required. The name of this valued resource Valid format:
+   * "organizations/{organization}/simulations/{simulation}/valuedResources/{value
+   * d_resource}"
+   * @param array $optParams Optional parameters.
+   * @return ValuedResource
+   * @throws \Google\Service\Exception
+   */
+  public function get($name, $optParams = [])
+  {
+    $params = ['name' => $name];
+    $params = array_merge($params, $optParams);
+    return $this->call('get', [$params], ValuedResource::class);
+  }
   /**
    * Lists the valued resources for a set of simulation results and filter.
    * (valuedResources.listOrganizationsSimulationsValuedResources)
@@ -43,6 +60,13 @@ class OrganizationsSimulationsValuedResources extends \Google\Service\Resource
    * @opt_param string filter The filter expression that filters the valued
    * resources in the response. Supported fields: * `resource_value` supports = *
    * `resource_type` supports =
+   * @opt_param string orderBy Optional. The fields by which to order the valued
+   * resources response. Supported fields: * `exposed_score` * `resource_value` *
+   * `resource_type` * `resource` * `display_name` Values should be a comma
+   * separated list of fields. For example: `exposed_score,resource_value`. The
+   * default sorting order is descending. To specify ascending or descending order
+   * for a field, append a " ASC" or a " DESC" suffix, respectively; for example:
+   * `exposed_score DESC`.
    * @opt_param int pageSize The maximum number of results to return in a single
    * response. Default is 10, minimum is 1, maximum is 1000.
    * @opt_param string pageToken The value returned by the last
@@ -50,6 +74,7 @@ class OrganizationsSimulationsValuedResources extends \Google\Service\Resource
    * prior `ListValuedResources` call, and that the system should return the next
    * page of data.
    * @return ListValuedResourcesResponse
+   * @throws \Google\Service\Exception
    */
   public function listOrganizationsSimulationsValuedResources($parent, $optParams = [])
   {

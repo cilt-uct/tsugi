@@ -33,6 +33,10 @@ class Repository extends \Google\Model
    * @var string
    */
   public $description;
+  /**
+   * @var bool
+   */
+  public $disallowUnspecifiedMode;
   protected $dockerConfigType = DockerRepositoryConfig::class;
   protected $dockerConfigDataType = '';
   /**
@@ -63,8 +67,6 @@ class Repository extends \Google\Model
    * @var bool
    */
   public $satisfiesPzs;
-  protected $sbomConfigType = SbomConfig::class;
-  protected $sbomConfigDataType = '';
   /**
    * @var string
    */
@@ -131,6 +133,20 @@ class Repository extends \Google\Model
   public function getDescription()
   {
     return $this->description;
+  }
+  /**
+   * @param bool
+   */
+  public function setDisallowUnspecifiedMode($disallowUnspecifiedMode)
+  {
+    $this->disallowUnspecifiedMode = $disallowUnspecifiedMode;
+  }
+  /**
+   * @return bool
+   */
+  public function getDisallowUnspecifiedMode()
+  {
+    return $this->disallowUnspecifiedMode;
   }
   /**
    * @param DockerRepositoryConfig
@@ -257,20 +273,6 @@ class Repository extends \Google\Model
   public function getSatisfiesPzs()
   {
     return $this->satisfiesPzs;
-  }
-  /**
-   * @param SbomConfig
-   */
-  public function setSbomConfig(SbomConfig $sbomConfig)
-  {
-    $this->sbomConfig = $sbomConfig;
-  }
-  /**
-   * @return SbomConfig
-   */
-  public function getSbomConfig()
-  {
-    return $this->sbomConfig;
   }
   /**
    * @param string

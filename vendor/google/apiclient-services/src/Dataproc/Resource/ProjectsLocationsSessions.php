@@ -17,7 +17,6 @@
 
 namespace Google\Service\Dataproc\Resource;
 
-use Google\Service\Dataproc\InjectSessionCredentialsRequest;
 use Google\Service\Dataproc\ListSessionsResponse;
 use Google\Service\Dataproc\Operation;
 use Google\Service\Dataproc\Session;
@@ -42,11 +41,11 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * @param array $optParams Optional parameters.
    *
    * @opt_param string requestId Optional. A unique ID used to identify the
-   * request. If the service receives two CreateSessionRequest (https://cloud.goog
-   * le.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.data
-   * proc.v1.CreateSessionRequest)s with the same ID, the second request is
-   * ignored and the first Session is created and stored in the backend is
-   * returned.Recommendation: Set this value to a UUID
+   * request. If the service receives two CreateSessionRequests (https://cloud.goo
+   * gle.com/dataproc/docs/reference/rpc/google.cloud.dataproc.v1#google.cloud.dat
+   * aproc.v1.CreateSessionRequest)s with the same ID, the second request is
+   * ignored, and the first Session is created and stored in the
+   * backend.Recommendation: Set this value to a UUID
    * (https://en.wikipedia.org/wiki/Universally_unique_identifier).The value must
    * contain only letters (a-z, A-Z), numbers (0-9), underscores (_), and hyphens
    * (-). The maximum length is 40 characters.
@@ -54,6 +53,7 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * becomes the final component of the session's resource name.This value must be
    * 4-63 characters. Valid characters are /a-z-/.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function create($parent, Session $postBody, $optParams = [])
   {
@@ -63,7 +63,7 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
   }
   /**
    * Deletes the interactive session resource. If the session is not in terminal
-   * state, it will be terminated and deleted afterwards. (sessions.delete)
+   * state, it is terminated, and then deleted. (sessions.delete)
    *
    * @param string $name Required. The name of the session resource to delete.
    * @param array $optParams Optional parameters.
@@ -77,6 +77,7 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * contain only letters (a-z, A-Z), numbers (0-9), underscores (_), and hyphens
    * (-). The maximum length is 40 characters.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -90,27 +91,13 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * @param string $name Required. The name of the session to retrieve.
    * @param array $optParams Optional parameters.
    * @return Session
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
     $params = ['name' => $name];
     $params = array_merge($params, $optParams);
     return $this->call('get', [$params], Session::class);
-  }
-  /**
-   * Inject Credentials in the interactive session. (sessions.injectCredentials)
-   *
-   * @param string $session Required. The name of the session resource to inject
-   * credentials to.
-   * @param InjectSessionCredentialsRequest $postBody
-   * @param array $optParams Optional parameters.
-   * @return Operation
-   */
-  public function injectCredentials($session, InjectSessionCredentialsRequest $postBody, $optParams = [])
-  {
-    $params = ['session' => $session, 'postBody' => $postBody];
-    $params = array_merge($params, $optParams);
-    return $this->call('injectCredentials', [$params], Operation::class);
   }
   /**
    * Lists interactive sessions. (sessions.listProjectsLocationsSessions)
@@ -122,17 +109,20 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * @opt_param string filter Optional. A filter for the sessions to return in the
    * response.A filter is a logical expression constraining the values of various
    * fields in each session resource. Filters are case sensitive, and may contain
-   * multiple clauses combined with logical operators (AND/OR). Supported fields
-   * are session_id, session_uuid, state, and create_time.e.g. state = ACTIVE and
-   * create_time < "2023-01-01T00:00:00Z" filters for sessions in state ACTIVE
-   * that were created before 2023-01-01See
+   * multiple clauses combined with logical operators (AND, OR). Supported fields
+   * are session_id, session_uuid, state, create_time, and labels.Example: state =
+   * ACTIVE and create_time < "2023-01-01T00:00:00Z" is a filter for sessions in
+   * an ACTIVE state that were created before 2023-01-01. state = ACTIVE and
+   * labels.environment=production is a filter for sessions in an ACTIVE state
+   * that have a production environment label.See
    * https://google.aip.dev/assets/misc/ebnf-filtering.txt for a detailed
-   * description of the filter syntax and a list of supported comparisons.
+   * description of the filter syntax and a list of supported comparators.
    * @opt_param int pageSize Optional. The maximum number of sessions to return in
    * each response. The service may return fewer than this value.
    * @opt_param string pageToken Optional. A page token received from a previous
    * ListSessions call. Provide this token to retrieve the subsequent page.
    * @return ListSessionsResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsSessions($parent, $optParams = [])
   {
@@ -147,6 +137,7 @@ class ProjectsLocationsSessions extends \Google\Service\Resource
    * @param TerminateSessionRequest $postBody
    * @param array $optParams Optional parameters.
    * @return Operation
+   * @throws \Google\Service\Exception
    */
   public function terminate($name, TerminateSessionRequest $postBody, $optParams = [])
   {

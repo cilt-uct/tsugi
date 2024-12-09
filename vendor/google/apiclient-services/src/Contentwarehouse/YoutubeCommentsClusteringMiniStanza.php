@@ -19,11 +19,9 @@ namespace Google\Service\Contentwarehouse;
 
 class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
 {
-  protected $collection_key = 'videoTimestamps';
+  protected $collection_key = 'stanzaRestrictions';
   public $ansibleScores;
   public $automodScores;
-  protected $blarneyStoneScoreType = YoutubeDistillerBlarneyStoneScores::class;
-  protected $blarneyStoneScoreDataType = '';
   /**
    * @var string
    */
@@ -40,6 +38,10 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
    */
   public $commentClassificationBuckets;
   public $commentClassificationRanking;
+  protected $commentEnforcementStatusType = YoutubeCommentsApiCommentEnforcementStatus::class;
+  protected $commentEnforcementStatusDataType = '';
+  protected $commentModeratedRestrictionsType = YoutubeCommentsApiCommentModeratedRestriction::class;
+  protected $commentModeratedRestrictionsDataType = 'array';
   /**
    * @var string
    */
@@ -76,7 +78,10 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public $eligibleQualifiedTeaserFilters;
   protected $empiricalCtrsType = VideoYoutubeCommentsRankingCTRMetrics::class;
   protected $empiricalCtrsDataType = '';
-  public $fds;
+  /**
+   * @var bool
+   */
+  public $endUserDeleted;
   /**
    * @var bool
    */
@@ -122,11 +127,16 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
    * @var bool[]
    */
   public $lowQualityDecisions;
+  public $lowQualityScores;
   /**
    * @var int
    */
   public $mentionedTimestampCommentSecond;
   public $misinfoScores;
+  /**
+   * @var bool
+   */
+  public $mustDeleteComments;
   /**
    * @var int
    */
@@ -156,10 +166,6 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
    * @var string
    */
   public $postId;
-  /**
-   * @var string
-   */
-  public $rankingPostLanguage;
   protected $segmentsType = SocialCommonSegments::class;
   protected $segmentsDataType = '';
   public $sensitivityScores;
@@ -203,10 +209,6 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
    * @var string
    */
   public $videoId;
-  /**
-   * @var int[]
-   */
-  public $videoTimestamps;
   public $wordEntropy;
   /**
    * @var string
@@ -235,20 +237,6 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public function getAutomodScores()
   {
     return $this->automodScores;
-  }
-  /**
-   * @param YoutubeDistillerBlarneyStoneScores
-   */
-  public function setBlarneyStoneScore(YoutubeDistillerBlarneyStoneScores $blarneyStoneScore)
-  {
-    $this->blarneyStoneScore = $blarneyStoneScore;
-  }
-  /**
-   * @return YoutubeDistillerBlarneyStoneScores
-   */
-  public function getBlarneyStoneScore()
-  {
-    return $this->blarneyStoneScore;
   }
   /**
    * @param string
@@ -323,6 +311,34 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public function getCommentClassificationRanking()
   {
     return $this->commentClassificationRanking;
+  }
+  /**
+   * @param YoutubeCommentsApiCommentEnforcementStatus
+   */
+  public function setCommentEnforcementStatus(YoutubeCommentsApiCommentEnforcementStatus $commentEnforcementStatus)
+  {
+    $this->commentEnforcementStatus = $commentEnforcementStatus;
+  }
+  /**
+   * @return YoutubeCommentsApiCommentEnforcementStatus
+   */
+  public function getCommentEnforcementStatus()
+  {
+    return $this->commentEnforcementStatus;
+  }
+  /**
+   * @param YoutubeCommentsApiCommentModeratedRestriction[]
+   */
+  public function setCommentModeratedRestrictions($commentModeratedRestrictions)
+  {
+    $this->commentModeratedRestrictions = $commentModeratedRestrictions;
+  }
+  /**
+   * @return YoutubeCommentsApiCommentModeratedRestriction[]
+   */
+  public function getCommentModeratedRestrictions()
+  {
+    return $this->commentModeratedRestrictions;
   }
   /**
    * @param string
@@ -464,13 +480,19 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   {
     return $this->empiricalCtrs;
   }
-  public function setFds($fds)
+  /**
+   * @param bool
+   */
+  public function setEndUserDeleted($endUserDeleted)
   {
-    $this->fds = $fds;
+    $this->endUserDeleted = $endUserDeleted;
   }
-  public function getFds()
+  /**
+   * @return bool
+   */
+  public function getEndUserDeleted()
   {
-    return $this->fds;
+    return $this->endUserDeleted;
   }
   /**
    * @param bool
@@ -634,6 +656,14 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   {
     return $this->lowQualityDecisions;
   }
+  public function setLowQualityScores($lowQualityScores)
+  {
+    $this->lowQualityScores = $lowQualityScores;
+  }
+  public function getLowQualityScores()
+  {
+    return $this->lowQualityScores;
+  }
   /**
    * @param int
    */
@@ -655,6 +685,20 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public function getMisinfoScores()
   {
     return $this->misinfoScores;
+  }
+  /**
+   * @param bool
+   */
+  public function setMustDeleteComments($mustDeleteComments)
+  {
+    $this->mustDeleteComments = $mustDeleteComments;
+  }
+  /**
+   * @return bool
+   */
+  public function getMustDeleteComments()
+  {
+    return $this->mustDeleteComments;
   }
   /**
    * @param int
@@ -761,20 +805,6 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public function getPostId()
   {
     return $this->postId;
-  }
-  /**
-   * @param string
-   */
-  public function setRankingPostLanguage($rankingPostLanguage)
-  {
-    $this->rankingPostLanguage = $rankingPostLanguage;
-  }
-  /**
-   * @return string
-   */
-  public function getRankingPostLanguage()
-  {
-    return $this->rankingPostLanguage;
   }
   /**
    * @param SocialCommonSegments
@@ -993,20 +1023,6 @@ class YoutubeCommentsClusteringMiniStanza extends \Google\Collection
   public function getVideoId()
   {
     return $this->videoId;
-  }
-  /**
-   * @param int[]
-   */
-  public function setVideoTimestamps($videoTimestamps)
-  {
-    $this->videoTimestamps = $videoTimestamps;
-  }
-  /**
-   * @return int[]
-   */
-  public function getVideoTimestamps()
-  {
-    return $this->videoTimestamps;
   }
   public function setWordEntropy($wordEntropy)
   {

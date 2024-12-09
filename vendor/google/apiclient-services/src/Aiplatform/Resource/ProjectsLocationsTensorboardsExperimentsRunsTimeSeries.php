@@ -17,9 +17,6 @@
 
 namespace Google\Service\Aiplatform\Resource;
 
-use Google\Service\Aiplatform\GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest;
-use Google\Service\Aiplatform\GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse;
-use Google\Service\Aiplatform\GoogleCloudAiplatformV1BatchReadTensorboardTimeSeriesDataResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1ExportTensorboardTimeSeriesDataRequest;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1ExportTensorboardTimeSeriesDataResponse;
 use Google\Service\Aiplatform\GoogleCloudAiplatformV1ListTensorboardTimeSeriesResponse;
@@ -39,55 +36,6 @@ use Google\Service\Aiplatform\GoogleLongrunningOperation;
 class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Service\Resource
 {
   /**
-   * Batch create TensorboardTimeSeries that belong to a TensorboardExperiment.
-   * (timeSeries.batchCreate)
-   *
-   * @param string $parent Required. The resource name of the
-   * TensorboardExperiment to create the TensorboardTimeSeries in. Format: `projec
-   * ts/{project}/locations/{location}/tensorboards/{tensorboard}/experiments/{exp
-   * eriment}` The TensorboardRuns referenced by the parent fields in the
-   * CreateTensorboardTimeSeriesRequest messages must be sub resources of this
-   * TensorboardExperiment.
-   * @param string $runsId
-   * @param GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest $postBody
-   * @param array $optParams Optional parameters.
-   * @return GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse
-   */
-  public function batchCreate($parent, $runsId, GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesRequest $postBody, $optParams = [])
-  {
-    $params = ['parent' => $parent, 'runsId' => $runsId, 'postBody' => $postBody];
-    $params = array_merge($params, $optParams);
-    return $this->call('batchCreate', [$params], GoogleCloudAiplatformV1BatchCreateTensorboardTimeSeriesResponse::class);
-  }
-  /**
-   * Reads multiple TensorboardTimeSeries' data. The data point number limit is
-   * 1000 for scalars, 100 for tensors and blob references. If the number of data
-   * points stored is less than the limit, all data is returned. Otherwise, the
-   * number limit of data points is randomly selected from this time series and
-   * returned. (timeSeries.batchRead)
-   *
-   * @param string $tensorboard Required. The resource name of the Tensorboard
-   * containing TensorboardTimeSeries to read data from. Format:
-   * `projects/{project}/locations/{location}/tensorboards/{tensorboard}`. The
-   * TensorboardTimeSeries referenced by time_series must be sub resources of this
-   * Tensorboard.
-   * @param string $experimentsId
-   * @param string $runsId
-   * @param array $optParams Optional parameters.
-   *
-   * @opt_param string timeSeries Required. The resource names of the
-   * TensorboardTimeSeries to read data from. Format: `projects/{project}/location
-   * s/{location}/tensorboards/{tensorboard}/experiments/{experiment}/runs/{run}/t
-   * imeSeries/{time_series}`
-   * @return GoogleCloudAiplatformV1BatchReadTensorboardTimeSeriesDataResponse
-   */
-  public function batchRead($tensorboard, $experimentsId, $runsId, $optParams = [])
-  {
-    $params = ['tensorboard' => $tensorboard, 'experimentsId' => $experimentsId, 'runsId' => $runsId];
-    $params = array_merge($params, $optParams);
-    return $this->call('batchRead', [$params], GoogleCloudAiplatformV1BatchReadTensorboardTimeSeriesDataResponse::class);
-  }
-  /**
    * Creates a TensorboardTimeSeries. (timeSeries.create)
    *
    * @param string $parent Required. The resource name of the TensorboardRun to
@@ -101,6 +49,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * the TensorboardTimeSeries's resource name. This value should match "a-z0-9{0,
    * 127}"
    * @return GoogleCloudAiplatformV1TensorboardTimeSeries
+   * @throws \Google\Service\Exception
    */
   public function create($parent, GoogleCloudAiplatformV1TensorboardTimeSeries $postBody, $optParams = [])
   {
@@ -116,6 +65,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * rboard}/experiments/{experiment}/runs/{run}/timeSeries/{time_series}`
    * @param array $optParams Optional parameters.
    * @return GoogleLongrunningOperation
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -134,6 +84,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * @param GoogleCloudAiplatformV1ExportTensorboardTimeSeriesDataRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1ExportTensorboardTimeSeriesDataResponse
+   * @throws \Google\Service\Exception
    */
   public function exportTensorboardTimeSeries($tensorboardTimeSeries, GoogleCloudAiplatformV1ExportTensorboardTimeSeriesDataRequest $postBody, $optParams = [])
   {
@@ -149,6 +100,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * xperiments/{experiment}/runs/{run}/timeSeries/{time_series}`
    * @param array $optParams Optional parameters.
    * @return GoogleCloudAiplatformV1TensorboardTimeSeries
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -179,6 +131,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * provided the page token.
    * @opt_param string readMask Mask specifying which fields to read.
    * @return GoogleCloudAiplatformV1ListTensorboardTimeSeriesResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsTensorboardsExperimentsRunsTimeSeries($parent, $optParams = [])
   {
@@ -200,6 +153,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * not provide a mask then all fields are overwritten if new values are
    * specified.
    * @return GoogleCloudAiplatformV1TensorboardTimeSeries
+   * @throws \Google\Service\Exception
    */
   public function patch($name, GoogleCloudAiplatformV1TensorboardTimeSeries $postBody, $optParams = [])
   {
@@ -226,6 +180,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    * data to return. This value should be a positive integer. This value can be
    * set to -1 to return all data.
    * @return GoogleCloudAiplatformV1ReadTensorboardTimeSeriesDataResponse
+   * @throws \Google\Service\Exception
    */
   public function read($tensorboardTimeSeries, $optParams = [])
   {
@@ -246,6 +201,7 @@ class ProjectsLocationsTensorboardsExperimentsRunsTimeSeries extends \Google\Ser
    *
    * @opt_param string blobIds IDs of the blobs to read.
    * @return GoogleCloudAiplatformV1ReadTensorboardBlobDataResponse
+   * @throws \Google\Service\Exception
    */
   public function readBlobData($timeSeries, $optParams = [])
   {

@@ -152,6 +152,7 @@ class Directory extends \Google\Service
   public $users_aliases;
   public $users_photos;
   public $verificationCodes;
+  public $rootUrlTemplate;
 
   /**
    * Constructs the internal representation of the Directory service.
@@ -164,6 +165,7 @@ class Directory extends \Google\Service
   {
     parent::__construct($clientOrConfig);
     $this->rootUrl = $rootUrl ?: 'https://admin.googleapis.com/';
+    $this->rootUrlTemplate = $rootUrl ?: 'https://admin.UNIVERSE_DOMAIN/';
     $this->servicePath = '';
     $this->batchPath = 'batch';
     $this->version = 'directory_v1';
@@ -378,7 +380,17 @@ class Directory extends \Google\Service
         'chromeos',
         [
           'methods' => [
-            'issueCommand' => [
+            'batchChangeStatus' => [
+              'path' => 'admin/directory/v1/customer/{customerId}/devices/chromeos:batchChangeStatus',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'customerId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'issueCommand' => [
               'path' => 'admin/directory/v1/customer/{customerId}/devices/chromeos/{deviceId}:issueCommand',
               'httpMethod' => 'POST',
               'parameters' => [

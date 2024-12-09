@@ -5,6 +5,7 @@ use \Tsugi\Util\U;
 if ( ! defined('COOKIE_SESSION') ) define('COOKIE_SESSION', true);
 require_once("../config.php");
 session_start();
+session_regenerate_id(true);
 require_once("gate.php");
 if ( $REDIRECTED === true || ! isset($_SESSION["admin"]) ) return;
 
@@ -59,6 +60,11 @@ echo("</p>\n");
   </a>
 </li>
 <hr/>
+<li>
+  <a href="#" title="Manage OAuth2 Keyset"
+  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'keyset', _TSUGI.spinnerUrl); return false;" >
+  Check Keyset
+  </a></li>
 <li>
   <a href="#" title="Check Cache"
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'cache', _TSUGI.spinnerUrl); return false;" >

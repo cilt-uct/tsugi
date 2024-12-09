@@ -282,6 +282,7 @@ array( "{$CFG->dbprefix}lti_context",
     lineitems_url       TEXT NULL,
     lti13_lineitems     TEXT NULL,
     lti13_membership_url  TEXT NULL,
+    lti13_context_groups_url  TEXT NULL,
     entity_version      INTEGER NOT NULL DEFAULT 0,
     login_at            TIMESTAMP NULL,
     login_count         BIGINT DEFAULT 0,
@@ -467,6 +468,7 @@ array( "{$CFG->dbprefix}lti_result",
 
     grade              FLOAT NULL,
     note               MEDIUMTEXT NULL,
+    attempts           INTEGER NULL,
     server_grade       FLOAT NULL,
     grading_progress   TINYINT(1) NOT NULL DEFAULT 0,
     activity_progress  TINYINT(1) NOT NULL DEFAULT 0,
@@ -476,6 +478,7 @@ array( "{$CFG->dbprefix}lti_result",
     created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         TIMESTAMP NULL,
     deleted_at         TIMESTAMP NULL,
+    attempted_at       TIMESTAMP NULL,
     retrieved_at       TIMESTAMP NULL,
 
     CONSTRAINT `{$CFG->dbprefix}lti_result_ibfk_1`
@@ -790,6 +793,13 @@ $DATABASE_UPGRADE = function($oldversion) {
 
         // 2023-05-11
         array('lti_key', 'unlock_code', 'MEDIUMTEXT NULL'),
+
+        // 2023-07-29 Adding Context Groups Service
+        array('lti_context', 'lti13_context_groups_url', 'TEXT NULL'),
+
+        // 2024-09-17
+        array('lti_result', 'attempts', 'INTEGER NULL'),
+        array('lti_result', 'attempted_at', 'TIMESTAMP NULL'),
     );
 
     foreach ( $add_some_fields as $add_field ) {

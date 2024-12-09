@@ -38,8 +38,6 @@ class AssistantApiSoftwareCapabilities extends \Google\Collection
   protected $gacsCapabilitiesDataType = '';
   protected $gcmCapabilitiesType = AssistantApiGcmCapabilities::class;
   protected $gcmCapabilitiesDataType = '';
-  protected $homeAppCapabilitiesType = AssistantApiCapabilitiesHomeAppCapabilities::class;
-  protected $homeAppCapabilitiesDataType = '';
   protected $liveTvChannelCapabilitiesType = AssistantApiLiveTvChannelCapabilities::class;
   protected $liveTvChannelCapabilitiesDataType = '';
   protected $oemCapabilitiesType = AssistantApiOemCapabilities::class;
@@ -56,6 +54,8 @@ class AssistantApiSoftwareCapabilities extends \Google\Collection
   public $operatingSystem;
   protected $orderedLiveTvProvidersType = AssistantApiLiveTvProvider::class;
   protected $orderedLiveTvProvidersDataType = 'array';
+  protected $robinCapabilitiesType = AssistantApiRobinCapabilities::class;
+  protected $robinCapabilitiesDataType = '';
   protected $selinaCapabilitiesType = AssistantApiSelinaCapabilites::class;
   protected $selinaCapabilitiesDataType = '';
   protected $settingsAppCapabilitiesType = AssistantApiSettingsAppCapabilities::class;
@@ -198,20 +198,6 @@ class AssistantApiSoftwareCapabilities extends \Google\Collection
     return $this->gcmCapabilities;
   }
   /**
-   * @param AssistantApiCapabilitiesHomeAppCapabilities
-   */
-  public function setHomeAppCapabilities(AssistantApiCapabilitiesHomeAppCapabilities $homeAppCapabilities)
-  {
-    $this->homeAppCapabilities = $homeAppCapabilities;
-  }
-  /**
-   * @return AssistantApiCapabilitiesHomeAppCapabilities
-   */
-  public function getHomeAppCapabilities()
-  {
-    return $this->homeAppCapabilities;
-  }
-  /**
    * @param AssistantApiLiveTvChannelCapabilities
    */
   public function setLiveTvChannelCapabilities(AssistantApiLiveTvChannelCapabilities $liveTvChannelCapabilities)
@@ -308,6 +294,20 @@ class AssistantApiSoftwareCapabilities extends \Google\Collection
   public function getOrderedLiveTvProviders()
   {
     return $this->orderedLiveTvProviders;
+  }
+  /**
+   * @param AssistantApiRobinCapabilities
+   */
+  public function setRobinCapabilities(AssistantApiRobinCapabilities $robinCapabilities)
+  {
+    $this->robinCapabilities = $robinCapabilities;
+  }
+  /**
+   * @return AssistantApiRobinCapabilities
+   */
+  public function getRobinCapabilities()
+  {
+    return $this->robinCapabilities;
   }
   /**
    * @param AssistantApiSelinaCapabilites

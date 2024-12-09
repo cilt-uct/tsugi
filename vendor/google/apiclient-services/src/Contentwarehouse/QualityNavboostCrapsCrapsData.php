@@ -20,8 +20,6 @@ namespace Google\Service\Contentwarehouse;
 class QualityNavboostCrapsCrapsData extends \Google\Collection
 {
   protected $collection_key = 'features';
-  protected $agingCountsType = QualityNavboostCrapsAgingData::class;
-  protected $agingCountsDataType = '';
   public $badClicks;
   public $clicks;
   /**
@@ -72,21 +70,11 @@ class QualityNavboostCrapsCrapsData extends \Google\Collection
    * @var string
    */
   public $url;
+  /**
+   * @var int
+   */
+  public $voterTokenCount;
 
-  /**
-   * @param QualityNavboostCrapsAgingData
-   */
-  public function setAgingCounts(QualityNavboostCrapsAgingData $agingCounts)
-  {
-    $this->agingCounts = $agingCounts;
-  }
-  /**
-   * @return QualityNavboostCrapsAgingData
-   */
-  public function getAgingCounts()
-  {
-    return $this->agingCounts;
-  }
   public function setBadClicks($badClicks)
   {
     $this->badClicks = $badClicks;
@@ -344,6 +332,20 @@ class QualityNavboostCrapsCrapsData extends \Google\Collection
   public function getUrl()
   {
     return $this->url;
+  }
+  /**
+   * @param int
+   */
+  public function setVoterTokenCount($voterTokenCount)
+  {
+    $this->voterTokenCount = $voterTokenCount;
+  }
+  /**
+   * @return int
+   */
+  public function getVoterTokenCount()
+  {
+    return $this->voterTokenCount;
   }
 }
 

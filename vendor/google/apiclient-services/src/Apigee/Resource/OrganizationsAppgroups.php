@@ -41,6 +41,7 @@ class OrganizationsAppgroups extends \Google\Service\Resource
    * @param GoogleCloudApigeeV1AppGroup $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudApigeeV1AppGroup
+   * @throws \Google\Service\Exception
    */
   public function create($parent, GoogleCloudApigeeV1AppGroup $postBody, $optParams = [])
   {
@@ -60,6 +61,7 @@ class OrganizationsAppgroups extends \Google\Service\Resource
    * structure in your request: `organizations/{org}/appgroups/{app_group_name}`
    * @param array $optParams Optional parameters.
    * @return GoogleCloudApigeeV1AppGroup
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -75,6 +77,7 @@ class OrganizationsAppgroups extends \Google\Service\Resource
    * structure in your request: `organizations/{org}/appgroups/{app_group_name}`
    * @param array $optParams Optional parameters.
    * @return GoogleCloudApigeeV1AppGroup
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -101,6 +104,7 @@ class OrganizationsAppgroups extends \Google\Service\Resource
    * @opt_param string pageToken The starting index record for listing the
    * AppGroups.
    * @return GoogleCloudApigeeV1ListAppGroupsResponse
+   * @throws \Google\Service\Exception
    */
   public function listOrganizationsAppgroups($parent, $optParams = [])
   {
@@ -109,26 +113,22 @@ class OrganizationsAppgroups extends \Google\Service\Resource
     return $this->call('list', [$params], GoogleCloudApigeeV1ListAppGroupsResponse::class);
   }
   /**
-   * Updates an appGroup. This API replaces the existing appGroup details with
+   * Updates an AppGroup. This API replaces the existing AppGroup details with
    * those specified in the request. Include or exclude any existing details that
    * you want to retain or delete, respectively. Note that the state of the
-   * AppGroup should be updated using `action`, and not via AppGroup. **Note**:
-   * OAuth access tokens and Key Management Service (KMS) entities (apps,
-   * developers, and API products) are cached for 180 seconds (current default).
-   * Any custom attributes associated with these entities are cached for at least
-   * 180 seconds after the entity is accessed at runtime. Therefore, an
-   * `ExpiresIn` element on the OAuthV2 policy won't be able to expire an access
-   * token in less than 180 seconds. (appgroups.update)
+   * AppGroup should be updated using `action`, and not via AppGroup.
+   * (appgroups.update)
    *
    * @param string $name Required. Name of the AppGroup. Use the following
    * structure in your request: `organizations/{org}/appgroups/{app_group_name}`
    * @param GoogleCloudApigeeV1AppGroup $postBody
    * @param array $optParams Optional parameters.
    *
-   * @opt_param string action Activate or de-activate the appGroup by setting the
+   * @opt_param string action Activate or de-activate the AppGroup by setting the
    * action as `active` or `inactive`. The `Content-Type` header must be set to
    * `application/octet-stream`, with empty body.
    * @return GoogleCloudApigeeV1AppGroup
+   * @throws \Google\Service\Exception
    */
   public function update($name, GoogleCloudApigeeV1AppGroup $postBody, $optParams = [])
   {

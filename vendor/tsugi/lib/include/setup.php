@@ -61,11 +61,21 @@ if ( !function_exists('_me') ) {
 
 // Check if we have been asked to do cookie or cookieless sessions
 if ( defined('COOKIE_SESSION') ) {
-    // Do nothing - let the session be in a cookie
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', $CFG->DEVELOPER ? '0' : '1');
+    // ini_set('session.use_strict_mode', '1');
 } else {
     ini_set('session.use_cookies', '0');
     ini_set('session.use_only_cookies',0);
     ini_set('session.use_trans_sid',1);
+}
+
+// Check for non-embeddable pages and declare appropriate CSP
+// Allow the Dynamic Registration URL to be embedded as it is required
+if ( preg_match('/(\/admin\/|\/login)/i', $_SERVER['REQUEST_URI'] ?? "") ) {
+    if ( ! preg_match('/(\/admin\/key\/auto.php)/i', $_SERVER['REQUEST_URI']) ) {
+        header("Content-Security-Policy: frame-ancestors 'self';");
+    }
 }
 
 if ( ! isset($CFG->staticroot) ) die_with_error_log('$CFG->staticroot not defined in config.php');

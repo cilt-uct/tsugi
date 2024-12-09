@@ -35,6 +35,9 @@ use Google\Client;
  */
 class Games extends \Google\Service
 {
+  /** View and manage your Google Play Developer account. */
+  const ANDROIDPUBLISHER =
+      "https://www.googleapis.com/auth/androidpublisher";
   /** See, create, and delete its own configuration data in your Google Drive. */
   const DRIVE_APPDATA =
       "https://www.googleapis.com/auth/drive.appdata";
@@ -49,10 +52,12 @@ class Games extends \Google\Service
   public $leaderboards;
   public $metagame;
   public $players;
+  public $recall;
   public $revisions;
   public $scores;
   public $snapshots;
   public $stats;
+  public $rootUrlTemplate;
 
   /**
    * Constructs the internal representation of the Games service.
@@ -65,6 +70,7 @@ class Games extends \Google\Service
   {
     parent::__construct($clientOrConfig);
     $this->rootUrl = $rootUrl ?: 'https://games.googleapis.com/';
+    $this->rootUrlTemplate = $rootUrl ?: 'https://games.UNIVERSE_DOMAIN/';
     $this->servicePath = '';
     $this->batchPath = 'batch';
     $this->version = 'v1';
@@ -441,6 +447,48 @@ class Games extends \Google\Service
                   'type' => 'string',
                 ],
               ],
+            ],
+          ]
+        ]
+    );
+    $this->recall = new Games\Resource\Recall(
+        $this,
+        $this->serviceName,
+        'recall',
+        [
+          'methods' => [
+            'lastTokenFromAllDeveloperGames' => [
+              'path' => 'games/v1/recall/developerGamesLastPlayerToken/{sessionId}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'sessionId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'linkPersona' => [
+              'path' => 'games/v1/recall:linkPersona',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],'resetPersona' => [
+              'path' => 'games/v1/recall:resetPersona',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],'retrieveTokens' => [
+              'path' => 'games/v1/recall/tokens/{sessionId}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'sessionId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'unlinkPersona' => [
+              'path' => 'games/v1/recall:unlinkPersona',
+              'httpMethod' => 'POST',
+              'parameters' => [],
             ],
           ]
         ]

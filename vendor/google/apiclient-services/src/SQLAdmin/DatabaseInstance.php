@@ -66,6 +66,8 @@ class DatabaseInstance extends \Google\Collection
    * @var string
    */
   public $gceZone;
+  protected $geminiConfigType = GeminiInstanceConfig::class;
+  protected $geminiConfigDataType = '';
   /**
    * @var string
    */
@@ -103,6 +105,10 @@ class DatabaseInstance extends \Google\Collection
   /**
    * @var string
    */
+  public $primaryDnsName;
+  /**
+   * @var string
+   */
   public $project;
   /**
    * @var string
@@ -118,6 +124,8 @@ class DatabaseInstance extends \Google\Collection
    * @var string[]
    */
   public $replicaNames;
+  protected $replicationClusterType = ReplicationCluster::class;
+  protected $replicationClusterDataType = '';
   /**
    * @var string
    */
@@ -147,11 +155,19 @@ class DatabaseInstance extends \Google\Collection
   /**
    * @var string
    */
+  public $sqlNetworkArchitecture;
+  /**
+   * @var string
+   */
   public $state;
   /**
    * @var string[]
    */
   public $suspensionReason;
+  /**
+   * @var string
+   */
+  public $writeEndpoint;
 
   /**
    * @param string[]
@@ -336,6 +352,20 @@ class DatabaseInstance extends \Google\Collection
     return $this->gceZone;
   }
   /**
+   * @param GeminiInstanceConfig
+   */
+  public function setGeminiConfig(GeminiInstanceConfig $geminiConfig)
+  {
+    $this->geminiConfig = $geminiConfig;
+  }
+  /**
+   * @return GeminiInstanceConfig
+   */
+  public function getGeminiConfig()
+  {
+    return $this->geminiConfig;
+  }
+  /**
    * @param string
    */
   public function setInstanceType($instanceType)
@@ -478,6 +508,20 @@ class DatabaseInstance extends \Google\Collection
   /**
    * @param string
    */
+  public function setPrimaryDnsName($primaryDnsName)
+  {
+    $this->primaryDnsName = $primaryDnsName;
+  }
+  /**
+   * @return string
+   */
+  public function getPrimaryDnsName()
+  {
+    return $this->primaryDnsName;
+  }
+  /**
+   * @param string
+   */
   public function setProject($project)
   {
     $this->project = $project;
@@ -544,6 +588,20 @@ class DatabaseInstance extends \Google\Collection
   public function getReplicaNames()
   {
     return $this->replicaNames;
+  }
+  /**
+   * @param ReplicationCluster
+   */
+  public function setReplicationCluster(ReplicationCluster $replicationCluster)
+  {
+    $this->replicationCluster = $replicationCluster;
+  }
+  /**
+   * @return ReplicationCluster
+   */
+  public function getReplicationCluster()
+  {
+    return $this->replicationCluster;
   }
   /**
    * @param string
@@ -660,6 +718,20 @@ class DatabaseInstance extends \Google\Collection
   /**
    * @param string
    */
+  public function setSqlNetworkArchitecture($sqlNetworkArchitecture)
+  {
+    $this->sqlNetworkArchitecture = $sqlNetworkArchitecture;
+  }
+  /**
+   * @return string
+   */
+  public function getSqlNetworkArchitecture()
+  {
+    return $this->sqlNetworkArchitecture;
+  }
+  /**
+   * @param string
+   */
   public function setState($state)
   {
     $this->state = $state;
@@ -684,6 +756,20 @@ class DatabaseInstance extends \Google\Collection
   public function getSuspensionReason()
   {
     return $this->suspensionReason;
+  }
+  /**
+   * @param string
+   */
+  public function setWriteEndpoint($writeEndpoint)
+  {
+    $this->writeEndpoint = $writeEndpoint;
+  }
+  /**
+   * @return string
+   */
+  public function getWriteEndpoint()
+  {
+    return $this->writeEndpoint;
   }
 }
 

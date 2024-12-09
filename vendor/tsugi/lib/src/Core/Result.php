@@ -389,6 +389,9 @@ class Result extends Entity {
                 if ( is_array($debug_log) )  $debug_log[] = $msg;
                 error_log($msg);
             }
+
+            // Send notification
+            $this->session_put('lti.gradeChangeNotify', true);
         } else {
             $msg = 'Grade failure '.$grade.' id='.$USER->id.' via '.$GradeSendTransport;
             if ( is_array($debug_log) )  $debug_log[] = $msg;
@@ -418,7 +421,7 @@ class Result extends Entity {
         }
         if ( $dueDate && $dueDate->penalty > 0 ) {
             $gradetosend = $gradetosend * (1.0 - $dueDate->penalty);
-            $scorestr = "Effective Score = ".($gradetosend*100.0)."% after ".$dueDate->penalty*100.0." percent late penalty";
+            $scorestr = "Effective Score = ".($gradetosend*100.0)."% after ".($dueDate->penalty*100.0)." percent late penalty";
         }
         if ( $oldgrade && $oldgrade > $gradetosend ) {
             $scorestr = "New score of ".($gradetosend*100.0)."% is < than previous grade of ".($oldgrade*100.0)."%, previous grade kept";
@@ -441,6 +444,35 @@ class Result extends Entity {
             error_log("Grade sending error:".$svd);
             $this->session_put('error', "Grade sending error: ".substr($svd,0,100));
         }
+    }
+
+    /**
+     * Notify the LMS that this result is ready for grading
+     *
+     * For LTI13, we set the values and send a null grade.  For LTI11, we send a grade
+     * of 0.0 with a comment as long as a grade has not already been sent.
+     *
+     * @param $debug_log An (optional) array (by reference) that returns the
+     * steps that were taken.
+     */
+    public function notifyReadyToGrade(&$debug_log=false) {
+
+        $extra13 = array(
+            LTI13::ACTIVITY_PROGRESS => LTI13::ACTIVITY_PROGRESS_SUBMITTED,
+            LTI13::GRADING_PROGRESS => LTI13::GRADING_PROGRESS_PENDINGMANUAL,
+        );
+        $row = false;
+
+        if ( $this->launch->isLTI13() ) {
+            $grade = is_numeric($this->grade) ? $this->grade : null;
+            $this->gradeSend($grade, $row, $debug_log, $extra13);
+        } else {
+            // For LTI 1.1 if there is already a grade, we re-send it or send 0.0
+            $grade = is_numeric($this->grade) ? $this->grade : 0.0;
+            $this->gradeSend($grade, $row, $debug_log, $extra13);
+        }
+
+
     }
 
     /**
@@ -626,5 +658,42 @@ class Result extends Entity {
             http_response_code(403);
             die();
         }
+    }
+
+    /**
+     * Retrieve the number of attempts and latest attempt
+     *
+     * @return object with attempted_at and attempts
+     */
+    public function getAttempts() {
+        global $CFG;
+        $PDOX = $this->launch->pdox;
+
+        $retval = new \stdClass();
+        $retval->attempts = 0;
+        $retval->attempted_at = 0;
+
+        if ( ($this->id ?? null) == null ) return $retval;
+        $p = $CFG->dbprefix;
+        $sql = "SELECT COALESCE(attempts, 0) AS attempts, COALESCE(attempted_at, 0) AS attempted_at FROM {$p}lti_result WHERE result_id = :RID";
+        $stmt = $PDOX->queryReturnError($sql, array( ":RID" => $this->id));
+        if ( $stmt->success ) {
+            $row = $stmt->fetch(\PDO::FETCH_OBJ);
+            if ( is_object($row) ) return $row;
+        }
+        return $retval;
+    }
+
+    /**
+     * Record an attempt on this result - different than submitting a grade
+     */
+    public function recordAttempt() {
+        global $CFG;
+        $PDOX = $this->launch->pdox;
+
+        if ( ($this->id ?? null) == null ) return;
+        $p = $CFG->dbprefix;
+        $sql = "UPDATE {$p}lti_result SET attempts = COALESCE(attempts, 0) + 1, attempted_at = NOW() WHERE result_id = :RID";
+        $stmt = $PDOX->queryReturnError($sql, array( ":RID" => $this->id));
     }
 }

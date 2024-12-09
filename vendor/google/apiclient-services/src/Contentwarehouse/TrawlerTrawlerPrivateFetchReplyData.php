@@ -167,6 +167,14 @@ class TrawlerTrawlerPrivateFetchReplyData extends \Google\Model
    */
   public $downloadFileName;
   /**
+   * @var int
+   */
+  public $googleExtendedObeyWildcardRobotsStatus;
+  /**
+   * @var int
+   */
+  public $googleExtendedRobotsStatus;
+  /**
    * @var string
    */
   public $httpVersion;
@@ -202,6 +210,10 @@ class TrawlerTrawlerPrivateFetchReplyData extends \Google\Model
   public $numDroppedReplies;
   protected $originalClientParamsType = TrawlerOriginalClientParams::class;
   protected $originalClientParamsDataType = '';
+  /**
+   * @var string
+   */
+  public $prodRegion;
   /**
    * @var string
    */
@@ -652,6 +664,34 @@ class TrawlerTrawlerPrivateFetchReplyData extends \Google\Model
     return $this->downloadFileName;
   }
   /**
+   * @param int
+   */
+  public function setGoogleExtendedObeyWildcardRobotsStatus($googleExtendedObeyWildcardRobotsStatus)
+  {
+    $this->googleExtendedObeyWildcardRobotsStatus = $googleExtendedObeyWildcardRobotsStatus;
+  }
+  /**
+   * @return int
+   */
+  public function getGoogleExtendedObeyWildcardRobotsStatus()
+  {
+    return $this->googleExtendedObeyWildcardRobotsStatus;
+  }
+  /**
+   * @param int
+   */
+  public function setGoogleExtendedRobotsStatus($googleExtendedRobotsStatus)
+  {
+    $this->googleExtendedRobotsStatus = $googleExtendedRobotsStatus;
+  }
+  /**
+   * @return int
+   */
+  public function getGoogleExtendedRobotsStatus()
+  {
+    return $this->googleExtendedRobotsStatus;
+  }
+  /**
    * @param string
    */
   public function setHttpVersion($httpVersion)
@@ -790,6 +830,20 @@ class TrawlerTrawlerPrivateFetchReplyData extends \Google\Model
   public function getOriginalClientParams()
   {
     return $this->originalClientParams;
+  }
+  /**
+   * @param string
+   */
+  public function setProdRegion($prodRegion)
+  {
+    $this->prodRegion = $prodRegion;
+  }
+  /**
+   * @return string
+   */
+  public function getProdRegion()
+  {
+    return $this->prodRegion;
   }
   /**
    * @param string

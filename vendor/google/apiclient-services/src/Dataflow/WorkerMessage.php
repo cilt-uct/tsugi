@@ -25,6 +25,10 @@ class WorkerMessage extends \Google\Model
    * @var string[]
    */
   public $labels;
+  protected $perWorkerMetricsType = PerWorkerMetrics::class;
+  protected $perWorkerMetricsDataType = '';
+  protected $streamingScalingReportType = StreamingScalingReport::class;
+  protected $streamingScalingReportDataType = '';
   /**
    * @var string
    */
@@ -69,6 +73,34 @@ class WorkerMessage extends \Google\Model
   public function getLabels()
   {
     return $this->labels;
+  }
+  /**
+   * @param PerWorkerMetrics
+   */
+  public function setPerWorkerMetrics(PerWorkerMetrics $perWorkerMetrics)
+  {
+    $this->perWorkerMetrics = $perWorkerMetrics;
+  }
+  /**
+   * @return PerWorkerMetrics
+   */
+  public function getPerWorkerMetrics()
+  {
+    return $this->perWorkerMetrics;
+  }
+  /**
+   * @param StreamingScalingReport
+   */
+  public function setStreamingScalingReport(StreamingScalingReport $streamingScalingReport)
+  {
+    $this->streamingScalingReport = $streamingScalingReport;
+  }
+  /**
+   * @return StreamingScalingReport
+   */
+  public function getStreamingScalingReport()
+  {
+    return $this->streamingScalingReport;
   }
   /**
    * @param string

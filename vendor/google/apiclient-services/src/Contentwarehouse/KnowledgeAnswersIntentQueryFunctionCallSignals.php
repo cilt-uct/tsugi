@@ -30,6 +30,8 @@ class KnowledgeAnswersIntentQueryFunctionCallSignals extends \Google\Collection
    * @var string
    */
   public $conceptEntityMid;
+  protected $conceptSignalsType = KnowledgeAnswersIntentQueryConceptSignals::class;
+  protected $conceptSignalsDataType = '';
   /**
    * @var string
    */
@@ -78,6 +80,10 @@ class KnowledgeAnswersIntentQueryFunctionCallSignals extends \Google\Collection
    * @var bool
    */
   public $isNeuralCategoricalInterpretation;
+  /**
+   * @var bool
+   */
+  public $isRefinedMeaning;
   /**
    * @var bool
    */
@@ -168,6 +174,20 @@ class KnowledgeAnswersIntentQueryFunctionCallSignals extends \Google\Collection
   public function getConceptEntityMid()
   {
     return $this->conceptEntityMid;
+  }
+  /**
+   * @param KnowledgeAnswersIntentQueryConceptSignals
+   */
+  public function setConceptSignals(KnowledgeAnswersIntentQueryConceptSignals $conceptSignals)
+  {
+    $this->conceptSignals = $conceptSignals;
+  }
+  /**
+   * @return KnowledgeAnswersIntentQueryConceptSignals
+   */
+  public function getConceptSignals()
+  {
+    return $this->conceptSignals;
   }
   /**
    * @param string
@@ -364,6 +384,20 @@ class KnowledgeAnswersIntentQueryFunctionCallSignals extends \Google\Collection
   public function getIsNeuralCategoricalInterpretation()
   {
     return $this->isNeuralCategoricalInterpretation;
+  }
+  /**
+   * @param bool
+   */
+  public function setIsRefinedMeaning($isRefinedMeaning)
+  {
+    $this->isRefinedMeaning = $isRefinedMeaning;
+  }
+  /**
+   * @return bool
+   */
+  public function getIsRefinedMeaning()
+  {
+    return $this->isRefinedMeaning;
   }
   /**
    * @param bool

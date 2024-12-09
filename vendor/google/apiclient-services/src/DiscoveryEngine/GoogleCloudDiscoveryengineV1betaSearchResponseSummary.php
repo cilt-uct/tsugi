@@ -20,6 +20,8 @@ namespace Google\Service\DiscoveryEngine;
 class GoogleCloudDiscoveryengineV1betaSearchResponseSummary extends \Google\Collection
 {
   protected $collection_key = 'summarySkippedReasons';
+  protected $safetyAttributesType = GoogleCloudDiscoveryengineV1betaSearchResponseSummarySafetyAttributes::class;
+  protected $safetyAttributesDataType = '';
   /**
    * @var string[]
    */
@@ -28,7 +30,23 @@ class GoogleCloudDiscoveryengineV1betaSearchResponseSummary extends \Google\Coll
    * @var string
    */
   public $summaryText;
+  protected $summaryWithMetadataType = GoogleCloudDiscoveryengineV1betaSearchResponseSummarySummaryWithMetadata::class;
+  protected $summaryWithMetadataDataType = '';
 
+  /**
+   * @param GoogleCloudDiscoveryengineV1betaSearchResponseSummarySafetyAttributes
+   */
+  public function setSafetyAttributes(GoogleCloudDiscoveryengineV1betaSearchResponseSummarySafetyAttributes $safetyAttributes)
+  {
+    $this->safetyAttributes = $safetyAttributes;
+  }
+  /**
+   * @return GoogleCloudDiscoveryengineV1betaSearchResponseSummarySafetyAttributes
+   */
+  public function getSafetyAttributes()
+  {
+    return $this->safetyAttributes;
+  }
   /**
    * @param string[]
    */
@@ -56,6 +74,20 @@ class GoogleCloudDiscoveryengineV1betaSearchResponseSummary extends \Google\Coll
   public function getSummaryText()
   {
     return $this->summaryText;
+  }
+  /**
+   * @param GoogleCloudDiscoveryengineV1betaSearchResponseSummarySummaryWithMetadata
+   */
+  public function setSummaryWithMetadata(GoogleCloudDiscoveryengineV1betaSearchResponseSummarySummaryWithMetadata $summaryWithMetadata)
+  {
+    $this->summaryWithMetadata = $summaryWithMetadata;
+  }
+  /**
+   * @return GoogleCloudDiscoveryengineV1betaSearchResponseSummarySummaryWithMetadata
+   */
+  public function getSummaryWithMetadata()
+  {
+    return $this->summaryWithMetadata;
   }
 }
 

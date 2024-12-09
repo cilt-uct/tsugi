@@ -150,6 +150,14 @@ class QualityPreviewRanklabTitle extends \Google\Model
   /**
    * @var float
    */
+  public $goldmineSiteNameMarkupFactor;
+  /**
+   * @var float
+   */
+  public $goldmineSiteQueryFactor;
+  /**
+   * @var float
+   */
   public $goldmineSitenameFactor;
   /**
    * @var float
@@ -207,6 +215,10 @@ class QualityPreviewRanklabTitle extends \Google\Model
    * @var float
    */
   public $queryRelevance;
+  /**
+   * @var bool
+   */
+  public $sourceGeneratedTitle;
   /**
    * @var bool
    */
@@ -707,6 +719,34 @@ class QualityPreviewRanklabTitle extends \Google\Model
   /**
    * @param float
    */
+  public function setGoldmineSiteNameMarkupFactor($goldmineSiteNameMarkupFactor)
+  {
+    $this->goldmineSiteNameMarkupFactor = $goldmineSiteNameMarkupFactor;
+  }
+  /**
+   * @return float
+   */
+  public function getGoldmineSiteNameMarkupFactor()
+  {
+    return $this->goldmineSiteNameMarkupFactor;
+  }
+  /**
+   * @param float
+   */
+  public function setGoldmineSiteQueryFactor($goldmineSiteQueryFactor)
+  {
+    $this->goldmineSiteQueryFactor = $goldmineSiteQueryFactor;
+  }
+  /**
+   * @return float
+   */
+  public function getGoldmineSiteQueryFactor()
+  {
+    return $this->goldmineSiteQueryFactor;
+  }
+  /**
+   * @param float
+   */
   public function setGoldmineSitenameFactor($goldmineSitenameFactor)
   {
     $this->goldmineSitenameFactor = $goldmineSitenameFactor;
@@ -913,6 +953,20 @@ class QualityPreviewRanklabTitle extends \Google\Model
   public function getQueryRelevance()
   {
     return $this->queryRelevance;
+  }
+  /**
+   * @param bool
+   */
+  public function setSourceGeneratedTitle($sourceGeneratedTitle)
+  {
+    $this->sourceGeneratedTitle = $sourceGeneratedTitle;
+  }
+  /**
+   * @return bool
+   */
+  public function getSourceGeneratedTitle()
+  {
+    return $this->sourceGeneratedTitle;
   }
   /**
    * @param bool

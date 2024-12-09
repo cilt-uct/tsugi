@@ -28,6 +28,10 @@ class CloudStorageConfig extends \Google\Model
   /**
    * @var string
    */
+  public $filenameDatetimeFormat;
+  /**
+   * @var string
+   */
   public $filenamePrefix;
   /**
    * @var string
@@ -41,6 +45,10 @@ class CloudStorageConfig extends \Google\Model
    * @var string
    */
   public $maxDuration;
+  /**
+   * @var string
+   */
+  public $serviceAccountEmail;
   /**
    * @var string
    */
@@ -75,6 +83,20 @@ class CloudStorageConfig extends \Google\Model
   public function getBucket()
   {
     return $this->bucket;
+  }
+  /**
+   * @param string
+   */
+  public function setFilenameDatetimeFormat($filenameDatetimeFormat)
+  {
+    $this->filenameDatetimeFormat = $filenameDatetimeFormat;
+  }
+  /**
+   * @return string
+   */
+  public function getFilenameDatetimeFormat()
+  {
+    return $this->filenameDatetimeFormat;
   }
   /**
    * @param string
@@ -131,6 +153,20 @@ class CloudStorageConfig extends \Google\Model
   public function getMaxDuration()
   {
     return $this->maxDuration;
+  }
+  /**
+   * @param string
+   */
+  public function setServiceAccountEmail($serviceAccountEmail)
+  {
+    $this->serviceAccountEmail = $serviceAccountEmail;
+  }
+  /**
+   * @return string
+   */
+  public function getServiceAccountEmail()
+  {
+    return $this->serviceAccountEmail;
   }
   /**
    * @param string

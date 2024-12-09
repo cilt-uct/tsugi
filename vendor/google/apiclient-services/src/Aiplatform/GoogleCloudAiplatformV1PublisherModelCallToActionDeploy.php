@@ -38,6 +38,10 @@ class GoogleCloudAiplatformV1PublisherModelCallToActionDeploy extends \Google\Mo
   /**
    * @var string
    */
+  public $publicArtifactUri;
+  /**
+   * @var string
+   */
   public $sharedResources;
   /**
    * @var string
@@ -127,6 +131,20 @@ class GoogleCloudAiplatformV1PublisherModelCallToActionDeploy extends \Google\Mo
   public function getModelDisplayName()
   {
     return $this->modelDisplayName;
+  }
+  /**
+   * @param string
+   */
+  public function setPublicArtifactUri($publicArtifactUri)
+  {
+    $this->publicArtifactUri = $publicArtifactUri;
+  }
+  /**
+   * @return string
+   */
+  public function getPublicArtifactUri()
+  {
+    return $this->publicArtifactUri;
   }
   /**
    * @param string

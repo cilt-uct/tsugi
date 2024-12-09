@@ -64,6 +64,10 @@ class AssistantApiSupportedFeatures extends \Google\Model
   /**
    * @var bool
    */
+  public $conversationalCareSupported;
+  /**
+   * @var bool
+   */
   public $crossDeviceBroadcastSupported;
   /**
    * @var string
@@ -157,6 +161,8 @@ class AssistantApiSupportedFeatures extends \Google\Model
    * @var bool
    */
   public $meetSupported;
+  protected $messageSummarySupportType = AssistantApiMessageSummarySupport::class;
+  protected $messageSummarySupportDataType = '';
   /**
    * @var bool
    */
@@ -245,10 +251,6 @@ class AssistantApiSupportedFeatures extends \Google\Model
    * @var bool
    */
   public $webBrowserSupported;
-  /**
-   * @var bool
-   */
-  public $whatsNextSupported;
   /**
    * @var bool
    */
@@ -421,6 +423,20 @@ class AssistantApiSupportedFeatures extends \Google\Model
   public function getConfirmationBeforeReadingMultipleMessagesSupported()
   {
     return $this->confirmationBeforeReadingMultipleMessagesSupported;
+  }
+  /**
+   * @param bool
+   */
+  public function setConversationalCareSupported($conversationalCareSupported)
+  {
+    $this->conversationalCareSupported = $conversationalCareSupported;
+  }
+  /**
+   * @return bool
+   */
+  public function getConversationalCareSupported()
+  {
+    return $this->conversationalCareSupported;
   }
   /**
    * @param bool
@@ -787,6 +803,20 @@ class AssistantApiSupportedFeatures extends \Google\Model
     return $this->meetSupported;
   }
   /**
+   * @param AssistantApiMessageSummarySupport
+   */
+  public function setMessageSummarySupport(AssistantApiMessageSummarySupport $messageSummarySupport)
+  {
+    $this->messageSummarySupport = $messageSummarySupport;
+  }
+  /**
+   * @return AssistantApiMessageSummarySupport
+   */
+  public function getMessageSummarySupport()
+  {
+    return $this->messageSummarySupport;
+  }
+  /**
    * @param bool
    */
   public function setNoInputResponseSupported($noInputResponseSupported)
@@ -1121,20 +1151,6 @@ class AssistantApiSupportedFeatures extends \Google\Model
   public function getWebBrowserSupported()
   {
     return $this->webBrowserSupported;
-  }
-  /**
-   * @param bool
-   */
-  public function setWhatsNextSupported($whatsNextSupported)
-  {
-    $this->whatsNextSupported = $whatsNextSupported;
-  }
-  /**
-   * @return bool
-   */
-  public function getWhatsNextSupported()
-  {
-    return $this->whatsNextSupported;
   }
   /**
    * @param bool

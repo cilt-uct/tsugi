@@ -62,7 +62,8 @@ class U {
 
     // Convienence method to wrap sha256
     public static function lti_sha256($val) {
-        return hash('sha256', $val);
+        if ( is_string($val) ) return hash('sha256', $val);
+        return null;
     }
 
     // Convienence method to get the local path if we are doing
@@ -412,11 +413,13 @@ class U {
     // http://stackoverflow.com/questions/834303/startswith-and-endswith-public static functions-in-php
     public static function startsWith($haystack, $needle) {
         // search backwards starting from haystack length characters from the end
+        if ( !is_string($haystack) || !is_string($needle) ) return false;
         return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== FALSE;
     }
 
     public static function endsWith($haystack, $needle) {
         // search forward starting from end minus needle length characters
+        if ( !is_string($haystack) || !is_string($needle) ) return false;
         return $needle === "" || (($temp = strlen($haystack) - strlen($needle)) >= 0 && strpos($haystack, $needle, $temp) !== FALSE);
     }
 

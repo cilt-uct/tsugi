@@ -144,6 +144,49 @@ class ConfigInfo {
     public $slow_query;
 
     /**
+     * Support memcache for session caching
+     *
+     * Memcache is php-only and so is likely to require less overall dependencies.
+     *
+     * http://php.net/manual/en/memcache.sessions.php
+     *
+     * Installed on Ubuntu using
+     *
+     * apt-get install -y php${TSUGI_PHP_VERSION}-memcache
+     *
+     * You should only select one of memcache and memcached
+     *
+     * $CFG->memcache = 'tcp://memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
+     *
+     * In addition to setting this variable, your config.php must include the code
+     * to configure the PHP session save handler as shown in config-dist.php
+     *
+     */
+    public $memcache;
+
+    /**
+     * Support memcached for session caching
+     *
+     * Memcached is a combination of PHP and C and so may require extra dependencies.
+     *
+     * http://php.net/manual/en/memcached.sessions.php
+     *
+     * Installed on Ubuntu using
+     *
+     * apt-get install -y php${TSUGI_PHP_VERSION}-memcached
+     *
+     * You should only select one of memcache and memcached
+     *
+     * $CFG->memcached = 'memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
+     *
+     * Note no "tcp://" for the memcached version of the url
+     *
+     * In addition to setting this variable, your config.php must include the code
+     * to configure the PHP session save handler as shown in config-dist.php
+     */
+    public $memcached;
+
+    /**
      * Adding in support for using Redis for session caching.
      *
      * $CFG->redis = 'tcp://localhost:6379?auth=addYourRedisPasswordHere';
@@ -413,6 +456,28 @@ class ConfigInfo {
     public $git_command = false;
 
     /**
+     * If defined, this is displayed as the privacy URL when Tsugi
+     * is used as an "App Store".  If you want to use Google login,
+     * you need these URLs available on the OAuth application.
+     *
+     * You can see sample wording at:
+     *
+     * https://www.py4e.com/service.php
+     */
+    public $privacy_url = false;
+
+    /**
+     * If defined, this is displayed as the SLA URL when Tsugi
+     * is used as an "App Store".  If you want to use Google login,
+     * you need these URLs available on the OAuth application.
+     *
+     * You can see sample wording at:
+     *
+     * https://www.py4e.com/service.php
+     */
+    public $sla_url = false;
+
+    /**
      *
      * Tools to hide in the store for non-admin users.  Each tool sets their status
      * in their register.php with a line like:
@@ -664,6 +729,23 @@ class ConfigInfo {
     public $websocket_secret = false;
     public $websocket_url = false;
     public $websocket_proxyport = false;
+
+    /**
+     * If the web server is NOT behind a reverse proxy, you may optionally wish
+     * to ignore forwarded IP headers such as x-forwarded-for and variations by
+     * setting this to false. This will help to preserve authenticity of IPs by
+     * only trusting IP addresses directly seen by the server.
+     *
+     * Never set this to false if you ARE behind a reverse proxy, otherwise all
+     * requests will appear to originate from the same IP address (the proxy).
+     *
+     * If behind a reverse proxy, set to `true`:
+     *     $CFG->trust_forwarded_ip = true; // (default)
+     *
+     * If not using a reverse proxy, set to `false`:
+     *     $CFG->trust_forwarded_ip = false;
+     */
+    public $trust_forwarded_ip = true;
 
     /*
      * This is the internal version of the datbase.   This is an internal

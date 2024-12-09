@@ -48,6 +48,10 @@ class GoogleCloudAiplatformV1PublisherModel extends \Google\Collection
    * @var string
    */
   public $versionId;
+  /**
+   * @var string
+   */
+  public $versionState;
 
   /**
    * @param string[]
@@ -160,6 +164,20 @@ class GoogleCloudAiplatformV1PublisherModel extends \Google\Collection
   public function getVersionId()
   {
     return $this->versionId;
+  }
+  /**
+   * @param string
+   */
+  public function setVersionState($versionState)
+  {
+    $this->versionState = $versionState;
+  }
+  /**
+   * @return string
+   */
+  public function getVersionState()
+  {
+    return $this->versionState;
   }
 }
 

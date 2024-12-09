@@ -32,6 +32,10 @@ class GoogleCloudAiplatformV1DeployedModel extends \Google\Model
    */
   public $disableContainerLogging;
   /**
+   * @var bool
+   */
+  public $disableExplanations;
+  /**
    * @var string
    */
   public $displayName;
@@ -59,6 +63,10 @@ class GoogleCloudAiplatformV1DeployedModel extends \Google\Model
    * @var string
    */
   public $serviceAccount;
+  /**
+   * @var string
+   */
+  public $sharedResources;
 
   /**
    * @param GoogleCloudAiplatformV1AutomaticResources
@@ -115,6 +123,20 @@ class GoogleCloudAiplatformV1DeployedModel extends \Google\Model
   public function getDisableContainerLogging()
   {
     return $this->disableContainerLogging;
+  }
+  /**
+   * @param bool
+   */
+  public function setDisableExplanations($disableExplanations)
+  {
+    $this->disableExplanations = $disableExplanations;
+  }
+  /**
+   * @return bool
+   */
+  public function getDisableExplanations()
+  {
+    return $this->disableExplanations;
   }
   /**
    * @param string
@@ -227,6 +249,20 @@ class GoogleCloudAiplatformV1DeployedModel extends \Google\Model
   public function getServiceAccount()
   {
     return $this->serviceAccount;
+  }
+  /**
+   * @param string
+   */
+  public function setSharedResources($sharedResources)
+  {
+    $this->sharedResources = $sharedResources;
+  }
+  /**
+   * @return string
+   */
+  public function getSharedResources()
+  {
+    return $this->sharedResources;
   }
 }
 

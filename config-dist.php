@@ -68,6 +68,20 @@ unset($apphome);
 // you will forward to in your apache config
 // $CFG->websocket_proxyport = 8080;
 
+// If the web server is NOT behind a reverse proxy, you may optionally wish
+// to ignore forwarded IP headers such as x-forwarded-for and variations by
+// setting this to false. This will help to preserve authenticity of IPs by
+// only trusting IP addresses directly seen by the server.
+//
+// Never set this to false if you ARE behind a reverse proxy, otherwise all
+// requests will appear to originate from the same IP address (the proxy).
+//
+// If behind a reverse proxy, set to `true`:
+//     $CFG->trust_forwarded_ip = true; // (default)
+//
+// If not using a reverse proxy, set to `false`:
+//     $CFG->trust_forwarded_ip = false;
+
 // Database connection information to configure the PDO connection
 // You need to point this at a database with am account and password
 // that can create tables.   To make the initial tables go into Admin
@@ -379,7 +393,7 @@ $CFG->prefer_lti1_for_grade_send = true;
 // then git is not setup in your path
 // (Control Panel > System and Security > System > Advanced System Settings > Environment Variables)
 // (3) Then here in "config.php":
-// $CFG->git_command = 'git'
+// $CFG->git_command = 'git';
 
 // In order to run git from the a PHP script, we may need a setuid version
 // of git - example commands if you are not root:
@@ -437,8 +451,7 @@ if ( is_string($extra_settings) && file_exists($extra_settings) ) {
 }
 
 // Store sessions in memcache - this seems like the fastest, best, and simplest
-// way when running on AWS.
-// http://php.net/manual/en/memcached.sessions.php
+// way when running on AWS.  There are two approaches - choose one.
 
 // $CFG->memcache = 'tcp://memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
 if ( isset($CFG->memcache) && U::strlen($CFG->memcache) > 0 ) {
@@ -448,13 +461,11 @@ if ( isset($CFG->memcache) && U::strlen($CFG->memcache) > 0 ) {
 
 // Note no "tcp://" for the memcached version of the url
 // $CFG->memcached = 'memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
-if ( isset($CFG->memcached) && U::strlen($CFG->memcached) > 0 ) {
+if ( isset($CFG->memcached) && strlen($CFG->memcached) > 0 ) {
     ini_set('session.save_handler', 'memcached');
     ini_set('session.save_path', $CFG->memcached);
     // https://github.com/php-memcached-dev/php-memcached/issues/269
     ini_set('memcached.sess_locking', '0');
-    ini_set('memcached.serializer', 'php');
-    ini_set('session.serialize_handler', 'php_serialize');
 }
 
 // Redis sessions configuration

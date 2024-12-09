@@ -40,12 +40,22 @@ class MapsPlaces extends \Google\Service
   /** Private Service: https://www.googleapis.com/auth/maps-platform.places. */
   const MAPS_PLATFORM_PLACES =
       "https://www.googleapis.com/auth/maps-platform.places";
+  /** Private Service: https://www.googleapis.com/auth/maps-platform.places.autocomplete. */
+  const MAPS_PLATFORM_PLACES_AUTOCOMPLETE =
+      "https://www.googleapis.com/auth/maps-platform.places.autocomplete";
+  /** Private Service: https://www.googleapis.com/auth/maps-platform.places.details. */
+  const MAPS_PLATFORM_PLACES_DETAILS =
+      "https://www.googleapis.com/auth/maps-platform.places.details";
+  /** Private Service: https://www.googleapis.com/auth/maps-platform.places.nearbysearch. */
+  const MAPS_PLATFORM_PLACES_NEARBYSEARCH =
+      "https://www.googleapis.com/auth/maps-platform.places.nearbysearch";
   /** Private Service: https://www.googleapis.com/auth/maps-platform.places.textsearch. */
   const MAPS_PLATFORM_PLACES_TEXTSEARCH =
       "https://www.googleapis.com/auth/maps-platform.places.textsearch";
 
-  public $Text;
   public $places;
+  public $places_photos;
+  public $rootUrlTemplate;
 
   /**
    * Constructs the internal representation of the MapsPlaces service.
@@ -58,35 +68,84 @@ class MapsPlaces extends \Google\Service
   {
     parent::__construct($clientOrConfig);
     $this->rootUrl = $rootUrl ?: 'https://places.googleapis.com/';
+    $this->rootUrlTemplate = $rootUrl ?: 'https://places.UNIVERSE_DOMAIN/';
     $this->servicePath = '';
     $this->batchPath = 'batch';
     $this->version = 'v1';
     $this->serviceName = 'places';
 
-    $this->Text = new MapsPlaces\Resource\Text(
-        $this,
-        $this->serviceName,
-        'Text',
-        [
-          'methods' => [
-            'search' => [
-              'path' => 'v1/Text:search',
-              'httpMethod' => 'POST',
-              'parameters' => [],
-            ],
-          ]
-        ]
-    );
     $this->places = new MapsPlaces\Resource\Places(
         $this,
         $this->serviceName,
         'places',
         [
           'methods' => [
-            'searchText' => [
+            'autocomplete' => [
+              'path' => 'v1/places:autocomplete',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],'get' => [
+              'path' => 'v1/{+name}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'languageCode' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'regionCode' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'sessionToken' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'searchNearby' => [
+              'path' => 'v1/places:searchNearby',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],'searchText' => [
               'path' => 'v1/places:searchText',
               'httpMethod' => 'POST',
               'parameters' => [],
+            ],
+          ]
+        ]
+    );
+    $this->places_photos = new MapsPlaces\Resource\PlacesPhotos(
+        $this,
+        $this->serviceName,
+        'photos',
+        [
+          'methods' => [
+            'getMedia' => [
+              'path' => 'v1/{+name}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'maxHeightPx' => [
+                  'location' => 'query',
+                  'type' => 'integer',
+                ],
+                'maxWidthPx' => [
+                  'location' => 'query',
+                  'type' => 'integer',
+                ],
+                'skipHttpRedirect' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
+                ],
+              ],
             ],
           ]
         ]

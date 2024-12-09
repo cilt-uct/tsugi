@@ -32,13 +32,14 @@ use Google\Service\Dataproc\SessionTemplate;
 class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
 {
   /**
-   * Create an session template, synchronously. (sessionTemplates.create)
+   * Create a session template synchronously. (sessionTemplates.create)
    *
    * @param string $parent Required. The parent resource where this session
    * template will be created.
    * @param SessionTemplate $postBody
    * @param array $optParams Optional parameters.
    * @return SessionTemplate
+   * @throws \Google\Service\Exception
    */
   public function create($parent, SessionTemplate $postBody, $optParams = [])
   {
@@ -53,6 +54,7 @@ class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
    * delete.
    * @param array $optParams Optional parameters.
    * @return DataprocEmpty
+   * @throws \Google\Service\Exception
    */
   public function delete($name, $optParams = [])
   {
@@ -67,6 +69,7 @@ class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
    * @param string $name Required. The name of the session template to retrieve.
    * @param array $optParams Optional parameters.
    * @return SessionTemplate
+   * @throws \Google\Service\Exception
    */
   public function get($name, $optParams = [])
   {
@@ -78,7 +81,7 @@ class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
    * Lists session templates.
    * (sessionTemplates.listProjectsLocationsSessionTemplates)
    *
-   * @param string $parent Required. The parent, which owns this collection of
+   * @param string $parent Required. The parent that owns this collection of
    * session templates.
    * @param array $optParams Optional parameters.
    *
@@ -90,6 +93,7 @@ class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
    * @opt_param string pageToken Optional. A page token received from a previous
    * ListSessions call. Provide this token to retrieve the subsequent page.
    * @return ListSessionTemplatesResponse
+   * @throws \Google\Service\Exception
    */
   public function listProjectsLocationsSessionTemplates($parent, $optParams = [])
   {
@@ -98,13 +102,13 @@ class ProjectsLocationsSessionTemplates extends \Google\Service\Resource
     return $this->call('list', [$params], ListSessionTemplatesResponse::class);
   }
   /**
-   * Updates the session template, synchronously.Disable check for update_mask,
-   * because all updates will be full replacements. (sessionTemplates.patch)
+   * Updates the session template synchronously. (sessionTemplates.patch)
    *
    * @param string $name Required. The resource name of the session template.
    * @param SessionTemplate $postBody
    * @param array $optParams Optional parameters.
    * @return SessionTemplate
+   * @throws \Google\Service\Exception
    */
   public function patch($name, SessionTemplate $postBody, $optParams = [])
   {

@@ -130,6 +130,8 @@ class ImageData extends \Google\Collection
   public $flags;
   protected $flowOutputType = ImageContentFlowProtoProd::class;
   protected $flowOutputDataType = '';
+  protected $generatedImageLikelihoodSignalType = ImageRepositoryGeneratedImageLikelihoodSignal::class;
+  protected $generatedImageLikelihoodSignalDataType = '';
   /**
    * @var float
    */
@@ -150,12 +152,16 @@ class ImageData extends \Google\Collection
   protected $imageExactBoostDataType = '';
   protected $imageLicenseInfoType = ImageSearchImageLicenseInfo::class;
   protected $imageLicenseInfoDataType = '';
+  protected $imageQualityClickSignalsType = ImageQualityNavboostImageQualityClickSignals::class;
+  protected $imageQualityClickSignalsDataType = '';
   protected $imageRegionsType = ImageRegionsImageRegions::class;
   protected $imageRegionsDataType = '';
   /**
    * @var int
    */
   public $imagerank;
+  protected $indexedVerticalsType = ImageDataVerticalIndexingInfoImage::class;
+  protected $indexedVerticalsDataType = 'array';
   /**
    * @var bool
    */
@@ -200,6 +206,10 @@ class ImageData extends \Google\Collection
    * @var int
    */
   public $lineartDetectorVersion;
+  /**
+   * @var string
+   */
+  public $linkinfoType;
   protected $multibangKgEntitiesType = ImageDataMultibangEntities::class;
   protected $multibangKgEntitiesDataType = '';
   /**
@@ -240,6 +250,8 @@ class ImageData extends \Google\Collection
    * @var string
    */
   public $onPageAlternateUrl;
+  protected $orbitIntentsType = QualityOrbitOrbitImageIntents::class;
+  protected $orbitIntentsDataType = '';
   protected $packedFullFaceInfoType = FaceIndexing::class;
   protected $packedFullFaceInfoDataType = '';
   protected $personAttributesType = LensDiscoveryStylePersonAttributes::class;
@@ -286,6 +298,10 @@ class ImageData extends \Google\Collection
   protected $styleAestheticsScoreDataType = '';
   protected $styleImageTypeType = LensDiscoveryStyleStyleImageTypeSignals::class;
   protected $styleImageTypeDataType = '';
+  /**
+   * @var string
+   */
+  public $superlabelsV2ClusterId;
   /**
    * @var int
    */
@@ -788,6 +804,20 @@ class ImageData extends \Google\Collection
     return $this->flowOutput;
   }
   /**
+   * @param ImageRepositoryGeneratedImageLikelihoodSignal
+   */
+  public function setGeneratedImageLikelihoodSignal(ImageRepositoryGeneratedImageLikelihoodSignal $generatedImageLikelihoodSignal)
+  {
+    $this->generatedImageLikelihoodSignal = $generatedImageLikelihoodSignal;
+  }
+  /**
+   * @return ImageRepositoryGeneratedImageLikelihoodSignal
+   */
+  public function getGeneratedImageLikelihoodSignal()
+  {
+    return $this->generatedImageLikelihoodSignal;
+  }
+  /**
    * @param float
    */
   public function setH2c($h2c)
@@ -886,6 +916,20 @@ class ImageData extends \Google\Collection
     return $this->imageLicenseInfo;
   }
   /**
+   * @param ImageQualityNavboostImageQualityClickSignals
+   */
+  public function setImageQualityClickSignals(ImageQualityNavboostImageQualityClickSignals $imageQualityClickSignals)
+  {
+    $this->imageQualityClickSignals = $imageQualityClickSignals;
+  }
+  /**
+   * @return ImageQualityNavboostImageQualityClickSignals
+   */
+  public function getImageQualityClickSignals()
+  {
+    return $this->imageQualityClickSignals;
+  }
+  /**
    * @param ImageRegionsImageRegions
    */
   public function setImageRegions(ImageRegionsImageRegions $imageRegions)
@@ -912,6 +956,20 @@ class ImageData extends \Google\Collection
   public function getImagerank()
   {
     return $this->imagerank;
+  }
+  /**
+   * @param ImageDataVerticalIndexingInfoImage[]
+   */
+  public function setIndexedVerticals($indexedVerticals)
+  {
+    $this->indexedVerticals = $indexedVerticals;
+  }
+  /**
+   * @return ImageDataVerticalIndexingInfoImage[]
+   */
+  public function getIndexedVerticals()
+  {
+    return $this->indexedVerticals;
   }
   /**
    * @param bool
@@ -1066,6 +1124,20 @@ class ImageData extends \Google\Collection
   public function getLineartDetectorVersion()
   {
     return $this->lineartDetectorVersion;
+  }
+  /**
+   * @param string
+   */
+  public function setLinkinfoType($linkinfoType)
+  {
+    $this->linkinfoType = $linkinfoType;
+  }
+  /**
+   * @return string
+   */
+  public function getLinkinfoType()
+  {
+    return $this->linkinfoType;
   }
   /**
    * @param ImageDataMultibangEntities
@@ -1248,6 +1320,20 @@ class ImageData extends \Google\Collection
   public function getOnPageAlternateUrl()
   {
     return $this->onPageAlternateUrl;
+  }
+  /**
+   * @param QualityOrbitOrbitImageIntents
+   */
+  public function setOrbitIntents(QualityOrbitOrbitImageIntents $orbitIntents)
+  {
+    $this->orbitIntents = $orbitIntents;
+  }
+  /**
+   * @return QualityOrbitOrbitImageIntents
+   */
+  public function getOrbitIntents()
+  {
+    return $this->orbitIntents;
   }
   /**
    * @param FaceIndexing
@@ -1472,6 +1558,20 @@ class ImageData extends \Google\Collection
   public function getStyleImageType()
   {
     return $this->styleImageType;
+  }
+  /**
+   * @param string
+   */
+  public function setSuperlabelsV2ClusterId($superlabelsV2ClusterId)
+  {
+    $this->superlabelsV2ClusterId = $superlabelsV2ClusterId;
+  }
+  /**
+   * @return string
+   */
+  public function getSuperlabelsV2ClusterId()
+  {
+    return $this->superlabelsV2ClusterId;
   }
   /**
    * @param int

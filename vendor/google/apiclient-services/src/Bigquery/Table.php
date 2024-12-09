@@ -17,8 +17,9 @@
 
 namespace Google\Service\Bigquery;
 
-class Table extends \Google\Model
+class Table extends \Google\Collection
 {
+  protected $collection_key = 'replicas';
   protected $biglakeConfigurationType = BigLakeConfiguration::class;
   protected $biglakeConfigurationDataType = '';
   protected $cloneDefinitionType = CloneDefinition::class;
@@ -51,6 +52,8 @@ class Table extends \Google\Model
    * @var string
    */
   public $expirationTime;
+  protected $externalCatalogTableOptionsType = ExternalCatalogTableOptions::class;
+  protected $externalCatalogTableOptionsDataType = '';
   protected $externalDataConfigurationType = ExternalDataConfiguration::class;
   protected $externalDataConfigurationDataType = '';
   /**
@@ -79,6 +82,8 @@ class Table extends \Google\Model
   public $location;
   protected $materializedViewType = MaterializedViewDefinition::class;
   protected $materializedViewDataType = '';
+  protected $materializedViewStatusType = MaterializedViewStatus::class;
+  protected $materializedViewStatusDataType = '';
   /**
    * @var string
    */
@@ -133,12 +138,20 @@ class Table extends \Google\Model
    * @var string
    */
   public $numTotalPhysicalBytes;
+  protected $partitionDefinitionType = PartitioningDefinition::class;
+  protected $partitionDefinitionDataType = '';
   protected $rangePartitioningType = RangePartitioning::class;
   protected $rangePartitioningDataType = '';
+  protected $replicasType = TableReference::class;
+  protected $replicasDataType = 'array';
   /**
    * @var bool
    */
   public $requirePartitionFilter;
+  /**
+   * @var string[]
+   */
+  public $resourceTags;
   protected $schemaType = TableSchema::class;
   protected $schemaDataType = '';
   /**
@@ -153,6 +166,8 @@ class Table extends \Google\Model
   protected $tableConstraintsDataType = '';
   protected $tableReferenceType = TableReference::class;
   protected $tableReferenceDataType = '';
+  protected $tableReplicationInfoType = TableReplicationInfo::class;
+  protected $tableReplicationInfoDataType = '';
   protected $timePartitioningType = TimePartitioning::class;
   protected $timePartitioningDataType = '';
   /**
@@ -303,6 +318,20 @@ class Table extends \Google\Model
     return $this->expirationTime;
   }
   /**
+   * @param ExternalCatalogTableOptions
+   */
+  public function setExternalCatalogTableOptions(ExternalCatalogTableOptions $externalCatalogTableOptions)
+  {
+    $this->externalCatalogTableOptions = $externalCatalogTableOptions;
+  }
+  /**
+   * @return ExternalCatalogTableOptions
+   */
+  public function getExternalCatalogTableOptions()
+  {
+    return $this->externalCatalogTableOptions;
+  }
+  /**
    * @param ExternalDataConfiguration
    */
   public function setExternalDataConfiguration(ExternalDataConfiguration $externalDataConfiguration)
@@ -413,6 +442,20 @@ class Table extends \Google\Model
   public function getMaterializedView()
   {
     return $this->materializedView;
+  }
+  /**
+   * @param MaterializedViewStatus
+   */
+  public function setMaterializedViewStatus(MaterializedViewStatus $materializedViewStatus)
+  {
+    $this->materializedViewStatus = $materializedViewStatus;
+  }
+  /**
+   * @return MaterializedViewStatus
+   */
+  public function getMaterializedViewStatus()
+  {
+    return $this->materializedViewStatus;
   }
   /**
    * @param string
@@ -611,6 +654,20 @@ class Table extends \Google\Model
     return $this->numTotalPhysicalBytes;
   }
   /**
+   * @param PartitioningDefinition
+   */
+  public function setPartitionDefinition(PartitioningDefinition $partitionDefinition)
+  {
+    $this->partitionDefinition = $partitionDefinition;
+  }
+  /**
+   * @return PartitioningDefinition
+   */
+  public function getPartitionDefinition()
+  {
+    return $this->partitionDefinition;
+  }
+  /**
    * @param RangePartitioning
    */
   public function setRangePartitioning(RangePartitioning $rangePartitioning)
@@ -625,6 +682,20 @@ class Table extends \Google\Model
     return $this->rangePartitioning;
   }
   /**
+   * @param TableReference[]
+   */
+  public function setReplicas($replicas)
+  {
+    $this->replicas = $replicas;
+  }
+  /**
+   * @return TableReference[]
+   */
+  public function getReplicas()
+  {
+    return $this->replicas;
+  }
+  /**
    * @param bool
    */
   public function setRequirePartitionFilter($requirePartitionFilter)
@@ -637,6 +708,20 @@ class Table extends \Google\Model
   public function getRequirePartitionFilter()
   {
     return $this->requirePartitionFilter;
+  }
+  /**
+   * @param string[]
+   */
+  public function setResourceTags($resourceTags)
+  {
+    $this->resourceTags = $resourceTags;
+  }
+  /**
+   * @return string[]
+   */
+  public function getResourceTags()
+  {
+    return $this->resourceTags;
   }
   /**
    * @param TableSchema
@@ -721,6 +806,20 @@ class Table extends \Google\Model
   public function getTableReference()
   {
     return $this->tableReference;
+  }
+  /**
+   * @param TableReplicationInfo
+   */
+  public function setTableReplicationInfo(TableReplicationInfo $tableReplicationInfo)
+  {
+    $this->tableReplicationInfo = $tableReplicationInfo;
+  }
+  /**
+   * @return TableReplicationInfo
+   */
+  public function getTableReplicationInfo()
+  {
+    return $this->tableReplicationInfo;
   }
   /**
    * @param TimePartitioning

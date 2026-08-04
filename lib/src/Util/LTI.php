@@ -757,7 +757,7 @@ class LTI {
             LTIConstants::LTI_VERSION => LTIConstants::LTI_VERSION_1
         );
 
-        $body = http_build_query($parameters, null,"&", PHP_QUERY_RFC3986);
+        $body = http_build_query($parameters, "","&", PHP_QUERY_RFC3986);
         $hmac_method = new OAuthSignatureMethod_HMAC_SHA1();
         $hash = base64_encode(sha1($body, TRUE));
         if ( $signature == "HMAC-SHA256" ) {
@@ -782,7 +782,9 @@ class LTI {
     public static function parseContextMembershipsResponse($response) {
         $result = false;
         try{
-            $xml = new \SimpleXMLElement(utf8_encode($response));
+            //$xml = new \SimpleXMLElement(utf8_encode($response)); // deprecated utf8
+	        $xml = new \SimpleXMLElement($response);
+
             $success = $xml->xpath("/message_response/statusinfo");
 
             if($success[0]->codemajor != "Success") {

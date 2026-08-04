@@ -233,10 +233,10 @@ class LoggerDataCollector extends DataCollector implements LateDataCollectorInte
             $exception = $log['context']['exception'];
 
             if ($exception instanceof SilencedErrorContext) {
-                if (isset($silencedLogs[$h = spl_object_hash($exception)])) {
+                if (isset($silencedLogs[$id = spl_object_id($exception)])) {
                     continue;
                 }
-                $silencedLogs[$h] = true;
+                $silencedLogs[$id] = true;
 
                 if (!isset($sanitizedLogs[$message])) {
                     $sanitizedLogs[$message] = $log + [
@@ -305,17 +305,17 @@ class LoggerDataCollector extends DataCollector implements LateDataCollectorInte
                     'name' => $log['priorityName'],
                 ];
             }
-            if ('WARNING' === $log['priorityName']) {
+            if ('WARNING' === $log['priorityName'] || 'warning' === $log['priorityName']) {
                 ++$count['warning_count'];
             }
 
             if ($this->isSilencedOrDeprecationErrorLog($log)) {
                 $exception = $log['context']['exception'];
                 if ($exception instanceof SilencedErrorContext) {
-                    if (isset($silencedLogs[$h = spl_object_hash($exception)])) {
+                    if (isset($silencedLogs[$id = spl_object_id($exception)])) {
                         continue;
                     }
-                    $silencedLogs[$h] = true;
+                    $silencedLogs[$id] = true;
                     $count['scream_count'] += $exception->count;
                 } else {
                     ++$count['deprecation_count'];

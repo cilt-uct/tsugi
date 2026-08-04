@@ -24,6 +24,8 @@ use Google\Service\Dataform\DataformEmpty;
 use Google\Service\Dataform\FetchRemoteBranchesResponse;
 use Google\Service\Dataform\FetchRepositoryHistoryResponse;
 use Google\Service\Dataform\ListRepositoriesResponse;
+use Google\Service\Dataform\MoveRepositoryRequest;
+use Google\Service\Dataform\Operation;
 use Google\Service\Dataform\Policy;
 use Google\Service\Dataform\QueryRepositoryDirectoryContentsResponse;
 use Google\Service\Dataform\ReadRepositoryFileResponse;
@@ -99,9 +101,12 @@ class ProjectsLocationsRepositories extends \Google\Service\Resource
    * @param string $name Required. The repository's name.
    * @param array $optParams Optional parameters.
    *
-   * @opt_param bool force Optional. If set to true, any child resources of this
-   * repository will also be deleted. (Otherwise, the request will only succeed if
-   * the repository has no child resources.)
+   * @opt_param bool force Optional. If set to true, child resources of this
+   * repository (compilation results and workflow invocations) will also be
+   * deleted. Otherwise, the request will only succeed if the repository has no
+   * child resources. **Note:** *This flag doesn't support deletion of workspaces,
+   * release configs or workflow configs. If any of such resources exists in the
+   * repository, the request will fail.*.
    * @return DataformEmpty
    * @throws \Google\Service\Exception
    */
@@ -195,7 +200,9 @@ class ProjectsLocationsRepositories extends \Google\Service\Resource
     return $this->call('getIamPolicy', [$params], Policy::class);
   }
   /**
-   * Lists Repositories in a given project and location.
+   * Lists Repositories in a given project and location. **Note:** *This method
+   * can return repositories not shown in the [Dataform
+   * UI](https://console.cloud.google.com/bigquery/dataform)*.
    * (repositories.listProjectsLocationsRepositories)
    *
    * @param string $parent Required. The location in which to list repositories.
@@ -223,11 +230,26 @@ class ProjectsLocationsRepositories extends \Google\Service\Resource
     return $this->call('list', [$params], ListRepositoriesResponse::class);
   }
   /**
-   * Updates a single Repository. **Note:** *This method does not fully
-   * implement*, (see [AIP/134](https://google.aip.dev/134), in particular: - The
-   * wildcard entry (****) is treated as a bad request - When the **field_mask**
-   * is omitted, instead of only updating the set fields, the request is treated
-   * as a full update on all modifiable fields (repositories.patch)
+   * Moves a Repository to a new location. (repositories.move)
+   *
+   * @param string $name Required. The full resource name of the repository to
+   * move.
+   * @param MoveRepositoryRequest $postBody
+   * @param array $optParams Optional parameters.
+   * @return Operation
+   * @throws \Google\Service\Exception
+   */
+  public function move($name, MoveRepositoryRequest $postBody, $optParams = [])
+  {
+    $params = ['name' => $name, 'postBody' => $postBody];
+    $params = array_merge($params, $optParams);
+    return $this->call('move', [$params], Operation::class);
+  }
+  /**
+   * Updates a single Repository. **Note:** *This method does not fully implement
+   * [AIP/134](https://google.aip.dev/134). The wildcard entry () is treated as a
+   * bad request, and when the `field_mask` is omitted, the request is treated as
+   * a full update on all modifiable fields.* (repositories.patch)
    *
    * @param string $name Identifier. The repository's name.
    * @param Repository $postBody

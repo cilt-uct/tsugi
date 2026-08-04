@@ -25,7 +25,7 @@ class GoogleCloudDialogflowV2beta1KnowledgeAssistAnswerKnowledgeAnswerFaqSource 
   public $question;
 
   /**
-   * @param string
+   * @param string $question
    */
   public function setQuestion($question)
   {

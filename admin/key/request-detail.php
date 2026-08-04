@@ -4,6 +4,7 @@ if (!defined('COOKIE_SESSION')) define('COOKIE_SESSION', true);
 require_once("../../config.php");
 require_once("../../admin/admin_util.php");
 
+use \Tsugi\Util\U;
 use \Tsugi\UI\CrudForm;
 use \Tsugi\Core\LTIX;
 
@@ -27,14 +28,20 @@ if ( isAdmin() ) {
 } else {
     $fields = array("request_id", "title", "notes", "admin", "state", "lti", "created_at", "updated_at");
     $where_clause .= "user_id = :UID";
-    $query_fields[":UID"] = $_SESSION['id'];
+    $query_fields[":UID"] = loggedInUserId();
 }
 
 // Handle the post data
+/** @var array|int $row */
 $row =  CrudForm::handleUpdate($tablename, $fields, $where_clause,
     $query_fields, $allow_edit, $allow_delete);
 
 if ( $row === CrudForm::CRUD_FAIL || $row === CrudForm::CRUD_SUCCESS ) {
+    header("Location: ".$from_location);
+    return;
+}
+if ( ! is_array($row) ) {
+    U::flashError('Unable to load request details');
     header("Location: ".$from_location);
     return;
 }
@@ -56,4 +63,3 @@ if ( is_string($retval) ) die($retval);
 echo("</p>\n");
 
 $OUTPUT->footer();
-

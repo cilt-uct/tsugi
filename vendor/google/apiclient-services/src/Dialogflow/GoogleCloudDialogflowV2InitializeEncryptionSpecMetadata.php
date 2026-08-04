@@ -23,7 +23,7 @@ class GoogleCloudDialogflowV2InitializeEncryptionSpecMetadata extends \Google\Mo
   protected $requestDataType = '';
 
   /**
-   * @param GoogleCloudDialogflowV2InitializeEncryptionSpecRequest
+   * @param GoogleCloudDialogflowV2InitializeEncryptionSpecRequest $request
    */
   public function setRequest(GoogleCloudDialogflowV2InitializeEncryptionSpecRequest $request)
   {

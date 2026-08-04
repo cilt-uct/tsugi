@@ -19,6 +19,71 @@ namespace Google\Service\CloudFunctions;
 
 class SetupFunctionUpgradeConfigRequest extends \Google\Model
 {
+  protected $buildConfigOverridesType = BuildConfigOverrides::class;
+  protected $buildConfigOverridesDataType = '';
+  protected $serviceConfigOverridesType = ServiceConfigOverrides::class;
+  protected $serviceConfigOverridesDataType = '';
+  /**
+   * Optional. The trigger's service account. The service account must have
+   * permission to invoke Cloud Run services, the permission is
+   * `run.routes.invoke`. If empty, defaults to the Compute Engine default
+   * service account: `{project_number}-compute@developer.gserviceaccount.com`.
+   *
+   * @var string
+   */
+  public $triggerServiceAccount;
+
+  /**
+   * Optional. Specifies overrides for the build process.
+   *
+   * @param BuildConfigOverrides $buildConfigOverrides
+   */
+  public function setBuildConfigOverrides(BuildConfigOverrides $buildConfigOverrides)
+  {
+    $this->buildConfigOverrides = $buildConfigOverrides;
+  }
+  /**
+   * @return BuildConfigOverrides
+   */
+  public function getBuildConfigOverrides()
+  {
+    return $this->buildConfigOverrides;
+  }
+  /**
+   * Optional. Specifies overrides for the service configuration.
+   *
+   * @param ServiceConfigOverrides $serviceConfigOverrides
+   */
+  public function setServiceConfigOverrides(ServiceConfigOverrides $serviceConfigOverrides)
+  {
+    $this->serviceConfigOverrides = $serviceConfigOverrides;
+  }
+  /**
+   * @return ServiceConfigOverrides
+   */
+  public function getServiceConfigOverrides()
+  {
+    return $this->serviceConfigOverrides;
+  }
+  /**
+   * Optional. The trigger's service account. The service account must have
+   * permission to invoke Cloud Run services, the permission is
+   * `run.routes.invoke`. If empty, defaults to the Compute Engine default
+   * service account: `{project_number}-compute@developer.gserviceaccount.com`.
+   *
+   * @param string $triggerServiceAccount
+   */
+  public function setTriggerServiceAccount($triggerServiceAccount)
+  {
+    $this->triggerServiceAccount = $triggerServiceAccount;
+  }
+  /**
+   * @return string
+   */
+  public function getTriggerServiceAccount()
+  {
+    return $this->triggerServiceAccount;
+  }
 }
 
 // Adding a class alias for backwards compatibility with the previous class name.

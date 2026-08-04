@@ -6,6 +6,7 @@ use \Tsugi\Core\LTIX;
 use \Tsugi\UI\Lessons;
 use \Tsugi\Crypt\SecureCookie;
 use \Tsugi\Google\GoogleClassroom;
+use \Tsugi\Controllers\Login;
 
 if ( ! defined('COOKIE_SESSION') ) define('COOKIE_SESSION', true);
 require_once __DIR__ . '/../config.php';
@@ -13,18 +14,13 @@ require_once __DIR__ . '/../config.php';
 require_once "util.php";
 
 function login_redirect($path=false) {
-    global $CFG;
-    $login_return = U::get($_SESSION, 'login_return');
-    if ( $login_return ) {
-        unset($_SESSION['login_return']);
-        header('Location: '.$login_return);
+    $url = Login::takeReturnUrl();
+    if ( $url ) {
+        header('Location: '.$url);
         return;
     }
-    if ( isset($CFG->apphome) && $CFG->apphome ) {
-        header('Location: '.$CFG->apphome.'/'.$path);
-        return;
-    }
-    header('Location: '.$CFG->wwwroot.'/'.$path);
+    $home = Login::defaultHomeUrl();
+    header('Location: '.($path ? rtrim($home, '/').'/'.$path : $home));
 }
 
 $PDOX = LTIX::getConnection();
@@ -67,10 +63,10 @@ try {
 if ( ! isset($CFG->lessons) || !isset($CFG->apphome) || ! $CFG->apphome ) {
     $courses = $results->getCourses();
     if (count($courses) == 0) {
-        $_SESSION['error'] = 'No Google Classroom Courses found';
+        U::flashError('No Google Classroom Courses found');
         login_redirect();
     } else {
-        $_SESSION['success'] = 'Connected to '.count($results->getCourses()).' Google Classroom courses.';
+        U::flashSuccess('Connected to '.count($results->getCourses()).' Google Classroom courses.');
         $_SESSION['gc_count'] = count($results);
         login_redirect();
     }
@@ -85,11 +81,11 @@ if (isset($l->lessons->modules[0]->anchor) ) {
 }
 
 if (count($results->getCourses()) == 0) {
-    $_SESSION['error'] = 'No Google Classroom Courses found';
+    U::flashError('No Google Classroom Courses found');
     login_redirect();
 } else {
-    $_SESSION['success'] = 'Found '.count($results->getCourses()).' Google Classroom courses. '.
-        'Use the icon by each link to install links / assignments into your Google Classroom.';
+    U::flashSuccess('Found '.count($results->getCourses()).' Google Classroom courses. '.
+        'Use the icon by each link to install links / assignments into your Google Classroom.');
     $_SESSION['gc_count'] = count($results);
     header('Location: '.$CFG->apphome.'/lessons/'.$firstmodule.'?nostyle=yes');
 }

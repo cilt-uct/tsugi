@@ -8,16 +8,51 @@ function settings_key_count() {
         FROM {$CFG->dbprefix}lti_key
         WHERE user_id = :UID";
     $key_count = 0;
-    if ( U::get($_SESSION, 'id') ) {
-        $row = $PDOX->rowDie($sql, array(':UID' => $_SESSION['id']));
+    $uid = loggedInUserId();
+    if ( $uid ) {
+        $row = $PDOX->rowDie($sql, array(':UID' => $uid));
         $key_count = U::get($row, 'count', 0);
     }
     return $key_count;
 }
 
+/**
+ * Check if a context is administrable by the current logged-in user.
+ * A context is administrable if the user owns the key associated with it
+ * or if the user is the owner of the context.
+ * 
+ * @param int $context_id The context ID to check
+ * @return array|false Returns the context row if administrable, false otherwise
+ */
+function settings_context_administrable($context_id) {
+    global $CFG, $PDOX;
+    
+    $uid = loggedInUserId();
+    if ( ! $uid ) {
+        return false;
+    }
+
+    $row = $PDOX->rowDie("SELECT context_id FROM {$CFG->dbprefix}lti_context
+        WHERE context_id = :CID AND (
+            key_id IN (select key_id from {$CFG->dbprefix}lti_key where user_id = :UID )
+            OR user_id = :UID
+        )",
+        array(
+            ':CID' => $context_id,
+            ':UID' => $uid
+        )
+    );
+    
+    if ( $row === false || ! isset($row['context_id']) ) {
+        return false;
+    }
+    
+    return $row;
+}
+
 function settings_status($key_count) {
     global $CFG;
-    if ( ! U::get($_SESSION,'id') ) {
+    if ( ! isLoggedIn() ) {
         if ( $CFG->google_client_id ) {
             return "<p><b>You must log in to use these tools in your learning management system.  You can explore these tools and test them from this page without logging in.</b></p>";
         }

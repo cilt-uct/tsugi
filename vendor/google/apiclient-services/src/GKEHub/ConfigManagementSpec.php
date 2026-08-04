@@ -19,9 +19,30 @@ namespace Google\Service\GKEHub;
 
 class ConfigManagementSpec extends \Google\Model
 {
+  /**
+   * Unspecified
+   */
+  public const MANAGEMENT_MANAGEMENT_UNSPECIFIED = 'MANAGEMENT_UNSPECIFIED';
+  /**
+   * Google will manage the Feature for the cluster.
+   */
+  public const MANAGEMENT_MANAGEMENT_AUTOMATIC = 'MANAGEMENT_AUTOMATIC';
+  /**
+   * User will manually manage the Feature for the cluster.
+   */
+  public const MANAGEMENT_MANAGEMENT_MANUAL = 'MANAGEMENT_MANUAL';
   protected $binauthzType = ConfigManagementBinauthzConfig::class;
   protected $binauthzDataType = '';
   /**
+   * Optional. User-specified cluster name used by the Config Sync cluster-name-
+   * selector annotation or ClusterSelector object, for applying configs to only
+   * a subset of clusters. Read more about the cluster-name-selector annotation
+   * and ClusterSelector object at https://docs.cloud.google.com/kubernetes-
+   * engine/config-sync/docs/how-to/cluster-scoped-objects#limiting-configs.
+   * Only set this field if a name different from the cluster's fleet membership
+   * name is used by the Config Sync cluster-name-selector annotation or
+   * ClusterSelector.
+   *
    * @var string
    */
   public $cluster;
@@ -30,24 +51,38 @@ class ConfigManagementSpec extends \Google\Model
   protected $hierarchyControllerType = ConfigManagementHierarchyControllerConfig::class;
   protected $hierarchyControllerDataType = '';
   /**
+   * Optional. Deprecated: From version 1.21.0, automatic Feature management is
+   * unavailable, and Config Sync only supports manual upgrades.
+   *
+   * @deprecated
    * @var string
    */
   public $management;
   protected $policyControllerType = ConfigManagementPolicyController::class;
   protected $policyControllerDataType = '';
   /**
+   * Optional. Version of Config Sync to install. Defaults to the latest
+   * supported Config Sync version if the config_sync field is enabled. See
+   * supported versions at https://cloud.google.com/kubernetes-engine/config-
+   * sync/docs/get-support-config-sync#version_support_policy.
+   *
    * @var string
    */
   public $version;
 
   /**
-   * @param ConfigManagementBinauthzConfig
+   * Optional. Deprecated: Binauthz configuration will be ignored and should not
+   * be set.
+   *
+   * @deprecated
+   * @param ConfigManagementBinauthzConfig $binauthz
    */
   public function setBinauthz(ConfigManagementBinauthzConfig $binauthz)
   {
     $this->binauthz = $binauthz;
   }
   /**
+   * @deprecated
    * @return ConfigManagementBinauthzConfig
    */
   public function getBinauthz()
@@ -55,7 +90,16 @@ class ConfigManagementSpec extends \Google\Model
     return $this->binauthz;
   }
   /**
-   * @param string
+   * Optional. User-specified cluster name used by the Config Sync cluster-name-
+   * selector annotation or ClusterSelector object, for applying configs to only
+   * a subset of clusters. Read more about the cluster-name-selector annotation
+   * and ClusterSelector object at https://docs.cloud.google.com/kubernetes-
+   * engine/config-sync/docs/how-to/cluster-scoped-objects#limiting-configs.
+   * Only set this field if a name different from the cluster's fleet membership
+   * name is used by the Config Sync cluster-name-selector annotation or
+   * ClusterSelector.
+   *
+   * @param string $cluster
    */
   public function setCluster($cluster)
   {
@@ -69,7 +113,9 @@ class ConfigManagementSpec extends \Google\Model
     return $this->cluster;
   }
   /**
-   * @param ConfigManagementConfigSync
+   * Optional. Config Sync configuration for the cluster.
+   *
+   * @param ConfigManagementConfigSync $configSync
    */
   public function setConfigSync(ConfigManagementConfigSync $configSync)
   {
@@ -83,13 +129,20 @@ class ConfigManagementSpec extends \Google\Model
     return $this->configSync;
   }
   /**
-   * @param ConfigManagementHierarchyControllerConfig
+   * Optional. Hierarchy Controller configuration for the cluster. Deprecated:
+   * Configuring Hierarchy Controller through the configmanagement feature is no
+   * longer recommended. Use https://github.com/kubernetes-sigs/hierarchical-
+   * namespaces instead.
+   *
+   * @deprecated
+   * @param ConfigManagementHierarchyControllerConfig $hierarchyController
    */
   public function setHierarchyController(ConfigManagementHierarchyControllerConfig $hierarchyController)
   {
     $this->hierarchyController = $hierarchyController;
   }
   /**
+   * @deprecated
    * @return ConfigManagementHierarchyControllerConfig
    */
   public function getHierarchyController()
@@ -97,27 +150,41 @@ class ConfigManagementSpec extends \Google\Model
     return $this->hierarchyController;
   }
   /**
-   * @param string
+   * Optional. Deprecated: From version 1.21.0, automatic Feature management is
+   * unavailable, and Config Sync only supports manual upgrades.
+   *
+   * Accepted values: MANAGEMENT_UNSPECIFIED, MANAGEMENT_AUTOMATIC,
+   * MANAGEMENT_MANUAL
+   *
+   * @deprecated
+   * @param self::MANAGEMENT_* $management
    */
   public function setManagement($management)
   {
     $this->management = $management;
   }
   /**
-   * @return string
+   * @deprecated
+   * @return self::MANAGEMENT_*
    */
   public function getManagement()
   {
     return $this->management;
   }
   /**
-   * @param ConfigManagementPolicyController
+   * Optional. Policy Controller configuration for the cluster. Deprecated:
+   * Configuring Policy Controller through the configmanagement feature is no
+   * longer recommended. Use the policycontroller feature instead.
+   *
+   * @deprecated
+   * @param ConfigManagementPolicyController $policyController
    */
   public function setPolicyController(ConfigManagementPolicyController $policyController)
   {
     $this->policyController = $policyController;
   }
   /**
+   * @deprecated
    * @return ConfigManagementPolicyController
    */
   public function getPolicyController()
@@ -125,7 +192,12 @@ class ConfigManagementSpec extends \Google\Model
     return $this->policyController;
   }
   /**
-   * @param string
+   * Optional. Version of Config Sync to install. Defaults to the latest
+   * supported Config Sync version if the config_sync field is enabled. See
+   * supported versions at https://cloud.google.com/kubernetes-engine/config-
+   * sync/docs/get-support-config-sync#version_support_policy.
+   *
+   * @param string $version
    */
   public function setVersion($version)
   {

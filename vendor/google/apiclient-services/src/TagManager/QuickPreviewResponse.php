@@ -17,19 +17,26 @@
 
 namespace Google\Service\TagManager;
 
-class QuickPreviewResponse extends \Google\Model
+class QuickPreviewResponse extends \Google\Collection
 {
+  protected $collection_key = 'compilerErrors';
   /**
+   * Were there compiler errors or not.
+   *
    * @var bool
    */
   public $compilerError;
+  protected $compilerErrorsType = CompilerErrorLite::class;
+  protected $compilerErrorsDataType = 'array';
   protected $containerVersionType = ContainerVersion::class;
   protected $containerVersionDataType = '';
   protected $syncStatusType = SyncStatus::class;
   protected $syncStatusDataType = '';
 
   /**
-   * @param bool
+   * Were there compiler errors or not.
+   *
+   * @param bool $compilerError
    */
   public function setCompilerError($compilerError)
   {
@@ -43,7 +50,25 @@ class QuickPreviewResponse extends \Google\Model
     return $this->compilerError;
   }
   /**
-   * @param ContainerVersion
+   * Compiler error details.
+   *
+   * @param CompilerErrorLite[] $compilerErrors
+   */
+  public function setCompilerErrors($compilerErrors)
+  {
+    $this->compilerErrors = $compilerErrors;
+  }
+  /**
+   * @return CompilerErrorLite[]
+   */
+  public function getCompilerErrors()
+  {
+    return $this->compilerErrors;
+  }
+  /**
+   * The quick previewed container version.
+   *
+   * @param ContainerVersion $containerVersion
    */
   public function setContainerVersion(ContainerVersion $containerVersion)
   {
@@ -57,7 +82,10 @@ class QuickPreviewResponse extends \Google\Model
     return $this->containerVersion;
   }
   /**
-   * @param SyncStatus
+   * Whether quick previewing failed when syncing the workspace to the latest
+   * container version.
+   *
+   * @param SyncStatus $syncStatus
    */
   public function setSyncStatus(SyncStatus $syncStatus)
   {

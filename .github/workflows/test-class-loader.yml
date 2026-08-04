@@ -1,22 +1,42 @@
 
-name: test-class-loader
-on: [push]
+name: PHP lint + PHPStan
+
+on: [push, pull_request]
+
 jobs:
-  say-hello:
+  php-lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Setup PHP 8.2
+      - name: Create config.php for CI
+        run: cp config-dist.php config.php
+
+      - name: Setup PHP ${{ matrix.php-version }}
         uses: shivammathur/setup-php@v2
         with:
-            php-version: '8.2'
+          php-version: ${{ matrix.php-version }}
+          tools: composer
 
       - run: php -version
 
-      - run: cp config-dist.php config.php
+      - name: Install PHP dependencies (including dev)
+        run: composer install --no-interaction --prefer-dist --ignore-platform-reqs
 
-      - run: php test.php
+      - name: Lint PHP sources (exclude vendor)
+        run: |
+          php -l index.php
+          php -l login.php
+          php -l logout.php
+          php -l top.php
+          php -l tsugi.php
+          php -l about.php
+          find admin api assertions cc cron dev ext gclass lms lti mod settings store util -name '*.php' -print0 | xargs -0 -n 1 php -l
 
-
+      - name: PHPStan (dead code + array shape)
+        run: vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=1G --no-progress

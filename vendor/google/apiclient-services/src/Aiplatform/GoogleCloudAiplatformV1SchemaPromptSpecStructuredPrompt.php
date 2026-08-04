@@ -20,23 +20,35 @@ namespace Google\Service\Aiplatform;
 class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Collection
 {
   protected $collection_key = 'predictionInputs';
+  protected $appBuilderDataType = GoogleCloudAiplatformV1SchemaPromptSpecAppBuilderData::class;
+  protected $appBuilderDataDataType = '';
   protected $contextType = GoogleCloudAiplatformV1Content::class;
   protected $contextDataType = '';
   protected $examplesType = GoogleCloudAiplatformV1SchemaPromptSpecPartList::class;
   protected $examplesDataType = 'array';
   /**
+   * Preamble: For infill prompt, the prefix before expected model response.
+   *
    * @var string
    */
   public $infillPrefix;
   /**
+   * Preamble: For infill prompt, the suffix after expected model response.
+   *
    * @var string
    */
   public $infillSuffix;
   /**
+   * Preamble: The input prefixes before each example input.
+   *
    * @var string[]
    */
   public $inputPrefixes;
+  protected $interactionDataType = GoogleCloudAiplatformV1SchemaPromptSpecInteractionData::class;
+  protected $interactionDataDataType = '';
   /**
+   * Preamble: The output prefixes before each example output.
+   *
    * @var string[]
    */
   public $outputPrefixes;
@@ -46,7 +58,25 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
   protected $promptMessageDataType = '';
 
   /**
-   * @param GoogleCloudAiplatformV1Content
+   * Data for app builder use case.
+   *
+   * @param GoogleCloudAiplatformV1SchemaPromptSpecAppBuilderData $appBuilderData
+   */
+  public function setAppBuilderData(GoogleCloudAiplatformV1SchemaPromptSpecAppBuilderData $appBuilderData)
+  {
+    $this->appBuilderData = $appBuilderData;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1SchemaPromptSpecAppBuilderData
+   */
+  public function getAppBuilderData()
+  {
+    return $this->appBuilderData;
+  }
+  /**
+   * Preamble: The context of the prompt.
+   *
+   * @param GoogleCloudAiplatformV1Content $context
    */
   public function setContext(GoogleCloudAiplatformV1Content $context)
   {
@@ -60,7 +90,9 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->context;
   }
   /**
-   * @param GoogleCloudAiplatformV1SchemaPromptSpecPartList[]
+   * Preamble: A set of examples for expected model response.
+   *
+   * @param GoogleCloudAiplatformV1SchemaPromptSpecPartList[] $examples
    */
   public function setExamples($examples)
   {
@@ -74,7 +106,9 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->examples;
   }
   /**
-   * @param string
+   * Preamble: For infill prompt, the prefix before expected model response.
+   *
+   * @param string $infillPrefix
    */
   public function setInfillPrefix($infillPrefix)
   {
@@ -88,7 +122,9 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->infillPrefix;
   }
   /**
-   * @param string
+   * Preamble: For infill prompt, the suffix after expected model response.
+   *
+   * @param string $infillSuffix
    */
   public function setInfillSuffix($infillSuffix)
   {
@@ -102,7 +138,9 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->infillSuffix;
   }
   /**
-   * @param string[]
+   * Preamble: The input prefixes before each example input.
+   *
+   * @param string[] $inputPrefixes
    */
   public function setInputPrefixes($inputPrefixes)
   {
@@ -116,7 +154,25 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->inputPrefixes;
   }
   /**
-   * @param string[]
+   * Data for interaction use case.
+   *
+   * @param GoogleCloudAiplatformV1SchemaPromptSpecInteractionData $interactionData
+   */
+  public function setInteractionData(GoogleCloudAiplatformV1SchemaPromptSpecInteractionData $interactionData)
+  {
+    $this->interactionData = $interactionData;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1SchemaPromptSpecInteractionData
+   */
+  public function getInteractionData()
+  {
+    return $this->interactionData;
+  }
+  /**
+   * Preamble: The output prefixes before each example output.
+   *
+   * @param string[] $outputPrefixes
    */
   public function setOutputPrefixes($outputPrefixes)
   {
@@ -130,7 +186,10 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->outputPrefixes;
   }
   /**
-   * @param GoogleCloudAiplatformV1SchemaPromptSpecPartList[]
+   * Preamble: The input test data for prediction. Each PartList in this field
+   * represents one text-only input set for a single model request.
+   *
+   * @param GoogleCloudAiplatformV1SchemaPromptSpecPartList[] $predictionInputs
    */
   public function setPredictionInputs($predictionInputs)
   {
@@ -144,7 +203,9 @@ class GoogleCloudAiplatformV1SchemaPromptSpecStructuredPrompt extends \Google\Co
     return $this->predictionInputs;
   }
   /**
-   * @param GoogleCloudAiplatformV1SchemaPromptSpecPromptMessage
+   * The prompt message.
+   *
+   * @param GoogleCloudAiplatformV1SchemaPromptSpecPromptMessage $promptMessage
    */
   public function setPromptMessage(GoogleCloudAiplatformV1SchemaPromptSpecPromptMessage $promptMessage)
   {

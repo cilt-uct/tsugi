@@ -3,13 +3,14 @@
 if (!defined('COOKIE_SESSION')) define('COOKIE_SESSION', true);
 require_once("../../config.php");
 
+use \Tsugi\Util\U;
 use \Tsugi\UI\Table;
 use \Tsugi\Core\LTIX;
 
 \Tsugi\Core\LTIX::getConnection();
 
 if ( $CFG->providekeys === false || $CFG->owneremail === false ) {
-    $_SESSION['error'] = _("This service does not accept requests for keys");
+    U::flashError(_("This service does not accept requests for keys"));
     header('Location: '.$CFG->wwwroot);
     return;
 }
@@ -17,13 +18,13 @@ if ( $CFG->providekeys === false || $CFG->owneremail === false ) {
 header('Content-Type: text/html; charset=utf-8');
 session_start();
 
-if ( ! isset($_SESSION['id']) ) {
-    $_SESSION['login_return'] = LTIX::curPageUrlFolder();
-    header('Location: '.$CFG->wwwroot.'/login');
+if ( ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl(LTIX::curPageUrlFolder());
+    header('Location: '.\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 
-$query_parms = array(":UID" => $_SESSION['id']);
+$query_parms = array(":UID" => loggedInUserId());
 $searchfields = array("key_id", "key_key", "created_at", "updated_at", "user_id");
 $sql = "SELECT key_id, key_key, secret, login_at, created_at, updated_at, user_id
         FROM {$CFG->dbprefix}lti_key
@@ -46,10 +47,10 @@ $OUTPUT->flashMessages();
 ?>
 <h1>LTI Keys</h1>
 <p>
-  <a href="<?= LTIX::curPageUrlFolder() ?>" class="btn btn-default active">LTI Keys</a>
-  <a href="using" class="btn btn-default">Using Your Key</a>
-  <a href="requests" class="btn btn-default">Key Requests</a>
-  <a href="<?= $CFG->wwwroot.'/settings/' ?>" class="btn btn-default">My Settings</a>
+  <a href="<?= htmlspecialchars(LTIX::curPageUrlFolder(), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-default active" aria-label="LTI Keys (current page)">LTI Keys</a>
+  <a href="using" class="btn btn-default" aria-label="Using Your Key - instructions for LTI integration">Using Your Key</a>
+  <a href="requests" class="btn btn-default" aria-label="Key Requests">Key Requests</a>
+  <a href="<?= htmlspecialchars($CFG->wwwroot . '/settings/', ENT_QUOTES, 'UTF-8') ?>" class="btn btn-default" aria-label="My Settings">My Settings</a>
 </p>
 <?php if ( count($newrows) < 1 ) { ?>
 <p>
@@ -57,7 +58,7 @@ You have no LTI Keys for this system.
 </p>
 <p>
 If you want to use the tools / content in this system
-in an LMS like Sakai, Moodle, Canvase, Blackboard or BrightSpace 
+in an LMS like Sakai, Moodle, Canvas, Blackboard or BrightSpace 
 you will need to request a key and have it approved.
 </p>
 <?php } else {

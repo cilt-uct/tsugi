@@ -19,13 +19,53 @@ namespace Google\Service\Aiplatform;
 
 class GoogleCloudAiplatformV1GroundingChunk extends \Google\Model
 {
+  protected $imageType = GoogleCloudAiplatformV1GroundingChunkImage::class;
+  protected $imageDataType = '';
+  protected $mapsType = GoogleCloudAiplatformV1GroundingChunkMaps::class;
+  protected $mapsDataType = '';
   protected $retrievedContextType = GoogleCloudAiplatformV1GroundingChunkRetrievedContext::class;
   protected $retrievedContextDataType = '';
   protected $webType = GoogleCloudAiplatformV1GroundingChunkWeb::class;
   protected $webDataType = '';
 
   /**
-   * @param GoogleCloudAiplatformV1GroundingChunkRetrievedContext
+   * A grounding chunk from an image search result. See the `Image` message for
+   * details.
+   *
+   * @param GoogleCloudAiplatformV1GroundingChunkImage $image
+   */
+  public function setImage(GoogleCloudAiplatformV1GroundingChunkImage $image)
+  {
+    $this->image = $image;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1GroundingChunkImage
+   */
+  public function getImage()
+  {
+    return $this->image;
+  }
+  /**
+   * A grounding chunk from Google Maps. See the `Maps` message for details.
+   *
+   * @param GoogleCloudAiplatformV1GroundingChunkMaps $maps
+   */
+  public function setMaps(GoogleCloudAiplatformV1GroundingChunkMaps $maps)
+  {
+    $this->maps = $maps;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1GroundingChunkMaps
+   */
+  public function getMaps()
+  {
+    return $this->maps;
+  }
+  /**
+   * A grounding chunk from a data source retrieved by a retrieval tool, such as
+   * Vertex AI Search. See the `RetrievedContext` message for details
+   *
+   * @param GoogleCloudAiplatformV1GroundingChunkRetrievedContext $retrievedContext
    */
   public function setRetrievedContext(GoogleCloudAiplatformV1GroundingChunkRetrievedContext $retrievedContext)
   {
@@ -39,7 +79,10 @@ class GoogleCloudAiplatformV1GroundingChunk extends \Google\Model
     return $this->retrievedContext;
   }
   /**
-   * @param GoogleCloudAiplatformV1GroundingChunkWeb
+   * A grounding chunk from a web page, typically from Google Search. See the
+   * `Web` message for details.
+   *
+   * @param GoogleCloudAiplatformV1GroundingChunkWeb $web
    */
   public function setWeb(GoogleCloudAiplatformV1GroundingChunkWeb $web)
   {

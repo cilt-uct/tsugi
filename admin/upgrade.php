@@ -60,6 +60,38 @@ create table {$plugins} (
     echo("Created plugins table...<br/>\n");
 }
 
+// Migrate old plugin_path entries to current lib/Services paths (one-time)
+$path_migrations = array(
+    'lms/announce/database.php' => 'lib/src/Services/Announcements/database.php',
+    'lms/pages/database.php' => 'lib/src/Services/Pages/database.php',
+    'tool/tdiscus/database.php' => 'lib/src/Services/Discussions/database.php',
+    'lib/src/Controllers/database/Announcements/database.php' => 'lib/src/Services/Announcements/database.php',
+    'lib/src/Controllers/database/Pages/database.php' => 'lib/src/Services/Pages/database.php',
+    'lib/src/Controllers/database/Discussions/database.php' => 'lib/src/Services/Discussions/database.php',
+    'tool/peer-grade/database.php' => 'lib/src/Services/PeerGrade/database.php',
+);
+foreach ($path_migrations as $old_path => $new_path) {
+    $sql = "SELECT plugin_id FROM {$plugins} WHERE plugin_path = :old_path";
+    $q = $PDOX->queryReturnError($sql, array(':old_path' => $old_path));
+    if ( ! $q->success || $q->rowCount() < 1 ) continue;
+
+    $sql = "SELECT plugin_id FROM {$plugins} WHERE plugin_path = :new_path";
+    $q = $PDOX->queryReturnError($sql, array(':new_path' => $new_path));
+    if ( $q->success && $q->rowCount() > 0 ) {
+        $sql = "DELETE FROM {$plugins} WHERE plugin_path = :old_path";
+        $q = $PDOX->queryReturnError($sql, array(':old_path' => $old_path));
+        if ( $q->success && $q->rowCount() > 0 ) {
+            echo("Removed duplicate plugin_path: $old_path (already have $new_path)<br/>\n");
+        }
+        continue;
+    }
+
+    $sql = "UPDATE {$plugins} SET plugin_path = :new_path WHERE plugin_path = :old_path";
+    $q = $PDOX->queryReturnError($sql, array(':new_path' => $new_path, ':old_path' => $old_path));
+    if ($q->success && $q->rowCount() > 0) {
+        echo("Migrated plugin_path: $old_path -> $new_path<br/>\n");
+    }
+}
 
 echo("Checking Core LTI Tables...<br/>\n");
 $tools = searchTwoLevels("database.php", $CFG->dirroot.'/admin');
@@ -76,6 +108,17 @@ foreach($tools as $k => $tool ) {
     }
 }
 
+echo("Checking Services Tables...<br/>\n");
+// Scan lib/src/Services for database.php files (Announcements, Pages, Discussions, Badges, etc.)
+$svcdb = searchTwoLevels("database.php", $CFG->dirroot.'/lib/src/Services');
+for($i=0; $i<count($svcdb); $i++) {
+    $svcdb[$i] = U::remove_relative_path($svcdb[$i]);
+}
+foreach($svcdb as $tool) {
+    if ( in_array($tool, $tools) ) continue;
+    $tools[] = $tool;
+}
+
 echo("Checking Installed Modules Tables...<br/>\n");
 // Scan the tools folders
 $moretools = findToolFiles("database.php", $CFG->dirroot);
@@ -86,6 +129,47 @@ for($i=0; $i<count($moretools); $i++) {
 foreach($moretools as $tool) {
     if ( in_array($tool, $tools) ) continue;
     $tools[] = $tool;
+}
+
+// Prefer lib Discussions schema over legacy tool/tdiscus database.php stub
+$discussions_lib = 'lib/src/Services/Discussions/database.php';
+$legacy_discussions = array('tool/tdiscus/database.php');
+$has_discussions_lib = false;
+foreach ( $tools as $tool ) {
+    $relative = U::remove_relative_path(trimAsMuchAsYouCan($tool, $CFG->dirroot));
+    if ( $relative === $discussions_lib ) {
+        $has_discussions_lib = true;
+        break;
+    }
+}
+if ( $has_discussions_lib ) {
+    $filtered = array();
+    foreach ( $tools as $tool ) {
+        $relative = U::remove_relative_path(trimAsMuchAsYouCan($tool, $CFG->dirroot));
+        $is_legacy = false;
+        foreach ( $legacy_discussions as $legacy ) {
+            if ( $relative === $legacy || substr($relative, -strlen($legacy)) === $legacy ) {
+                $is_legacy = true;
+                break;
+            }
+        }
+        if ( $is_legacy ) continue;
+        $filtered[] = $tool;
+    }
+    $tools = $filtered;
+}
+
+// Prefer lib PeerGrade schema over legacy tool/peer-grade/database.php stub
+$peer_grade_lib = 'lib/src/Services/PeerGrade/database.php';
+$legacy_peer_grade = array('tool/peer-grade/database.php');
+if ( in_array($peer_grade_lib, $tools) ) {
+    $filtered = array();
+    foreach ( $tools as $tool ) {
+        $relative = trimAsMuchAsYouCan($tool, $CFG->dirroot);
+        if ( in_array($relative, $legacy_peer_grade) ) continue;
+        $filtered[] = $tool;
+    }
+    $tools = $filtered;
 }
 
 if ( count($tools) < 1 ) {

@@ -30,7 +30,7 @@ class GoogleCloudDialogflowCxV3ImportEntityTypesResponseConflictingResources ext
   public $entityTypeDisplayNames;
 
   /**
-   * @param string[]
+   * @param string[] $entityDisplayNames
    */
   public function setEntityDisplayNames($entityDisplayNames)
   {
@@ -44,7 +44,7 @@ class GoogleCloudDialogflowCxV3ImportEntityTypesResponseConflictingResources ext
     return $this->entityDisplayNames;
   }
   /**
-   * @param string[]
+   * @param string[] $entityTypeDisplayNames
    */
   public function setEntityTypeDisplayNames($entityTypeDisplayNames)
   {

@@ -19,6 +19,11 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpec extends \Google\Collection
 {
+  public const ATTRIBUTE_TYPE_ATTRIBUTE_TYPE_UNSPECIFIED = 'ATTRIBUTE_TYPE_UNSPECIFIED';
+  public const ATTRIBUTE_TYPE_NUMERICAL = 'NUMERICAL';
+  public const ATTRIBUTE_TYPE_FRESHNESS = 'FRESHNESS';
+  public const INTERPOLATION_TYPE_INTERPOLATION_TYPE_UNSPECIFIED = 'INTERPOLATION_TYPE_UNSPECIFIED';
+  public const INTERPOLATION_TYPE_LINEAR = 'LINEAR';
   protected $collection_key = 'controlPoints';
   /**
    * @var string
@@ -36,21 +41,21 @@ class GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpec exten
   public $interpolationType;
 
   /**
-   * @param string
+   * @param self::ATTRIBUTE_TYPE_* $attributeType
    */
   public function setAttributeType($attributeType)
   {
     $this->attributeType = $attributeType;
   }
   /**
-   * @return string
+   * @return self::ATTRIBUTE_TYPE_*
    */
   public function getAttributeType()
   {
     return $this->attributeType;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpecControlPoint[]
+   * @param GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpecControlPoint[] $controlPoints
    */
   public function setControlPoints($controlPoints)
   {
@@ -64,7 +69,7 @@ class GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpec exten
     return $this->controlPoints;
   }
   /**
-   * @param string
+   * @param string $fieldName
    */
   public function setFieldName($fieldName)
   {
@@ -78,14 +83,14 @@ class GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpecBoostControlSpec exten
     return $this->fieldName;
   }
   /**
-   * @param string
+   * @param self::INTERPOLATION_TYPE_* $interpolationType
    */
   public function setInterpolationType($interpolationType)
   {
     $this->interpolationType = $interpolationType;
   }
   /**
-   * @return string
+   * @return self::INTERPOLATION_TYPE_*
    */
   public function getInterpolationType()
   {

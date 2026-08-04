@@ -41,7 +41,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings extends \Google\Mode
   public $maxDigits;
 
   /**
-   * @param bool
+   * @param bool $enabled
    */
   public function setEnabled($enabled)
   {
@@ -55,7 +55,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings extends \Google\Mode
     return $this->enabled;
   }
   /**
-   * @param string
+   * @param string $endpointingTimeoutDuration
    */
   public function setEndpointingTimeoutDuration($endpointingTimeoutDuration)
   {
@@ -69,7 +69,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings extends \Google\Mode
     return $this->endpointingTimeoutDuration;
   }
   /**
-   * @param string
+   * @param string $finishDigit
    */
   public function setFinishDigit($finishDigit)
   {
@@ -83,7 +83,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings extends \Google\Mode
     return $this->finishDigit;
   }
   /**
-   * @param string
+   * @param string $interdigitTimeoutDuration
    */
   public function setInterdigitTimeoutDuration($interdigitTimeoutDuration)
   {
@@ -97,7 +97,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings extends \Google\Mode
     return $this->interdigitTimeoutDuration;
   }
   /**
-   * @param int
+   * @param int $maxDigits
    */
   public function setMaxDigits($maxDigits)
   {

@@ -20,16 +20,23 @@ namespace Google\Service\WorkloadManager;
 class AgentCommand extends \Google\Model
 {
   /**
+   * The name of the agent one-time executable that will be invoked.
+   *
    * @var string
    */
   public $command;
   /**
+   * A map of key/value pairs that can be used to specify additional one-time
+   * executable settings.
+   *
    * @var string[]
    */
   public $parameters;
 
   /**
-   * @param string
+   * The name of the agent one-time executable that will be invoked.
+   *
+   * @param string $command
    */
   public function setCommand($command)
   {
@@ -43,7 +50,10 @@ class AgentCommand extends \Google\Model
     return $this->command;
   }
   /**
-   * @param string[]
+   * A map of key/value pairs that can be used to specify additional one-time
+   * executable settings.
+   *
+   * @param string[] $parameters
    */
   public function setParameters($parameters)
   {

@@ -36,10 +36,15 @@ class Edits extends \Google\Service\Resource
    * @param string $editId Identifier of the edit.
    * @param array $optParams Optional parameters.
    *
-   * @opt_param bool changesNotSentForReview Indicates that the changes in this
-   * edit will not be reviewed until they are explicitly sent for review from the
-   * Google Play Console UI. These changes will be added to any other changes that
-   * are not yet sent for review.
+   * @opt_param string changesInReviewBehavior Optional. Specify how the API
+   * should behave if there are changes currently in review. If this value is not
+   * set, it will default to "CANCEL_IN_REVIEW_AND_SUBMIT", which will cancel the
+   * changes in review and then send all the changes for publishing.
+   * @opt_param bool changesNotSentForReview When a rejection happens, the
+   * parameter will make sure that the changes in this edit won't be reviewed
+   * until they are explicitly sent for review from within the Google Play Console
+   * UI. These changes will be added to any other changes that are not yet sent
+   * for review.
    * @return AppEdit
    * @throws \Google\Service\Exception
    */

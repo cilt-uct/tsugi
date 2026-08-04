@@ -19,6 +19,11 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Collection
 {
+  public const MESSAGE_TYPE_MESSAGE_TYPE_UNSPECIFIED = 'MESSAGE_TYPE_UNSPECIFIED';
+  public const MESSAGE_TYPE_TRANSCRIPT = 'TRANSCRIPT';
+  public const MESSAGE_TYPE_END_OF_SINGLE_UTTERANCE = 'END_OF_SINGLE_UTTERANCE';
+  public const MESSAGE_TYPE_DTMF_DIGITS = 'DTMF_DIGITS';
+  public const MESSAGE_TYPE_PARTIAL_DTMF_DIGITS = 'PARTIAL_DTMF_DIGITS';
   protected $collection_key = 'speechWordInfo';
   /**
    * @var float
@@ -54,7 +59,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
   public $transcript;
 
   /**
-   * @param float
+   * @param float $confidence
    */
   public function setConfidence($confidence)
   {
@@ -68,7 +73,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->confidence;
   }
   /**
-   * @param GoogleCloudDialogflowV2beta1TelephonyDtmfEvents
+   * @param GoogleCloudDialogflowV2beta1TelephonyDtmfEvents $dtmfDigits
    */
   public function setDtmfDigits(GoogleCloudDialogflowV2beta1TelephonyDtmfEvents $dtmfDigits)
   {
@@ -82,7 +87,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->dtmfDigits;
   }
   /**
-   * @param bool
+   * @param bool $isFinal
    */
   public function setIsFinal($isFinal)
   {
@@ -96,7 +101,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->isFinal;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {
@@ -110,21 +115,21 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->languageCode;
   }
   /**
-   * @param string
+   * @param self::MESSAGE_TYPE_* $messageType
    */
   public function setMessageType($messageType)
   {
     $this->messageType = $messageType;
   }
   /**
-   * @return string
+   * @return self::MESSAGE_TYPE_*
    */
   public function getMessageType()
   {
     return $this->messageType;
   }
   /**
-   * @param string
+   * @param string $speechEndOffset
    */
   public function setSpeechEndOffset($speechEndOffset)
   {
@@ -138,7 +143,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->speechEndOffset;
   }
   /**
-   * @param GoogleCloudDialogflowV2beta1SpeechWordInfo[]
+   * @param GoogleCloudDialogflowV2beta1SpeechWordInfo[] $speechWordInfo
    */
   public function setSpeechWordInfo($speechWordInfo)
   {
@@ -152,7 +157,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->speechWordInfo;
   }
   /**
-   * @param float
+   * @param float $stability
    */
   public function setStability($stability)
   {
@@ -166,7 +171,7 @@ class GoogleCloudDialogflowV2beta1StreamingRecognitionResult extends \Google\Col
     return $this->stability;
   }
   /**
-   * @param string
+   * @param string $transcript
    */
   public function setTranscript($transcript)
   {

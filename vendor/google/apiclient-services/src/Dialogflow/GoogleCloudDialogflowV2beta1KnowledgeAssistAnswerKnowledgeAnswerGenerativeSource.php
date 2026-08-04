@@ -24,7 +24,7 @@ class GoogleCloudDialogflowV2beta1KnowledgeAssistAnswerKnowledgeAnswerGenerative
   protected $snippetsDataType = 'array';
 
   /**
-   * @param GoogleCloudDialogflowV2beta1KnowledgeAssistAnswerKnowledgeAnswerGenerativeSourceSnippet[]
+   * @param GoogleCloudDialogflowV2beta1KnowledgeAssistAnswerKnowledgeAnswerGenerativeSourceSnippet[] $snippets
    */
   public function setSnippets($snippets)
   {

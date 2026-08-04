@@ -18,6 +18,7 @@
 namespace Google\Service\Dataform\Resource;
 
 use Google\Service\Dataform\CommitWorkspaceChangesRequest;
+use Google\Service\Dataform\CommitWorkspaceChangesResponse;
 use Google\Service\Dataform\DataformEmpty;
 use Google\Service\Dataform\FetchFileDiffResponse;
 use Google\Service\Dataform\FetchFileGitStatusesResponse;
@@ -33,12 +34,17 @@ use Google\Service\Dataform\MoveFileRequest;
 use Google\Service\Dataform\MoveFileResponse;
 use Google\Service\Dataform\Policy;
 use Google\Service\Dataform\PullGitCommitsRequest;
+use Google\Service\Dataform\PullGitCommitsResponse;
 use Google\Service\Dataform\PushGitCommitsRequest;
+use Google\Service\Dataform\PushGitCommitsResponse;
 use Google\Service\Dataform\QueryDirectoryContentsResponse;
 use Google\Service\Dataform\ReadFileResponse;
 use Google\Service\Dataform\RemoveDirectoryRequest;
+use Google\Service\Dataform\RemoveDirectoryResponse;
 use Google\Service\Dataform\RemoveFileRequest;
+use Google\Service\Dataform\RemoveFileResponse;
 use Google\Service\Dataform\ResetWorkspaceChangesRequest;
+use Google\Service\Dataform\ResetWorkspaceChangesResponse;
 use Google\Service\Dataform\SearchFilesResponse;
 use Google\Service\Dataform\SetIamPolicyRequest;
 use Google\Service\Dataform\TestIamPermissionsRequest;
@@ -64,14 +70,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $name Required. The workspace's name.
    * @param CommitWorkspaceChangesRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return CommitWorkspaceChangesResponse
    * @throws \Google\Service\Exception
    */
   public function commit($name, CommitWorkspaceChangesRequest $postBody, $optParams = [])
   {
     $params = ['name' => $name, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('commit', [$params], DataformEmpty::class);
+    return $this->call('commit', [$params], CommitWorkspaceChangesResponse::class);
   }
   /**
    * Creates a new Workspace in a given Repository. (workspaces.create)
@@ -300,14 +306,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $name Required. The workspace's name.
    * @param PullGitCommitsRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return PullGitCommitsResponse
    * @throws \Google\Service\Exception
    */
   public function pull($name, PullGitCommitsRequest $postBody, $optParams = [])
   {
     $params = ['name' => $name, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('pull', [$params], DataformEmpty::class);
+    return $this->call('pull', [$params], PullGitCommitsResponse::class);
   }
   /**
    * Pushes Git commits from a Workspace to the Repository's remote.
@@ -316,14 +322,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $name Required. The workspace's name.
    * @param PushGitCommitsRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return PushGitCommitsResponse
    * @throws \Google\Service\Exception
    */
   public function push($name, PushGitCommitsRequest $postBody, $optParams = [])
   {
     $params = ['name' => $name, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('push', [$params], DataformEmpty::class);
+    return $this->call('push', [$params], PushGitCommitsResponse::class);
   }
   /**
    * Returns the contents of a given Workspace directory.
@@ -343,6 +349,11 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @opt_param string path Optional. The directory's full path including
    * directory name, relative to the workspace root. If left unset, the workspace
    * root is used.
+   * @opt_param string view Optional. Specifies the metadata to return for each
+   * directory entry. If unspecified, the default is
+   * `DIRECTORY_CONTENTS_VIEW_BASIC`. Currently the
+   * `DIRECTORY_CONTENTS_VIEW_METADATA` view is not supported by CMEK-protected
+   * workspaces.
    * @return QueryDirectoryContentsResponse
    * @throws \Google\Service\Exception
    */
@@ -378,14 +389,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $workspace Required. The workspace's name.
    * @param RemoveDirectoryRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return RemoveDirectoryResponse
    * @throws \Google\Service\Exception
    */
   public function removeDirectory($workspace, RemoveDirectoryRequest $postBody, $optParams = [])
   {
     $params = ['workspace' => $workspace, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('removeDirectory', [$params], DataformEmpty::class);
+    return $this->call('removeDirectory', [$params], RemoveDirectoryResponse::class);
   }
   /**
    * Deletes a file (inside a Workspace). (workspaces.removeFile)
@@ -393,14 +404,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $workspace Required. The workspace's name.
    * @param RemoveFileRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return RemoveFileResponse
    * @throws \Google\Service\Exception
    */
   public function removeFile($workspace, RemoveFileRequest $postBody, $optParams = [])
   {
     $params = ['workspace' => $workspace, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('removeFile', [$params], DataformEmpty::class);
+    return $this->call('removeFile', [$params], RemoveFileResponse::class);
   }
   /**
    * Performs a Git reset for uncommitted files in a Workspace. (workspaces.reset)
@@ -408,14 +419,14 @@ class ProjectsLocationsRepositoriesWorkspaces extends \Google\Service\Resource
    * @param string $name Required. The workspace's name.
    * @param ResetWorkspaceChangesRequest $postBody
    * @param array $optParams Optional parameters.
-   * @return DataformEmpty
+   * @return ResetWorkspaceChangesResponse
    * @throws \Google\Service\Exception
    */
   public function reset($name, ResetWorkspaceChangesRequest $postBody, $optParams = [])
   {
     $params = ['name' => $name, 'postBody' => $postBody];
     $params = array_merge($params, $optParams);
-    return $this->call('reset', [$params], DataformEmpty::class);
+    return $this->call('reset', [$params], ResetWorkspaceChangesResponse::class);
   }
   /**
    * Finds the contents of a given Workspace directory by filter.

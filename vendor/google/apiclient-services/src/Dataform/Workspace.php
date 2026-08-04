@@ -20,22 +20,41 @@ namespace Google\Service\Dataform;
 class Workspace extends \Google\Model
 {
   /**
+   * Output only. The timestamp of when the workspace was created.
+   *
    * @var string
    */
   public $createTime;
   protected $dataEncryptionStateType = DataEncryptionState::class;
   protected $dataEncryptionStateDataType = '';
   /**
+   * Optional. If set to true, workspaces will not be moved if its linked
+   * Repository is moved. Instead, it will be deleted.
+   *
+   * @var bool
+   */
+  public $disableMoves;
+  /**
+   * Output only. All the metadata information that is used internally to serve
+   * the resource. For example: timestamps, flags, status fields, etc. The
+   * format of this field is a JSON string.
+   *
    * @var string
    */
   public $internalMetadata;
   /**
+   * Identifier. The workspace's name.
+   *
    * @var string
    */
   public $name;
+  protected $privateResourceMetadataType = PrivateResourceMetadata::class;
+  protected $privateResourceMetadataDataType = '';
 
   /**
-   * @param string
+   * Output only. The timestamp of when the workspace was created.
+   *
+   * @param string $createTime
    */
   public function setCreateTime($createTime)
   {
@@ -49,7 +68,10 @@ class Workspace extends \Google\Model
     return $this->createTime;
   }
   /**
-   * @param DataEncryptionState
+   * Output only. A data encryption state of a Git repository if this Workspace
+   * is protected by a KMS key.
+   *
+   * @param DataEncryptionState $dataEncryptionState
    */
   public function setDataEncryptionState(DataEncryptionState $dataEncryptionState)
   {
@@ -63,7 +85,28 @@ class Workspace extends \Google\Model
     return $this->dataEncryptionState;
   }
   /**
-   * @param string
+   * Optional. If set to true, workspaces will not be moved if its linked
+   * Repository is moved. Instead, it will be deleted.
+   *
+   * @param bool $disableMoves
+   */
+  public function setDisableMoves($disableMoves)
+  {
+    $this->disableMoves = $disableMoves;
+  }
+  /**
+   * @return bool
+   */
+  public function getDisableMoves()
+  {
+    return $this->disableMoves;
+  }
+  /**
+   * Output only. All the metadata information that is used internally to serve
+   * the resource. For example: timestamps, flags, status fields, etc. The
+   * format of this field is a JSON string.
+   *
+   * @param string $internalMetadata
    */
   public function setInternalMetadata($internalMetadata)
   {
@@ -77,7 +120,9 @@ class Workspace extends \Google\Model
     return $this->internalMetadata;
   }
   /**
-   * @param string
+   * Identifier. The workspace's name.
+   *
+   * @param string $name
    */
   public function setName($name)
   {
@@ -89,6 +134,23 @@ class Workspace extends \Google\Model
   public function getName()
   {
     return $this->name;
+  }
+  /**
+   * Output only. Metadata indicating whether this resource is user-scoped. For
+   * `Workspace` resources, the `user_scoped` field is always `true`.
+   *
+   * @param PrivateResourceMetadata $privateResourceMetadata
+   */
+  public function setPrivateResourceMetadata(PrivateResourceMetadata $privateResourceMetadata)
+  {
+    $this->privateResourceMetadata = $privateResourceMetadata;
+  }
+  /**
+   * @return PrivateResourceMetadata
+   */
+  public function getPrivateResourceMetadata()
+  {
+    return $this->privateResourceMetadata;
   }
 }
 

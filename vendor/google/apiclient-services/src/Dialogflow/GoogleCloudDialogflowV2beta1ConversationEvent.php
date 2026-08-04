@@ -19,6 +19,13 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
 {
+  public const TYPE_TYPE_UNSPECIFIED = 'TYPE_UNSPECIFIED';
+  public const TYPE_CONVERSATION_STARTED = 'CONVERSATION_STARTED';
+  public const TYPE_CONVERSATION_FINISHED = 'CONVERSATION_FINISHED';
+  public const TYPE_HUMAN_INTERVENTION_NEEDED = 'HUMAN_INTERVENTION_NEEDED';
+  public const TYPE_NEW_MESSAGE = 'NEW_MESSAGE';
+  public const TYPE_NEW_RECOGNITION_RESULT = 'NEW_RECOGNITION_RESULT';
+  public const TYPE_UNRECOVERABLE_ERROR = 'UNRECOVERABLE_ERROR';
   /**
    * @var string
    */
@@ -35,7 +42,7 @@ class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
   public $type;
 
   /**
-   * @param string
+   * @param string $conversation
    */
   public function setConversation($conversation)
   {
@@ -49,7 +56,7 @@ class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
     return $this->conversation;
   }
   /**
-   * @param GoogleRpcStatus
+   * @param GoogleRpcStatus $errorStatus
    */
   public function setErrorStatus(GoogleRpcStatus $errorStatus)
   {
@@ -63,7 +70,7 @@ class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
     return $this->errorStatus;
   }
   /**
-   * @param GoogleCloudDialogflowV2beta1Message
+   * @param GoogleCloudDialogflowV2beta1Message $newMessagePayload
    */
   public function setNewMessagePayload(GoogleCloudDialogflowV2beta1Message $newMessagePayload)
   {
@@ -77,7 +84,7 @@ class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
     return $this->newMessagePayload;
   }
   /**
-   * @param GoogleCloudDialogflowV2beta1StreamingRecognitionResult
+   * @param GoogleCloudDialogflowV2beta1StreamingRecognitionResult $newRecognitionResultPayload
    */
   public function setNewRecognitionResultPayload(GoogleCloudDialogflowV2beta1StreamingRecognitionResult $newRecognitionResultPayload)
   {
@@ -91,14 +98,14 @@ class GoogleCloudDialogflowV2beta1ConversationEvent extends \Google\Model
     return $this->newRecognitionResultPayload;
   }
   /**
-   * @param string
+   * @param self::TYPE_* $type
    */
   public function setType($type)
   {
     $this->type = $type;
   }
   /**
-   * @return string
+   * @return self::TYPE_*
    */
   public function getType()
   {

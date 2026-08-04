@@ -5,6 +5,10 @@ use \Tsugi\UI\Output;
 
 require_once $CFG->dirroot."/admin/admin_util.php";
 
+// Site menu callbacks (e.g. PY4E buildMenu) assume a full schema; use Tsugi default in admin.
+unset($CFG->top_menu_callback);
+Output::clearTopNavSession();
+
 $REDIRECTED = false;
 $rest_path = U::rest_path();
 
@@ -13,7 +17,7 @@ if ( $CFG->adminpw === false ) {
     die('Please set $CFG->adminpw to a plaintext or hashed string');
 }
 
-// Make sure we have an initialized database before sending to login.php
+// Make sure we have an initialized database before sending to login
 try {
     define('PDO_WILL_CATCH', true);
     $PDOX = \Tsugi\Core\LTIX::getConnection();
@@ -23,9 +27,9 @@ try {
     $havedatabase = false;
 }
 
-if ( $havedatabase && $CFG->google_client_id && ! U::get($_SESSION,'id') ) {
-    $_SESSION['login_return'] = $rest_path->full;
-    Output::doRedirect($CFG->wwwroot.'/login.php');
+if ( $havedatabase && $CFG->google_client_id && ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl($rest_path->full);
+    Output::doRedirect(\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 
@@ -39,10 +43,10 @@ if ( isset($_POST['passphrase']) ) {
 
         $_SESSION["admin"] = "yes";
         error_log("Admin login IP=".$_SERVER["REMOTE_ADDR"].
-            (isset($_SESSION['id']) ? " id=". $_SESSION['id'].' email='.$_SESSION['email'] : " developer mode"));
+            (isLoggedIn() ? " id=".loggedInUserId().' email='.U::get($_SESSION, 'email', '') : " developer mode"));
     } else {
         error_log("Admin bad pw IP=".$_SERVER["REMOTE_ADDR"].
-            (isset($_SESSION['id']) ? " id=". $_SESSION['id'].' email='.$_SESSION['email'] : " developer mode"));
+            (isLoggedIn() ? " id=".loggedInUserId().' email='.U::get($_SESSION, 'email', '') : " developer mode"));
     }
     $rest_path = \Tsugi\Util\U::rest_path();
     $redirect = U::reconstruct_query($rest_path->current);

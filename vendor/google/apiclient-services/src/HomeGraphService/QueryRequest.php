@@ -21,18 +21,31 @@ class QueryRequest extends \Google\Collection
 {
   protected $collection_key = 'inputs';
   /**
+   * Required. Third-party user ID.
+   *
    * @var string
    */
   public $agentUserId;
+  /**
+   * Optional. If true, the response will include device metadata in the
+   * device_metadata field.
+   *
+   * @var bool
+   */
+  public $includeDeviceMetadata;
   protected $inputsType = QueryRequestInput::class;
   protected $inputsDataType = 'array';
   /**
+   * Request ID used for debugging.
+   *
    * @var string
    */
   public $requestId;
 
   /**
-   * @param string
+   * Required. Third-party user ID.
+   *
+   * @param string $agentUserId
    */
   public function setAgentUserId($agentUserId)
   {
@@ -46,7 +59,27 @@ class QueryRequest extends \Google\Collection
     return $this->agentUserId;
   }
   /**
-   * @param QueryRequestInput[]
+   * Optional. If true, the response will include device metadata in the
+   * device_metadata field.
+   *
+   * @param bool $includeDeviceMetadata
+   */
+  public function setIncludeDeviceMetadata($includeDeviceMetadata)
+  {
+    $this->includeDeviceMetadata = $includeDeviceMetadata;
+  }
+  /**
+   * @return bool
+   */
+  public function getIncludeDeviceMetadata()
+  {
+    return $this->includeDeviceMetadata;
+  }
+  /**
+   * Required. Inputs containing third-party device IDs for which to get the
+   * device states.
+   *
+   * @param QueryRequestInput[] $inputs
    */
   public function setInputs($inputs)
   {
@@ -60,7 +93,9 @@ class QueryRequest extends \Google\Collection
     return $this->inputs;
   }
   /**
-   * @param string
+   * Request ID used for debugging.
+   *
+   * @param string $requestId
    */
   public function setRequestId($requestId)
   {

@@ -29,7 +29,7 @@ use Google\Client;
  *
  * <p>
  * For more information about this service, see the API
- * <a href="https://developers.google.com/admin-sdk/" target="_blank">Documentation</a>
+ * <a href="https://developers.google.com/workspace/admin/" target="_blank">Documentation</a>
  * </p>
  *
  * @author Google, Inc.
@@ -388,6 +388,28 @@ class Directory extends \Google\Service
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
+                ],
+              ],
+            ],'countChromeOsDevices' => [
+              'path' => 'admin/directory/v1/customer/{customerId}/devices/chromeos:countChromeOsDevices',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'customerId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'filter' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'includeChildOrgunits' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
+                ],
+                'orgUnitPath' => [
+                  'location' => 'query',
+                  'type' => 'string',
                 ],
               ],
             ],'issueCommand' => [
@@ -1978,7 +2000,11 @@ class Directory extends \Google\Service
         'users',
         [
           'methods' => [
-            'delete' => [
+            'createGuest' => [
+              'path' => 'admin/directory/v1/users:createGuest',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],'delete' => [
               'path' => 'admin/directory/v1/users/{userKey}',
               'httpMethod' => 'DELETE',
               'parameters' => [

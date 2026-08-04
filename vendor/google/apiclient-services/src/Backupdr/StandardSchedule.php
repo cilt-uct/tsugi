@@ -19,30 +19,87 @@ namespace Google\Service\Backupdr;
 
 class StandardSchedule extends \Google\Collection
 {
+  /**
+   * recurrence type not set
+   */
+  public const RECURRENCE_TYPE_RECURRENCE_TYPE_UNSPECIFIED = 'RECURRENCE_TYPE_UNSPECIFIED';
+  /**
+   * The `BackupRule` is to be applied hourly.
+   */
+  public const RECURRENCE_TYPE_HOURLY = 'HOURLY';
+  /**
+   * The `BackupRule` is to be applied daily.
+   */
+  public const RECURRENCE_TYPE_DAILY = 'DAILY';
+  /**
+   * The `BackupRule` is to be applied weekly.
+   */
+  public const RECURRENCE_TYPE_WEEKLY = 'WEEKLY';
+  /**
+   * The `BackupRule` is to be applied monthly.
+   */
+  public const RECURRENCE_TYPE_MONTHLY = 'MONTHLY';
+  /**
+   * The `BackupRule` is to be applied yearly.
+   */
+  public const RECURRENCE_TYPE_YEARLY = 'YEARLY';
   protected $collection_key = 'months';
   protected $backupWindowType = BackupWindow::class;
   protected $backupWindowDataType = '';
   /**
+   * Optional. Specifies days of months like 1, 5, or 14 on which jobs will run.
+   * Values for `days_of_month` are only applicable for `recurrence_type`,
+   * `MONTHLY` and `YEARLY`. A validation error will occur if other values are
+   * supplied.
+   *
    * @var int[]
    */
   public $daysOfMonth;
   /**
+   * Optional. Specifies days of week like, MONDAY or TUESDAY, on which jobs
+   * will run. This is required for `recurrence_type`, `WEEKLY` and is not
+   * applicable otherwise. A validation error will occur if a value is supplied
+   * and `recurrence_type` is not `WEEKLY`.
+   *
    * @var string[]
    */
   public $daysOfWeek;
   /**
+   * Optional. Specifies frequency for hourly backups. A hourly frequency of 1
+   * means jobs will run every 1 hour from start time till end time defined.
+   * This is required for `recurrence_type`, `HOURLY` and is not applicable
+   * otherwise. A validation error will occur if a value is supplied and
+   * `recurrence_type` is not `HOURLY`. The supported values for each resource
+   * type are as follows: * `compute.googleapis.com/Instance`: 4-23 *
+   * `compute.googleapis.com/Disk`: 1-23 * `sqladmin.googleapis.com/Instance`:
+   * 6-23 * `alloydb.googleapis.com/Cluster`: 1-23 *
+   * `file.googleapis.com/Instance`: 1-23 Refer to link
+   * https://cloud.google.com/backup-disaster-
+   * recovery/docs/concepts/cloud_best_practices for more details.
+   *
    * @var int
    */
   public $hourlyFrequency;
   /**
+   * Optional. Specifies the months of year, like `FEBRUARY` and/or `MAY`, on
+   * which jobs will run. This field is only applicable when `recurrence_type`
+   * is `YEARLY`. A validation error will occur if other values are supplied.
+   *
    * @var string[]
    */
   public $months;
   /**
+   * Required. Specifies the `RecurrenceType` for the schedule.
+   *
    * @var string
    */
   public $recurrenceType;
   /**
+   * Required. The time zone to be used when interpreting the schedule. The
+   * value of this field must be a time zone name from the IANA tz database. See
+   * https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for the list
+   * of valid timezone names. For example, Europe/Paris.
+   *
    * @var string
    */
   public $timeZone;
@@ -50,7 +107,12 @@ class StandardSchedule extends \Google\Collection
   protected $weekDayOfMonthDataType = '';
 
   /**
-   * @param BackupWindow
+   * Required. A BackupWindow defines the window of day during which backup jobs
+   * will run. Jobs are queued at the beginning of the window and will be marked
+   * as `NOT_RUN` if they do not start by the end of the window. Note: running
+   * jobs will not be cancelled at the end of the window.
+   *
+   * @param BackupWindow $backupWindow
    */
   public function setBackupWindow(BackupWindow $backupWindow)
   {
@@ -64,7 +126,12 @@ class StandardSchedule extends \Google\Collection
     return $this->backupWindow;
   }
   /**
-   * @param int[]
+   * Optional. Specifies days of months like 1, 5, or 14 on which jobs will run.
+   * Values for `days_of_month` are only applicable for `recurrence_type`,
+   * `MONTHLY` and `YEARLY`. A validation error will occur if other values are
+   * supplied.
+   *
+   * @param int[] $daysOfMonth
    */
   public function setDaysOfMonth($daysOfMonth)
   {
@@ -78,7 +145,12 @@ class StandardSchedule extends \Google\Collection
     return $this->daysOfMonth;
   }
   /**
-   * @param string[]
+   * Optional. Specifies days of week like, MONDAY or TUESDAY, on which jobs
+   * will run. This is required for `recurrence_type`, `WEEKLY` and is not
+   * applicable otherwise. A validation error will occur if a value is supplied
+   * and `recurrence_type` is not `WEEKLY`.
+   *
+   * @param string[] $daysOfWeek
    */
   public function setDaysOfWeek($daysOfWeek)
   {
@@ -92,7 +164,19 @@ class StandardSchedule extends \Google\Collection
     return $this->daysOfWeek;
   }
   /**
-   * @param int
+   * Optional. Specifies frequency for hourly backups. A hourly frequency of 1
+   * means jobs will run every 1 hour from start time till end time defined.
+   * This is required for `recurrence_type`, `HOURLY` and is not applicable
+   * otherwise. A validation error will occur if a value is supplied and
+   * `recurrence_type` is not `HOURLY`. The supported values for each resource
+   * type are as follows: * `compute.googleapis.com/Instance`: 4-23 *
+   * `compute.googleapis.com/Disk`: 1-23 * `sqladmin.googleapis.com/Instance`:
+   * 6-23 * `alloydb.googleapis.com/Cluster`: 1-23 *
+   * `file.googleapis.com/Instance`: 1-23 Refer to link
+   * https://cloud.google.com/backup-disaster-
+   * recovery/docs/concepts/cloud_best_practices for more details.
+   *
+   * @param int $hourlyFrequency
    */
   public function setHourlyFrequency($hourlyFrequency)
   {
@@ -106,7 +190,11 @@ class StandardSchedule extends \Google\Collection
     return $this->hourlyFrequency;
   }
   /**
-   * @param string[]
+   * Optional. Specifies the months of year, like `FEBRUARY` and/or `MAY`, on
+   * which jobs will run. This field is only applicable when `recurrence_type`
+   * is `YEARLY`. A validation error will occur if other values are supplied.
+   *
+   * @param string[] $months
    */
   public function setMonths($months)
   {
@@ -120,21 +208,31 @@ class StandardSchedule extends \Google\Collection
     return $this->months;
   }
   /**
-   * @param string
+   * Required. Specifies the `RecurrenceType` for the schedule.
+   *
+   * Accepted values: RECURRENCE_TYPE_UNSPECIFIED, HOURLY, DAILY, WEEKLY,
+   * MONTHLY, YEARLY
+   *
+   * @param self::RECURRENCE_TYPE_* $recurrenceType
    */
   public function setRecurrenceType($recurrenceType)
   {
     $this->recurrenceType = $recurrenceType;
   }
   /**
-   * @return string
+   * @return self::RECURRENCE_TYPE_*
    */
   public function getRecurrenceType()
   {
     return $this->recurrenceType;
   }
   /**
-   * @param string
+   * Required. The time zone to be used when interpreting the schedule. The
+   * value of this field must be a time zone name from the IANA tz database. See
+   * https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for the list
+   * of valid timezone names. For example, Europe/Paris.
+   *
+   * @param string $timeZone
    */
   public function setTimeZone($timeZone)
   {
@@ -148,7 +246,13 @@ class StandardSchedule extends \Google\Collection
     return $this->timeZone;
   }
   /**
-   * @param WeekDayOfMonth
+   * Optional. Specifies a week day of the month like, FIRST SUNDAY or LAST
+   * MONDAY, on which jobs will run. This will be specified by two fields in
+   * `WeekDayOfMonth`, one for the day, e.g. `MONDAY`, and one for the week,
+   * e.g. `LAST`. This field is only applicable for `recurrence_type`, `MONTHLY`
+   * and `YEARLY`. A validation error will occur if other values are supplied.
+   *
+   * @param WeekDayOfMonth $weekDayOfMonth
    */
   public function setWeekDayOfMonth(WeekDayOfMonth $weekDayOfMonth)
   {

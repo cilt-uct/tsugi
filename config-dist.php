@@ -21,7 +21,10 @@ $dirroot = realpath(dirname(__FILE__));
 
 // New for 2021 - We may need to do some tweaking before the autoloader wakes up
 // So we need to add this require to config.php before requiring autoload.php
-require_once $dirroot."/vendor/tsugi/lib/include/pre_config.php";
+
+// Prior to 21-Jan-2026, this was:
+// require_once $dirroot."/vendor/tsugi/lib/include/pre_config.php";
+require_once $dirroot."/lib/include/pre_config.php";
 
 // Activate the autoloader...
 $loader = require_once($dirroot."/vendor/autoload.php");
@@ -54,7 +57,10 @@ $CFG = new \Tsugi\Config\ConfigInfo($dirroot, $wwwroot);
 unset($wwwroot);
 unset($dirroot);
 $CFG->loader = $loader;
-if ( $apphome ) $CFG->apphome = $apphome; // Leave unset if not embedded
+$embedded_layout = (bool) $apphome;
+if ( $apphome ) {
+    $CFG->apphome = $apphome; // Embedded Tsugi
+}
 unset($apphome);
 
 // If we have a web socket server, put its URL here
@@ -83,13 +89,13 @@ unset($apphome);
 //     $CFG->trust_forwarded_ip = false;
 
 // Database connection information to configure the PDO connection
-// You need to point this at a database with am account and password
+// You need to point this at a database with an account and password
 // that can create tables.   To make the initial tables go into Admin
 // to run the upgrade.php script which auto-creates the tables.
-$CFG->pdo       = 'mysql:host=127.0.0.1;dbname=tsugi';
-// $CFG->pdo       = 'mysql:host=127.0.0.1;port=8889;dbname=tsugi'; // MAMP
-$CFG->dbuser    = 'ltiuser';
-$CFG->dbpass    = 'ltipassword';
+$CFG->pdo       = getenv('TSUGI_PDO') ?: 'mysql:host=127.0.0.1;dbname=tsugi';
+// $CFG->pdo       = getenv('TSUGI_PDO') ?: 'mysql:host=127.0.0.1;port=8889;dbname=tsugi'; // MAMP
+$CFG->dbuser    = getenv('TSUGI_DB_USER') ?: 'ltiuser';
+$CFG->dbpass    = getenv('TSUGI_DB_PASS') ?: 'ltipassword';
 
 // Sometimes the PDO constructor call needs additional parameters
 // $CFG->pdo_options = array(\PDO::MYSQL_ATTR_SSL_CA => './BaltimoreCyberTrustRoot.crt.pem'))
@@ -102,7 +108,6 @@ $CFG->pdo_options  = false;
 // so you might as well make them now :)
 // $CFG->privacy_url = 'https://www.tsugicloud.org/services/policies/privacy';
 // $CFG->sla_url = 'https://www.tsugicloud.org/services/policies/service-level-agreement';
-
 // Tools to hide in the store for non-admin users.  Each tool sets their status
 // in their register.php with a line like:
 //     "tool_phase" => "sample",
@@ -135,7 +140,7 @@ $CFG->dbprefix  = '';
 // features of this application. It can be the plaintext password
 // or a sha256 hash of the admin password.  Please don't use either
 // the 'tsugi' or the sha256 of 'tsugi' example values below.
-$CFG->adminpw = false;
+$CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // $CFG->adminpw = 'tsugi';
 // $CFG->adminpw = 'sha256:9c0ccb0d53dd71b896cde69c78cf977acbcb36546c96bedec1619406145b5e9e';
 
@@ -165,29 +170,26 @@ $CFG->adminpw = false;
 // point to the topics.json file
 // $CFG->topics = $CFG->dirroot.'/../topics.json';
 
+// YouTube playlist ID - when set, added to watch URLs so the full playlist appears
+// $CFG->youtube_playlist = 'PLlRFEj9h3CjHjgV3xeKMJGj7HHoQhCQZ';
 // This allows you to include various tool folders.  These are scanned
 // for register.php, database.php and index.php files to do automatic
 // table creation as well as making lists of tools in various UI places
-// such as ContentItem
-
-// For normal tsugi, by default we use the built-in admin tools, and
-// install new tools (see /admin/install/) into mod.
-$CFG->tool_folders = array("admin", "mod");
+// such as ContentItem.
+//
+// 1) Standalone Tsugi (default): admin/, mod/, and tool/ under this checkout.
+// 2) Embedded Tsugi: set $apphome near the top of this file; then $embedded_layout is true
+//    and we use ../tools and ../mod (sibling folders next to this tsugi/ tree).
+//
+// To add more roots (e.g. samples), extend $CFG->tool_folders after the embedded block.
+// These are loaded in order - in the case of duplicates, last wins
+$CFG->tool_folders = array("mod", "admin", "tool");
 $CFG->install_folder = $CFG->dirroot.'/mod';
 
-// For Embedded Tsugi, you probably want to ignore the mod folder
-// in /tsugi and instead install new tools into "mod" in the parent folder
-if ( isset($CFG->apphome) ) {
-    $CFG->tool_folders = array("admin", "../tools", "../mod");
+if ( $embedded_layout ) {
+    $CFG->tool_folders = array("../tools", "../mod", "admin", "tool");
     $CFG->install_folder = $CFG->dirroot.'/../mod';
 }
-
-// You can also include tool/module folders that are outside of this folder
-// using the following pattern:
-// $CFG->tool_folders = array("admin", "mod",
-//      "../tsugi-php-standalone", "../tsugi-php-module",
-//      "../tsugi-php-samples", "../tsugi-php-exercises");
-
 // Set to true to redirect to the upgrading.php script
 // Also copy upgrading-dist.php to upgrading.php and add your message
 $CFG->upgrading = false;
@@ -217,9 +219,18 @@ $CFG->autoapprovekeys = false; // A regex like - '/.+@gmail\\.com/'
 $CFG->google_client_id = false; // '96041-nljpjj8jlv4.apps.googleusercontent.com';
 $CFG->google_client_secret = false; // '6Q7w_x4ESrl29a';
 
+// Google OAuth redirect URI configuration
+// If you want explicit control over the redirect URI, set this to match exactly
+// what you configure in Google's OAuth console (Authorized redirect URIs).
+// If not set, the redirect URI is automatically constructed from $wwwroot.
+//
+// $CFG->google_login_redirect = false; // Use automatic construction (default)
+// $CFG->google_login_redirect = 'https://local.ca4e.com/login'; // Explicit redirect URI
+
 // This is a legacy backwards compatibility.   In the round-trip to Google it used to
 // come back login.php after login was successful - If this is true, we come back
 // to login (without the php) - set this to false to restore the old pattern
+// Note: This is ignored if $google_login_redirect is set above.
 $CFG->google_login_new = true;
 $CFG->login_return_url = false;
 
@@ -232,13 +243,75 @@ $CFG->google_map_api_key = false; // 'Ve8eH490843cIA9IGl8';
 
 $CFG->google_translate = false;
 
-// You can specify a default menu for Tsugi to use across the site if there is no
-// defined menu given
-// $buildmenu = $CFG->dirroot."/../buildmenu.php";
-// if ( file_exists($buildmenu) ) {
-    // require_once $buildmenu;
-    // $CFG->defaultmenu = buildMenu();
-// }
+// Enable service worker for push notifications and offline support
+// When set to true, enables the service worker registration script in the page footer.
+// The service worker is required for web push notifications to work.
+// Defaults to false. Set to true to enable service worker functionality.
+// Note: You must also configure VAPID keys for push notifications to work.
+// $CFG->service_worker = false;
+
+// Notification de-duplication time window (in seconds)
+// When two notifications with the same dedupe_key are created for the same user
+// within this time window, the second will update the first instead of creating
+// a new notification.
+// Defaults to 900 seconds (15 minutes). Set to 0 to disable de-duplication.
+// $CFG->notification_dedupe_window = 900;
+
+// Notification expiration period (in days)
+// Notifications older than this number of days will be automatically deleted
+// during opportunistic cleanup operations. Cleanup runs when notifications are
+// accessed, but at most once per hour to avoid performance impact.
+// Defaults to 30 days (1 month). Set to 0 to disable expiration.
+// $CFG->notification_expiration_days = 30;
+
+// VAPID keys for push notifications
+// VAPID (Voluntary Application Server Identification) keys are required for web push notifications.
+// These keys identify your server to push notification services.
+//
+// To generate VAPID keys:
+// 1. Use an online generator: https://giga.tools/developer-tools/vapid-key-generator
+// 2. Or use Node.js: npm install -g web-push && web-push generate-vapid-keys
+// 3. Or use the PHP script: php scripts/generate-vapid-keys.php
+//
+// See docs/vapid.md for detailed instructions and alternatives.
+//
+// The vapid_subject should be a mailto: URL with your email address.
+// This is used to identify your server to push notification services.
+//
+// $CFG->vapid_public_key = false; // 'BKx...long_base64_string...';
+// $CFG->vapid_private_key = false; // 'xYz...long_base64_string...';
+// $CFG->vapid_subject = false; // 'mailto:admin@example.com';
+
+// Site navigation (enclosing application, not Tsugi core)
+//
+// On cookie-session pages (admin, login, settings, and any page that defines
+// COOKIE_SESSION before loading config.php), Output::topNav() builds the top
+// menu in this order:
+//   (1) $CFG->top_menu_callback when set and callable
+//   (2) $CFG->defaultmenu when it is a MenuSet
+//   (3) Navigation stored via $OUTPUT->topNavSession() (legacy nav.php pattern)
+//   (4) Output::defaultMenuSet() (generic Tsugi menu)
+//
+// Set top_menu_callback in your site config (e.g. tsugi_settings.php included
+// from config.php) or in this file. The callback must return
+// a \Tsugi\UI\MenuSet. Tsugi does not load buildmenu.php or other site files
+// itself — only your callback does.
+//
+// Example (WA4E-style site with buildmenu.php next to the tsugi/ folder):
+// $CFG->top_menu_callback = function() {
+//     global $CFG;
+//     $buildmenu = $CFG->dirroot.'/../buildmenu.php';
+//     if ( ! file_exists($buildmenu) ) {
+//         return false;
+//     }
+//     require_once $buildmenu;
+//     return buildMenu();
+// };
+//
+// Controlling the navigation menu using $CFG->defaultmenu or $OUTPUT->topNavSession()
+// Are less reliable that top_menu_callback and sites should move towards
+// from these options and towards $CFG->top_menu_callback to insure the top
+// menu works across lti launches, login/logout etc.
 
 // If these are not set, the auto expiration scripts in admin/expire
 // do nothing.  You can still manually expire data in the admin UI without
@@ -255,8 +328,8 @@ $CFG->google_translate = false;
 // The legacy value for this was false
 $CFG->verifypeer = false;
 
-// Whether or not to unify accounts between global site-wide login
-// and LTI launches
+// Legacy: Link Accounts feature (unify) - no longer implemented.
+// Previously allowed linking LTI-launched users to site-wide login.
 $CFG->unify = false;
 
 // Badge generation settings - once you set these values to something
@@ -265,6 +338,20 @@ $CFG->unify = false;
 // will be invalidated.
 $CFG->badge_encrypt_password = false; // "somethinglongwithhex387438758974987";
 $CFG->badge_assert_salt = false; // "mediumlengthhexstring";
+
+// Email address for Open Badges 2.x issuer (required field for OB2 compliance)
+// If not set, defaults to "badge_issuer_email_not_set@example.com"
+// $CFG->badge_issuer_email = "info@py4e.com";
+
+// LinkedIn organization/company page URL (optional)
+// If set, displays a LinkedIn link on badge pages
+// $CFG->linkedin_url = "https://www.linkedin.com/company/py4e/";
+
+// OB3 DataIntegrityProof signing (required for 1EdTech OB3 certification)
+// Keygen requires PHP gmp or bcmath extension. Install if needed: apt-get install php-gmp (or php-bcmath)
+// Run: php scripts/badge_ob3_keygen.php from tsugi directory, then add the output to config.php
+// $CFG->badge_ob3_secret_key = "base64-encoded-64-byte-secret-key";
+// $CFG->badge_ob3_verification_method_id = "https://yoursite.com/tsugi/assertions/issuer.json#key-0";
 
 // This folder contains the badge images - This example
 // is for Embedded Tsugi and the badge images are in the
@@ -336,6 +423,9 @@ if ( $CFG->DEVELOPER && ! isset($CFG->dataroot) ) {
 $CFG->cookiesecret = 'warning:please-change-cookie-secret-a289b543';
 $CFG->cookiename = 'TSUGIAUTO';
 $CFG->cookiepad = '390b246ea9';
+// Long-lived encrypted auto-login cookie (Google login + LTIX::loginSecureCookie).
+// Default false; set true to enable setting and reading the cookie.
+$CFG->enable_secure_cookie_login = false;
 
 // Where the bulk mail comes from - should be a real address with a wildcard box you check
 $CFG->maildomain = false; // 'mail.example.com';
@@ -354,9 +444,6 @@ $CFG->sessionsalt = "warning:please-change-sessionsalt-89b543";
 
 // Timezone
 $CFG->timezone = 'Pacific/Honolulu'; // Nice for due dates
-
-// Universal Analytics
-$CFG->universal_analytics = false; // "UA-57880800-1";
 
 // Effectively an "airplane mode" for the application.
 // Setting this to true makes it so that when you are completely
@@ -492,15 +579,9 @@ if ( isset($CFG->sessions_in_db) && $CFG->sessions_in_db ) {
     );
 }
 
-// The vendor include and root - generally leave these alone
-// unless you have a very custom checkout
-$CFG->vendorroot = $CFG->wwwroot."/vendor/tsugi/lib/util";
-$CFG->vendorinclude = $CFG->dirroot."/vendor/tsugi/lib/include";
-$CFG->vendorstatic = $CFG->wwwroot."/vendor/tsugi/lib/static";
-
 $CFG->lumen_storage = $CFG->dirroot."/storage/";
 
 // Leave these here
-require_once $CFG->vendorinclude."/setup.php";
-require_once $CFG->vendorinclude."/lms_lib.php";
+require_once $CFG->dirroot."/lib/include/setup.php";
+require_once $CFG->dirroot."/lib/include/lms_lib.php";
 // No trailing tag to avoid inadvertent white space

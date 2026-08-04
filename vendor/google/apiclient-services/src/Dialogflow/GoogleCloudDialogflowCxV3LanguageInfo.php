@@ -33,7 +33,7 @@ class GoogleCloudDialogflowCxV3LanguageInfo extends \Google\Model
   public $resolvedLanguageCode;
 
   /**
-   * @param float
+   * @param float $confidenceScore
    */
   public function setConfidenceScore($confidenceScore)
   {
@@ -47,7 +47,7 @@ class GoogleCloudDialogflowCxV3LanguageInfo extends \Google\Model
     return $this->confidenceScore;
   }
   /**
-   * @param string
+   * @param string $inputLanguageCode
    */
   public function setInputLanguageCode($inputLanguageCode)
   {
@@ -61,7 +61,7 @@ class GoogleCloudDialogflowCxV3LanguageInfo extends \Google\Model
     return $this->inputLanguageCode;
   }
   /**
-   * @param string
+   * @param string $resolvedLanguageCode
    */
   public function setResolvedLanguageCode($resolvedLanguageCode)
   {

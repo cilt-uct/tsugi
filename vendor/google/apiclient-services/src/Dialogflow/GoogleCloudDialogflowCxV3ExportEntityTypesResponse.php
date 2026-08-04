@@ -27,7 +27,7 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesResponse extends \Google\Model
   public $entityTypesUri;
 
   /**
-   * @param GoogleCloudDialogflowCxV3InlineDestination
+   * @param GoogleCloudDialogflowCxV3InlineDestination $entityTypesContent
    */
   public function setEntityTypesContent(GoogleCloudDialogflowCxV3InlineDestination $entityTypesContent)
   {
@@ -41,7 +41,7 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesResponse extends \Google\Model
     return $this->entityTypesContent;
   }
   /**
-   * @param string
+   * @param string $entityTypesUri
    */
   public function setEntityTypesUri($entityTypesUri)
   {

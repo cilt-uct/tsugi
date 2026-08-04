@@ -9,8 +9,8 @@ use \Tsugi\Crypt\SecureCookie;
 function requireLogin() {
     global $CFG, $OUTPUT;
     if ( $CFG->google_glient_id && ! isset($_SESSION['user_id']) ) {
-        $_SESSION['error'] = 'Login required';
-        $OUTPUT->doRedirect($CFG->wwwroot.'/login.php') ;
+        U::flashError('Login required');
+        $OUTPUT->doRedirect(\Tsugi\Controllers\Login::loginUrl()) ;
         exit();
     }
 }
@@ -22,14 +22,14 @@ function isAdmin() {
 function requireAdmin() {
     global $CFG, $OUTPUT;
     if ( $CFG->google_glient_id && $_SESSION['admin'] != 'yes' ) {
-        $_SESSION['error'] = 'Login required';
-        $OUTPUT->doRedirect($CFG->wwwroot.'/login.php') ;
+        U::flashError('Login required');
+        $OUTPUT->doRedirect(\Tsugi\Controllers\Login::loginUrl()) ;
         exit();
     }
 }
 
 function findTools($dir, &$retval, $filenames=array("index.php", "tsugi.php")) {
-    if ( ! is_array($filenames) ) $filenames = array($filenams);
+    if ( ! is_array($filenames) ) $filenames = array($filenames);
     if ( is_dir($dir) ) {
         if ($dh = opendir($dir)) {
             while (($sub = readdir($dh)) !== false) {
@@ -122,7 +122,7 @@ function findAllRegistrationsInternal($folders=false, $appStore=false)
             $url = $CFG->wwwroot . '/' . $relative;
             $url = U::remove_relative_path($url);
             $pieces = explode('/', $url);
-            if ( $pieces < 2 || $pieces[count($pieces)-1] != 'register.php') {
+            if ( count($pieces) < 2 || $pieces[count($pieces)-1] != 'register.php') {
                 error_log('Unable to load tool registration from '.$tool_folder);
                 continue;
             }
@@ -296,4 +296,3 @@ function trimAsMuchAsYouCan($path, $root) {
     $remainder = implode('/', $pieces);
     return $remainder;
 }
-

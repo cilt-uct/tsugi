@@ -87,6 +87,11 @@ class CloudMemorystoreforMemcached extends \Google\Service
                   'type' => 'string',
                   'required' => true,
                 ],
+                'extraLocationTypes' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                  'repeated' => true,
+                ],
                 'filter' => [
                   'location' => 'query',
                   'type' => 'string',
@@ -154,6 +159,16 @@ class CloudMemorystoreforMemcached extends \Google\Service
                   'required' => true,
                 ],
               ],
+            ],'getTags' => [
+              'path' => 'v1/{+name}:getTags',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
             ],'list' => [
               'path' => 'v1/{+parent}/instances',
               'httpMethod' => 'GET',
@@ -199,6 +214,16 @@ class CloudMemorystoreforMemcached extends \Google\Service
               'httpMethod' => 'POST',
               'parameters' => [
                 'instance' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'setTags' => [
+              'path' => 'v1/{+name}:setTags',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'name' => [
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
@@ -284,6 +309,10 @@ class CloudMemorystoreforMemcached extends \Google\Service
                 'pageToken' => [
                   'location' => 'query',
                   'type' => 'string',
+                ],
+                'returnPartialSuccess' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
                 ],
               ],
             ],

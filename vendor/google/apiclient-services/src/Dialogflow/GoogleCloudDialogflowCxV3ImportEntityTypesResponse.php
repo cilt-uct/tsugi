@@ -28,7 +28,7 @@ class GoogleCloudDialogflowCxV3ImportEntityTypesResponse extends \Google\Collect
   public $entityTypes;
 
   /**
-   * @param GoogleCloudDialogflowCxV3ImportEntityTypesResponseConflictingResources
+   * @param GoogleCloudDialogflowCxV3ImportEntityTypesResponseConflictingResources $conflictingResources
    */
   public function setConflictingResources(GoogleCloudDialogflowCxV3ImportEntityTypesResponseConflictingResources $conflictingResources)
   {
@@ -42,7 +42,7 @@ class GoogleCloudDialogflowCxV3ImportEntityTypesResponse extends \Google\Collect
     return $this->conflictingResources;
   }
   /**
-   * @param string[]
+   * @param string[] $entityTypes
    */
   public function setEntityTypes($entityTypes)
   {

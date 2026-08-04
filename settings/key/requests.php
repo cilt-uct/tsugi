@@ -11,7 +11,7 @@ use \Tsugi\Core\LTIX;
 \Tsugi\Core\LTIX::getConnection();
 
 if ( $CFG->providekeys === false || $CFG->owneremail === false ) {
-    $_SESSION['error'] = _m("This service does not accept requests for keys");
+    U::flashError(_m("This service does not accept requests for keys"));
     header('Location: '.$CFG->wwwroot);
     return;
 }
@@ -19,24 +19,24 @@ if ( $CFG->providekeys === false || $CFG->owneremail === false ) {
 header('Content-Type: text/html; charset=utf-8');
 session_start();
 
-if ( ! ( isset($_SESSION['id']) ) ) {
-    $_SESSION['login_return'] = LTIX::curPageUrlFolder();
-    header('Location: '.$CFG->wwwroot.'/login');
+if ( ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl(LTIX::curPageUrlFolder());
+    header('Location: '.\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 
-$goodsession = isset($_SESSION['id']) && isset($_SESSION['email']) && isset($_SESSION['displayname']) &&
+$goodsession = isLoggedIn() && isset($_SESSION['email']) && isset($_SESSION['displayname']) &&
     U::strlen($_SESSION['email']) > 0 && U::strlen($_SESSION['displayname']) > 0 ;
 
 if ( $goodsession && isset($_POST['title']) &&
         isset($_POST['title']) && isset($_POST['notes']) ) {
     if ( U::strlen($_POST['title']) < 1 ) {
-        $_SESSION['error'] = _m("Requests must have titles");
+        U::flashError(_m("Requests must have titles"));
         header("Location: ".LTIX::curPageUrl());
         return;
     }
     if ( U::strlen($_POST['notes']) < 1 ) {
-        $_SESSION['error'] = _m("You must include a reason (i.e. what course you are teaching) in this request.");
+        U::flashError(_m("You must include a reason (i.e. what course you are teaching) in this request."));
         header("Location: ".LTIX::curPageUrl());
         return;
     }
@@ -44,7 +44,7 @@ if ( $goodsession && isset($_POST['title']) &&
         "INSERT INTO {$CFG->dbprefix}key_request
         (user_id, title, notes, state, lti, created_at, updated_at)
         VALUES ( :UID, :TITLE, :NOTES, 0, :LTI, NOW(), NOW() )",
-        array(":UID" => $_SESSION['id'], ":TITLE" => $_POST['title'],
+        array(":UID" => loggedInUserId(), ":TITLE" => $_POST['title'],
             ":NOTES" => $_POST['notes'], ":LTI" => 1)
     );
 
@@ -52,7 +52,7 @@ if ( $goodsession && isset($_POST['title']) &&
     if ( isset($CFG->autoapprovekeys) && U::strlen($CFG->autoapprovekeys) > 0 &&
         preg_match($CFG->autoapprovekeys, $_SESSION['email']) == 1) {
         // Set up the email variables
-        $user_id = $_SESSION['id'];
+        $user_id = loggedInUserId();
         $token = Mail::computeCheck($user_id);
         $to = $_SESSION['email'];
 
@@ -94,9 +94,9 @@ if ( $goodsession && isset($_POST['title']) &&
             array('rid' => $request_id)
         );
 
-        $_SESSION['success'] = "Key Approved";
+        U::flashSuccess("Key Approved");
         if ( $subject ) {
-            $_SESSION['success'] = "Key Approved - Check your email ".$to;
+            U::flashSuccess("Key Approved - Check your email ".$to);
             error_log("Email sent to $to, Subject: $subject");
             $retval = Mail::send($to, $subject, $message, $user_id, $token);
             if ( $CFG->owneremail ) {
@@ -110,7 +110,7 @@ if ( $goodsession && isset($_POST['title']) &&
     }
 
     if ( $CFG->owneremail && $CFG->OFFLINE === false) {
-        $user_id = $_SESSION['id'];
+        $user_id = loggedInUserId();
         $token = Mail::computeCheck($user_id);
         $to = $CFG->owneremail;
         $subject = "Key Request from ".$_SESSION['displayname'].' ('.$_SESSION['email'].' )';
@@ -120,12 +120,12 @@ if ( $goodsession && isset($_POST['title']) &&
 
         $retval = Mail::send($to, $subject, $message, $user_id, $token);
     }
-    $_SESSION['success'] = "Record inserted";
+    U::flashSuccess("Record inserted");
     header("Location: ".LTIX::curPageUrlFolder());
     return;
 }
 
-$query_parms = array(":UID" => $_SESSION['id']);
+$query_parms = array(":UID" => loggedInUserId());
 $searchfields = array("request_id", "title", "notes", "state", "admin", "email", "displayname", "R.created_at", "R.updated_at");
 $sql = "SELECT request_id, title, notes, state, admin, 
         R.created_at, R.updated_at, email, displayname

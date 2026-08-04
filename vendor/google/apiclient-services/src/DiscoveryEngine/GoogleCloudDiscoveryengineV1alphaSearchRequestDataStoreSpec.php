@@ -22,16 +22,50 @@ class GoogleCloudDiscoveryengineV1alphaSearchRequestDataStoreSpec extends \Googl
   protected $boostSpecType = GoogleCloudDiscoveryengineV1alphaSearchRequestBoostSpec::class;
   protected $boostSpecDataType = '';
   /**
+   * Optional. Custom search operators which if specified will be used to filter
+   * results from workspace data stores. For more information on custom search
+   * operators, see
+   * [SearchOperators](https://support.google.com/cloudsearch/answer/6172299).
+   *
+   * @var string
+   */
+  public $customSearchOperators;
+  /**
+   * Required. Full resource name of DataStore, such as `projects/{project}/loca
+   * tions/{location}/collections/{collection_id}/dataStores/{data_store_id}`.
+   * The path must include the project number, project id is not supported for
+   * this field.
+   *
    * @var string
    */
   public $dataStore;
   /**
+   * Optional. Filter specification to filter documents in the data store
+   * specified by data_store field. For more information on filtering, see
+   * [Filtering](https://cloud.google.com/generative-ai-app-builder/docs/filter-
+   * search-metadata)
+   *
    * @var string
    */
   public $filter;
+  /**
+   * Optional. The maximum number of results to retrieve from this data store.
+   * If not specified, it will use the SearchRequest.num_results_per_data_store
+   * if provided, otherwise there is no limit. If both this field and
+   * SearchRequest.num_results_per_data_store are specified, this field will be
+   * used.
+   *
+   * @var int
+   */
+  public $numResults;
 
   /**
-   * @param GoogleCloudDiscoveryengineV1alphaSearchRequestBoostSpec
+   * Optional. Boost specification to boost certain documents. For more
+   * information on boosting, see
+   * [Boosting](https://cloud.google.com/generative-ai-app-builder/docs/boost-
+   * search-results)
+   *
+   * @param GoogleCloudDiscoveryengineV1alphaSearchRequestBoostSpec $boostSpec
    */
   public function setBoostSpec(GoogleCloudDiscoveryengineV1alphaSearchRequestBoostSpec $boostSpec)
   {
@@ -45,7 +79,31 @@ class GoogleCloudDiscoveryengineV1alphaSearchRequestDataStoreSpec extends \Googl
     return $this->boostSpec;
   }
   /**
-   * @param string
+   * Optional. Custom search operators which if specified will be used to filter
+   * results from workspace data stores. For more information on custom search
+   * operators, see
+   * [SearchOperators](https://support.google.com/cloudsearch/answer/6172299).
+   *
+   * @param string $customSearchOperators
+   */
+  public function setCustomSearchOperators($customSearchOperators)
+  {
+    $this->customSearchOperators = $customSearchOperators;
+  }
+  /**
+   * @return string
+   */
+  public function getCustomSearchOperators()
+  {
+    return $this->customSearchOperators;
+  }
+  /**
+   * Required. Full resource name of DataStore, such as `projects/{project}/loca
+   * tions/{location}/collections/{collection_id}/dataStores/{data_store_id}`.
+   * The path must include the project number, project id is not supported for
+   * this field.
+   *
+   * @param string $dataStore
    */
   public function setDataStore($dataStore)
   {
@@ -59,7 +117,12 @@ class GoogleCloudDiscoveryengineV1alphaSearchRequestDataStoreSpec extends \Googl
     return $this->dataStore;
   }
   /**
-   * @param string
+   * Optional. Filter specification to filter documents in the data store
+   * specified by data_store field. For more information on filtering, see
+   * [Filtering](https://cloud.google.com/generative-ai-app-builder/docs/filter-
+   * search-metadata)
+   *
+   * @param string $filter
    */
   public function setFilter($filter)
   {
@@ -71,6 +134,26 @@ class GoogleCloudDiscoveryengineV1alphaSearchRequestDataStoreSpec extends \Googl
   public function getFilter()
   {
     return $this->filter;
+  }
+  /**
+   * Optional. The maximum number of results to retrieve from this data store.
+   * If not specified, it will use the SearchRequest.num_results_per_data_store
+   * if provided, otherwise there is no limit. If both this field and
+   * SearchRequest.num_results_per_data_store are specified, this field will be
+   * used.
+   *
+   * @param int $numResults
+   */
+  public function setNumResults($numResults)
+  {
+    $this->numResults = $numResults;
+  }
+  /**
+   * @return int
+   */
+  public function getNumResults()
+  {
+    return $this->numResults;
   }
 }
 

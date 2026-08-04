@@ -31,13 +31,19 @@ class FeatureState extends \Google\Model
   protected $meteringDataType = '';
   protected $policycontrollerType = PolicyControllerState::class;
   protected $policycontrollerDataType = '';
+  protected $rbacrolebindingactuationType = RBACRoleBindingActuationState::class;
+  protected $rbacrolebindingactuationDataType = '';
   protected $servicemeshType = ServiceMeshState::class;
   protected $servicemeshDataType = '';
   protected $stateType = State::class;
   protected $stateDataType = '';
+  protected $workloadidentityType = WorkloadIdentityState::class;
+  protected $workloadidentityDataType = '';
 
   /**
-   * @param AppDevExperienceState
+   * Appdevexperience specific state.
+   *
+   * @param AppDevExperienceState $appdevexperience
    */
   public function setAppdevexperience(AppDevExperienceState $appdevexperience)
   {
@@ -51,7 +57,9 @@ class FeatureState extends \Google\Model
     return $this->appdevexperience;
   }
   /**
-   * @param ClusterUpgradeState
+   * Cluster upgrade state.
+   *
+   * @param ClusterUpgradeState $clusterupgrade
    */
   public function setClusterupgrade(ClusterUpgradeState $clusterupgrade)
   {
@@ -65,7 +73,9 @@ class FeatureState extends \Google\Model
     return $this->clusterupgrade;
   }
   /**
-   * @param ConfigManagementState
+   * Config Management state
+   *
+   * @param ConfigManagementState $configmanagement
    */
   public function setConfigmanagement(ConfigManagementState $configmanagement)
   {
@@ -79,7 +89,9 @@ class FeatureState extends \Google\Model
     return $this->configmanagement;
   }
   /**
-   * @param IdentityServiceState
+   * Identity service state
+   *
+   * @param IdentityServiceState $identityservice
    */
   public function setIdentityservice(IdentityServiceState $identityservice)
   {
@@ -93,7 +105,9 @@ class FeatureState extends \Google\Model
     return $this->identityservice;
   }
   /**
-   * @param MeteringState
+   * Metering state
+   *
+   * @param MeteringState $metering
    */
   public function setMetering(MeteringState $metering)
   {
@@ -107,7 +121,9 @@ class FeatureState extends \Google\Model
     return $this->metering;
   }
   /**
-   * @param PolicyControllerState
+   * Policy Controller state
+   *
+   * @param PolicyControllerState $policycontroller
    */
   public function setPolicycontroller(PolicyControllerState $policycontroller)
   {
@@ -121,7 +137,25 @@ class FeatureState extends \Google\Model
     return $this->policycontroller;
   }
   /**
-   * @param ServiceMeshState
+   * RBAC Role Binding Actuation state
+   *
+   * @param RBACRoleBindingActuationState $rbacrolebindingactuation
+   */
+  public function setRbacrolebindingactuation(RBACRoleBindingActuationState $rbacrolebindingactuation)
+  {
+    $this->rbacrolebindingactuation = $rbacrolebindingactuation;
+  }
+  /**
+   * @return RBACRoleBindingActuationState
+   */
+  public function getRbacrolebindingactuation()
+  {
+    return $this->rbacrolebindingactuation;
+  }
+  /**
+   * Service mesh state
+   *
+   * @param ServiceMeshState $servicemesh
    */
   public function setServicemesh(ServiceMeshState $servicemesh)
   {
@@ -135,7 +169,9 @@ class FeatureState extends \Google\Model
     return $this->servicemesh;
   }
   /**
-   * @param State
+   * The high-level state of this MembershipFeature.
+   *
+   * @param State $state
    */
   public function setState(State $state)
   {
@@ -147,6 +183,22 @@ class FeatureState extends \Google\Model
   public function getState()
   {
     return $this->state;
+  }
+  /**
+   * Workload Identity state
+   *
+   * @param WorkloadIdentityState $workloadidentity
+   */
+  public function setWorkloadidentity(WorkloadIdentityState $workloadidentity)
+  {
+    $this->workloadidentity = $workloadidentity;
+  }
+  /**
+   * @return WorkloadIdentityState
+   */
+  public function getWorkloadidentity()
+  {
+    return $this->workloadidentity;
   }
 }
 

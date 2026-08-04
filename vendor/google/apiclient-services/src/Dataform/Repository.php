@@ -20,50 +20,115 @@ namespace Google\Service\Dataform;
 class Repository extends \Google\Model
 {
   /**
+   * Optional. The name of the containing folder of the repository. The field is
+   * immutable and it can be modified via a MoveRepository operation. Format:
+   * `projects/locations/folders`. or `projects/locations/teamFolders`.
+   *
+   * @var string
+   */
+  public $containingFolder;
+  /**
+   * Output only. The timestamp of when the repository was created.
+   *
    * @var string
    */
   public $createTime;
   protected $dataEncryptionStateType = DataEncryptionState::class;
   protected $dataEncryptionStateDataType = '';
   /**
+   * Optional. The repository's user-friendly name.
+   *
    * @var string
    */
   public $displayName;
   protected $gitRemoteSettingsType = GitRemoteSettings::class;
   protected $gitRemoteSettingsDataType = '';
   /**
+   * Output only. All the metadata information that is used internally to serve
+   * the resource. For example: timestamps, flags, status fields, etc. The
+   * format of this field is a JSON string.
+   *
    * @var string
    */
   public $internalMetadata;
   /**
+   * Optional. The reference to a KMS encryption key. If provided, it will be
+   * used to encrypt user data in the repository and all child resources. It is
+   * not possible to add or update the encryption key after the repository is
+   * created. Example: `projects/{kms_project}/locations/{location}/keyRings/{ke
+   * y_location}/cryptoKeys/{key}`
+   *
    * @var string
    */
   public $kmsKeyName;
   /**
+   * Optional. Repository user labels.
+   *
    * @var string[]
    */
   public $labels;
   /**
+   * Identifier. The repository's name.
+   *
    * @var string
    */
   public $name;
   /**
+   * Optional. The name of the Secret Manager secret version to be used to
+   * interpolate variables into the .npmrc file for package installation
+   * operations. Must be in the format `projects/secrets/versions`. The file
+   * itself must be in a JSON format.
+   *
    * @var string
    */
   public $npmrcEnvironmentVariablesSecretVersion;
   /**
+   * Optional. The service account to run workflow invocations under.
+   *
    * @var string
    */
   public $serviceAccount;
   /**
+   * Optional. Input only. If set to true, the authenticated user will be
+   * granted the roles/dataform.admin role on the created repository.
+   *
    * @var bool
    */
   public $setAuthenticatedUserAdmin;
+  /**
+   * Output only. The resource name of the TeamFolder that this Repository is
+   * associated with. This should take the format:
+   * projects/{project}/locations/{location}/teamFolders/{teamFolder}. If this
+   * is not set, the Repository is not associated with a TeamFolder.
+   *
+   * @var string
+   */
+  public $teamFolderName;
   protected $workspaceCompilationOverridesType = WorkspaceCompilationOverrides::class;
   protected $workspaceCompilationOverridesDataType = '';
 
   /**
-   * @param string
+   * Optional. The name of the containing folder of the repository. The field is
+   * immutable and it can be modified via a MoveRepository operation. Format:
+   * `projects/locations/folders`. or `projects/locations/teamFolders`.
+   *
+   * @param string $containingFolder
+   */
+  public function setContainingFolder($containingFolder)
+  {
+    $this->containingFolder = $containingFolder;
+  }
+  /**
+   * @return string
+   */
+  public function getContainingFolder()
+  {
+    return $this->containingFolder;
+  }
+  /**
+   * Output only. The timestamp of when the repository was created.
+   *
+   * @param string $createTime
    */
   public function setCreateTime($createTime)
   {
@@ -77,7 +142,10 @@ class Repository extends \Google\Model
     return $this->createTime;
   }
   /**
-   * @param DataEncryptionState
+   * Output only. A data encryption state of a Git repository if this Repository
+   * is protected by a KMS key.
+   *
+   * @param DataEncryptionState $dataEncryptionState
    */
   public function setDataEncryptionState(DataEncryptionState $dataEncryptionState)
   {
@@ -91,7 +159,9 @@ class Repository extends \Google\Model
     return $this->dataEncryptionState;
   }
   /**
-   * @param string
+   * Optional. The repository's user-friendly name.
+   *
+   * @param string $displayName
    */
   public function setDisplayName($displayName)
   {
@@ -105,7 +175,9 @@ class Repository extends \Google\Model
     return $this->displayName;
   }
   /**
-   * @param GitRemoteSettings
+   * Optional. If set, configures this repository to be linked to a Git remote.
+   *
+   * @param GitRemoteSettings $gitRemoteSettings
    */
   public function setGitRemoteSettings(GitRemoteSettings $gitRemoteSettings)
   {
@@ -119,7 +191,11 @@ class Repository extends \Google\Model
     return $this->gitRemoteSettings;
   }
   /**
-   * @param string
+   * Output only. All the metadata information that is used internally to serve
+   * the resource. For example: timestamps, flags, status fields, etc. The
+   * format of this field is a JSON string.
+   *
+   * @param string $internalMetadata
    */
   public function setInternalMetadata($internalMetadata)
   {
@@ -133,7 +209,13 @@ class Repository extends \Google\Model
     return $this->internalMetadata;
   }
   /**
-   * @param string
+   * Optional. The reference to a KMS encryption key. If provided, it will be
+   * used to encrypt user data in the repository and all child resources. It is
+   * not possible to add or update the encryption key after the repository is
+   * created. Example: `projects/{kms_project}/locations/{location}/keyRings/{ke
+   * y_location}/cryptoKeys/{key}`
+   *
+   * @param string $kmsKeyName
    */
   public function setKmsKeyName($kmsKeyName)
   {
@@ -147,7 +229,9 @@ class Repository extends \Google\Model
     return $this->kmsKeyName;
   }
   /**
-   * @param string[]
+   * Optional. Repository user labels.
+   *
+   * @param string[] $labels
    */
   public function setLabels($labels)
   {
@@ -161,7 +245,9 @@ class Repository extends \Google\Model
     return $this->labels;
   }
   /**
-   * @param string
+   * Identifier. The repository's name.
+   *
+   * @param string $name
    */
   public function setName($name)
   {
@@ -175,7 +261,12 @@ class Repository extends \Google\Model
     return $this->name;
   }
   /**
-   * @param string
+   * Optional. The name of the Secret Manager secret version to be used to
+   * interpolate variables into the .npmrc file for package installation
+   * operations. Must be in the format `projects/secrets/versions`. The file
+   * itself must be in a JSON format.
+   *
+   * @param string $npmrcEnvironmentVariablesSecretVersion
    */
   public function setNpmrcEnvironmentVariablesSecretVersion($npmrcEnvironmentVariablesSecretVersion)
   {
@@ -189,7 +280,9 @@ class Repository extends \Google\Model
     return $this->npmrcEnvironmentVariablesSecretVersion;
   }
   /**
-   * @param string
+   * Optional. The service account to run workflow invocations under.
+   *
+   * @param string $serviceAccount
    */
   public function setServiceAccount($serviceAccount)
   {
@@ -203,7 +296,10 @@ class Repository extends \Google\Model
     return $this->serviceAccount;
   }
   /**
-   * @param bool
+   * Optional. Input only. If set to true, the authenticated user will be
+   * granted the roles/dataform.admin role on the created repository.
+   *
+   * @param bool $setAuthenticatedUserAdmin
    */
   public function setSetAuthenticatedUserAdmin($setAuthenticatedUserAdmin)
   {
@@ -217,7 +313,31 @@ class Repository extends \Google\Model
     return $this->setAuthenticatedUserAdmin;
   }
   /**
-   * @param WorkspaceCompilationOverrides
+   * Output only. The resource name of the TeamFolder that this Repository is
+   * associated with. This should take the format:
+   * projects/{project}/locations/{location}/teamFolders/{teamFolder}. If this
+   * is not set, the Repository is not associated with a TeamFolder.
+   *
+   * @param string $teamFolderName
+   */
+  public function setTeamFolderName($teamFolderName)
+  {
+    $this->teamFolderName = $teamFolderName;
+  }
+  /**
+   * @return string
+   */
+  public function getTeamFolderName()
+  {
+    return $this->teamFolderName;
+  }
+  /**
+   * Optional. If set, fields of `workspace_compilation_overrides` override the
+   * default compilation settings that are specified in dataform.json when
+   * creating workspace-scoped compilation results. See documentation for
+   * `WorkspaceCompilationOverrides` for more information.
+   *
+   * @param WorkspaceCompilationOverrides $workspaceCompilationOverrides
    */
   public function setWorkspaceCompilationOverrides(WorkspaceCompilationOverrides $workspaceCompilationOverrides)
   {

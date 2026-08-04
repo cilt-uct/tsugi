@@ -19,11 +19,31 @@ namespace Google\Service\FirebaseDataConnect;
 
 class Datasource extends \Google\Model
 {
+  protected $httpGraphqlType = HttpGraphql::class;
+  protected $httpGraphqlDataType = '';
   protected $postgresqlType = PostgreSql::class;
   protected $postgresqlDataType = '';
 
   /**
-   * @param PostgreSql
+   * HTTP GraphQL server webhook configurations.
+   *
+   * @param HttpGraphql $httpGraphql
+   */
+  public function setHttpGraphql(HttpGraphql $httpGraphql)
+  {
+    $this->httpGraphql = $httpGraphql;
+  }
+  /**
+   * @return HttpGraphql
+   */
+  public function getHttpGraphql()
+  {
+    return $this->httpGraphql;
+  }
+  /**
+   * PostgreSQL configurations.
+   *
+   * @param PostgreSql $postgresql
    */
   public function setPostgresql(PostgreSql $postgresql)
   {

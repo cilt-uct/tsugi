@@ -37,7 +37,7 @@ class GoogleCloudDialogflowCxV3GeneratorModelParameter extends \Google\Model
   public $topP;
 
   /**
-   * @param int
+   * @param int $maxDecodeSteps
    */
   public function setMaxDecodeSteps($maxDecodeSteps)
   {
@@ -51,7 +51,7 @@ class GoogleCloudDialogflowCxV3GeneratorModelParameter extends \Google\Model
     return $this->maxDecodeSteps;
   }
   /**
-   * @param float
+   * @param float $temperature
    */
   public function setTemperature($temperature)
   {
@@ -65,7 +65,7 @@ class GoogleCloudDialogflowCxV3GeneratorModelParameter extends \Google\Model
     return $this->temperature;
   }
   /**
-   * @param int
+   * @param int $topK
    */
   public function setTopK($topK)
   {
@@ -79,7 +79,7 @@ class GoogleCloudDialogflowCxV3GeneratorModelParameter extends \Google\Model
     return $this->topK;
   }
   /**
-   * @param float
+   * @param float $topP
    */
   public function setTopP($topP)
   {

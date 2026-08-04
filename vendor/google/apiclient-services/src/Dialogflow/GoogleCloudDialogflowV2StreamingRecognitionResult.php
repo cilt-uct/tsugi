@@ -19,6 +19,9 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collection
 {
+  public const MESSAGE_TYPE_MESSAGE_TYPE_UNSPECIFIED = 'MESSAGE_TYPE_UNSPECIFIED';
+  public const MESSAGE_TYPE_TRANSCRIPT = 'TRANSCRIPT';
+  public const MESSAGE_TYPE_END_OF_SINGLE_UTTERANCE = 'END_OF_SINGLE_UTTERANCE';
   protected $collection_key = 'speechWordInfo';
   /**
    * @var float
@@ -48,7 +51,7 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
   public $transcript;
 
   /**
-   * @param float
+   * @param float $confidence
    */
   public function setConfidence($confidence)
   {
@@ -62,7 +65,7 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
     return $this->confidence;
   }
   /**
-   * @param bool
+   * @param bool $isFinal
    */
   public function setIsFinal($isFinal)
   {
@@ -76,7 +79,7 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
     return $this->isFinal;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {
@@ -90,21 +93,21 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
     return $this->languageCode;
   }
   /**
-   * @param string
+   * @param self::MESSAGE_TYPE_* $messageType
    */
   public function setMessageType($messageType)
   {
     $this->messageType = $messageType;
   }
   /**
-   * @return string
+   * @return self::MESSAGE_TYPE_*
    */
   public function getMessageType()
   {
     return $this->messageType;
   }
   /**
-   * @param string
+   * @param string $speechEndOffset
    */
   public function setSpeechEndOffset($speechEndOffset)
   {
@@ -118,7 +121,7 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
     return $this->speechEndOffset;
   }
   /**
-   * @param GoogleCloudDialogflowV2SpeechWordInfo[]
+   * @param GoogleCloudDialogflowV2SpeechWordInfo[] $speechWordInfo
    */
   public function setSpeechWordInfo($speechWordInfo)
   {
@@ -132,7 +135,7 @@ class GoogleCloudDialogflowV2StreamingRecognitionResult extends \Google\Collecti
     return $this->speechWordInfo;
   }
   /**
-   * @param string
+   * @param string $transcript
    */
   public function setTranscript($transcript)
   {

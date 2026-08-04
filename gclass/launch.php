@@ -21,14 +21,14 @@ session_start();
 // Lets be really picky about the path...
 $path = U::parse_rest_path();
 if ( count($path) != 3 ) {
-    $_SESSION['error'] = 'Invalid resource id format';
+    U::flashError('Invalid resource id format');
     header('Location: '.$CFG->apphome);
     return;
 }
 $pieces = explode(':',$path[2]);
 if ( count($pieces) != 4 || strlen($pieces[1]) != 6 || strlen($pieces[3]) != 6 
      || ! is_numeric($pieces[0]) || ! is_numeric($pieces[2]) ) {
-    $_SESSION['error'] = 'Invalid resource id format';
+    U::flashError('Invalid resource id format');
     header('Location: '.$CFG->apphome);
     return;
 }
@@ -42,13 +42,13 @@ $context_url = $gc_course . ':' . $user_mini_sig;
 $context_key = 'gclass:' . $context_url;
 $context_sha256 = lti_sha256($context_key);
 
-if ( ! isset($_SESSION['id']) ) {
-    $_SESSION['login_return'] = $path[0].'/'.$path[1].'/'.$path[2];
-    header('Location: '.$CFG->wwwroot.'/login');
+if ( ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl($path[0].'/'.$path[1].'/'.$path[2]);
+    header('Location: '.\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 
-$user_id = $_SESSION['id'];
+$user_id = loggedInUserId();
 $user_email = $_SESSION['email'];
 $user_displayname = $_SESSION['displayname'];
 $user_key = $_SESSION['user_key'];
@@ -89,7 +89,7 @@ $row = $PDOX->rowDie($sql,
 );
 
 if ( ! $row ) {
-    $_SESSION['error'] = 'Could not lookup resource id';
+    U::flashError('Could not lookup resource id');
     header('Location: '.$CFG->apphome);
     return;
 }
@@ -123,7 +123,7 @@ $link_mini_check = lti_sha256($plain);
 $link_mini_check = substr($link_mini_check,0,6);
 
 if ( $link_mini_check != $link_mini_sig || $user_mini_check != $user_mini_sig ) {
-    $_SESSION['error'] = 'Could not validate resource id';
+    U::flashError('Could not validate resource id');
     header('Location: '.$CFG->apphome);
     return;
 }
@@ -131,7 +131,7 @@ if ( $link_mini_check != $link_mini_sig || $user_mini_check != $user_mini_sig ) 
 // Try access token from session when LTIX adds it.
 $accessTokenStr = GoogleClassroom::retrieve_instructor_token($owner_id);
 if ( ! $accessTokenStr ) {
-    $_SESSION['error'] = 'Classroom connection not set up, see your instructor';
+    U::flashError('Classroom connection not set up, see your instructor');
     header('Location: '.$CFG->apphome);
     return;
 }
@@ -139,7 +139,7 @@ if ( ! $accessTokenStr ) {
 // Get the API client and construct the service object.
 $client = GoogleClassroom::getClient($accessTokenStr, $owner_id);
 if ( ! $client ) {
-    $_SESSION['error'] = 'Classroom connection failed';
+    U::flashError('Classroom connection failed');
     error_log('Classroom connection failed id='.$owner_id);
     error_log($accessTokenStr);
     header('Location: '.$CFG->apphome);
@@ -168,7 +168,7 @@ if ( $role != null ) {
         $access_token = $access_token_data['access_token'];
 
         $membership_info_url = "https://classroom.googleapis.com/v1/courses/".$gc_course.
-            "/students/".$_SESSION['email']."?alt=json&access_token=" .  $access_token;
+            "/students/".urlencode($user_email)."?alt=json&access_token=" .  $access_token;
 
         $response = \Tsugi\Util\Net::doGet($membership_info_url);
         $membership = json_decode($response);
@@ -201,7 +201,7 @@ if ( $role != null ) {
         if ( isset($membership->courseId) ) {
             $role = LTIX::ROLE_LEARNER;
         } else {
-            $_SESSION['error'] = 'You are not enrolled in this class';
+            U::flashError('You are not enrolled in this class');
             error_log('Classroom connection failed id='.$owner_id);
             error_log($accessTokenStr);
             header('Location: '.$CFG->apphome);
@@ -211,7 +211,7 @@ if ( $role != null ) {
         if ( isset($membership->userId) ) {
             $student_id = $membership->userId;
         } else {
-            $_SESSION['error'] = 'You are do not have a studentId in this class';
+            U::flashError('You are do not have a studentId in this class');
             error_log('Classroom connection failed id='.$owner_id);
             error_log($accessTokenStr);
             header('Location: '.$CFG->apphome);
@@ -252,7 +252,7 @@ if ( $student_id && $gc_submit_id === null ) {
         // var_dump($first);
         $gc_submit_id = $first->id;
     } catch (Exception $e) {
-        $_SESSION['error'] = 'Could not retrieve submission for this assignment.';
+        U::flashError('Could not retrieve submission for this assignment.');
         error_log('Could not retrieve submission for this assignment id='.$owner_id);
         error_log($accessTokenStr);
         header('Location: '.$CFG->apphome);
@@ -310,7 +310,7 @@ $lti['gc_coursework'] = $gc_coursework;
 $lti['gc_submit_id'] = $gc_submit_id;
 
 // Set that data in the session.
-$_SESSION['lti'] = $lti;
+$_SESSION[TSUGI_SESSION_LTI] = $lti;
 
 // Record their log in if this is the first for a session
 $start_time = U::get($_SESSION, 'tsugi_permanent_start_time', false);
@@ -319,7 +319,7 @@ if ( $start_time === false ) {
     $_SESSION['tsugi_permanent_start_time'] = time();
 }
 
-$launch = U::add_url_parm($path, 'PHPSESSID', session_id());
+$launch = U::add_url_parm($path, session_name(), session_id());
 
 if ( ! U::get($_GET,'debug') ) {
     header('Location: '.$launch);

@@ -23,22 +23,59 @@ try {
 $OUTPUT->header();
 $OUTPUT->bodyStart();
 $OUTPUT->topNav();
-require_once("sanity-db.php");
+define('SANITY_DB_ALLOW_NO_TABLES', true);
+require_once("../sanity-db.php");
+
+$p = $CFG->dbprefix;
+$plugins = "{$p}lms_plugins";
+$stmt = $PDOX->queryReturnError("SELECT MAX(version) AS version FROM {$plugins}", false, false);
+if ( $stmt->success ) {
+    $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+    $actualdbversion = $row['version'] ?? null;
+    if ( $actualdbversion === null || $actualdbversion < $CFG->dbversion ) {
+        echo('<div class="alert alert-danger" style="margin: 10px;">'."\n");
+        echo("<p>Warning: Database version=$actualdbversion should be
+        software version=$CFG->dbversion - please run\n");
+        echo("'Upgrade Database in the <a href=\"".$CFG->wwwroot.'/admin/">'."Administration console</a></p>\n");
+        echo("\n</div>\n");
+        error_log("Warning: DB current version=$actualdbversion expected version=$CFG->dbversion");
+    }
+}
 ?>
 <div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
-   <img src="<?= $OUTPUT->getSpinnerUrl() ?>" id="iframe-spinner"><br/>
-   <iframe name="iframe-frame" style="height:600px" id="iframe-frame"
+   <div id="iframe-spinner" role="status" aria-live="polite">
+   <img src="<?= $OUTPUT->getSpinnerUrl() ?>" alt="" role="presentation"><br/>
+   <span class="sr-only">Loading content</span>
+   </div>
+   <iframe name="iframe-frame" style="height:600px" id="iframe-frame" title="Administration content viewer"
     onload="document.getElementById('iframe-spinner').style.display='none';">
    </iframe>
 </div>
 <h1>Administration Console</h1>
 <?php
-$recommended = '7.2.0';
-echo("<p>\nCurrent PHP Version: ". phpversion(). "\n");
-if ( version_compare(PHP_VERSION, $recommended) < 0 ) {
-    echo(' - <span style="color: red;">Soon Tsugi will require a minimum version of PHP '.$recommended.".</span>\n");
+echo("<p>\n");
+echo("Current PHP Version: ". phpversion(). "\n");
+if ( version_compare(PHP_VERSION, TSUGI_MINIMUM_PHP) < 0 ) {
+    echo(' - <span style="color: red;">The recommended minimum PHP version is '.TSUGI_MINIMUM_PHP.".</span>\n");
 }
 echo("</p>\n");
+if ( function_exists('curl_init') ) {
+    $curl_version = curl_version();
+    echo("<!-- cURL Extension: Available (version ".$curl_version['version'].") -->\n");
+} else {
+    echo("<p>\n");
+    echo('<span style="color: red;">cURL Extension: Not Available - cURL is required for LTI grade passback and other HTTP operations</span>'."\n");
+    echo("</p>\n");
+}
+$php_charset = ini_get('default_charset');
+if ( $php_charset && strtoupper($php_charset) !== 'UTF-8' ) {
+    echo("<p>\n");
+    echo('<span style="color: red;">PHP Default Character Set: '.htmlentities($php_charset).' - UTF-8 is recommended for proper international character support</span>'."\n");
+    echo("</p>\n");
+} else if ( $php_charset ) {
+    echo("<!-- PHP Default Character Set: ".htmlentities($php_charset)." -->\n");
+}
 ?>
 </p>
 <ul>
@@ -46,7 +83,9 @@ echo("</p>\n");
 <li><a href="expire">Manage Data Expiry</a></li>
 <li><a href="context/">View Contexts</a></li>
 <li><a href="activity/">View Activity</a></li>
+<li><a href="badges/">Badges Awarded</a></li>
 <li><a href="users/">View Users</a></li>
+<li><a href="profile/">View Profiles</a></li>
 <li>
   <a href="#" title="Recent Logins"
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'recent', _TSUGI.spinnerUrl); return false;" >
@@ -66,9 +105,19 @@ echo("</p>\n");
   Check Keyset
   </a></li>
 <li>
-  <a href="#" title="Check Cache"
+  <a href="#" title="Check Session Cache"
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'cache', _TSUGI.spinnerUrl); return false;" >
-  Check Cache
+  Check Session Cache
+  </a></li>
+<li>
+  <a href="#" title="Check Object Cache"
+  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'mcache', _TSUGI.spinnerUrl); return false;" >
+  Check Object Cache
+  </a></li>
+<li>
+  <a href="#" title="Encrypt/Decrypt Strings"
+  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'crypt', _TSUGI.spinnerUrl); return false;" >
+  Encrypt/Decrypt Strings
   </a></li>
 <li>
   <a href="#" title="Check Nonces"
@@ -80,6 +129,7 @@ echo("</p>\n");
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'dbsize.php', _TSUGI.spinnerUrl); return false;" >
   Check database size
   </a></li>
+<li><a href="info.php" target="_blank">PHP Info</a></li>
 <li>
   <a href="#" title="Remove 12345 Data"
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'clear12345', _TSUGI.spinnerUrl); return false;" >
@@ -128,6 +178,30 @@ echo("</p>\n");
 Best viewed with <a href="https://www.mozilla.org/en-US/firefox/" target="_new">FireFox</a> since 
 Chrome tends to hang iframes in Modals.
 </p>
+<?php
+echo("Current Tsugi Version: ". TSUGI_VERSION. "<br/>\n");
+if ( isset($PDOX) && $PDOX !== false ) {
+    try {
+        $db_charset = false;
+        if ( $PDOX->isMySQL() ) {
+            $row = $PDOX->rowDie("SHOW VARIABLES LIKE 'character_set_database'");
+            if ( $row && isset($row['Value']) ) {
+                $db_charset = $row['Value'];
+            }
+        } else if ( $PDOX->isPgSQL() ) {
+            $row = $PDOX->rowDie("SELECT pg_encoding_to_char(encoding) AS charset FROM pg_database WHERE datname = current_database()");
+            if ( $row && isset($row['charset']) ) {
+                $db_charset = $row['charset'];
+            }
+        }
+        if ( $db_charset ) {
+            echo("Database Character Set: ".htmlentities($db_charset)."<br/>\n");
+        }
+    } catch(\Exception $ex) {
+        // Silently fail if we can't check charset
+    }
+}
+?>
 <?php if ( $CFG->DEVELOPER ) { ?>
 <p>Note: You have $CFG-&gt;DEVELOPER enabled. When this is enabled, there are developer-oriented
 "testing" menus shown and the Admin links are more obvious.

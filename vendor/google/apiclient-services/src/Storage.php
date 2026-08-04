@@ -458,6 +458,10 @@ class Storage extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'returnPartialSuccess' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
+                ],
                 'softDeleted' => [
                   'location' => 'query',
                   'type' => 'boolean',
@@ -770,6 +774,29 @@ class Storage extends \Google\Service
             'delete' => [
               'path' => 'b/{bucket}/folders/{folder}',
               'httpMethod' => 'DELETE',
+              'parameters' => [
+                'bucket' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'folder' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'ifMetagenerationMatch' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'ifMetagenerationNotMatch' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'deleteRecursive' => [
+              'path' => 'b/{bucket}/folders/{folder}/deleteRecursive',
+              'httpMethod' => 'POST',
               'parameters' => [
                 'bucket' => [
                   'location' => 'path',
@@ -1330,6 +1357,11 @@ class Storage extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'dropContextGroups' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                  'repeated' => true,
+                ],
                 'ifGenerationMatch' => [
                   'location' => 'query',
                   'type' => 'string',
@@ -1604,6 +1636,10 @@ class Storage extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'filter' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
                 'includeFoldersAsPrefixes' => [
                   'location' => 'query',
                   'type' => 'boolean',
@@ -1697,6 +1733,10 @@ class Storage extends \Google\Service
                   'type' => 'string',
                 ],
                 'ifSourceMetagenerationNotMatch' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'projection' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],
@@ -1839,6 +1879,11 @@ class Storage extends \Google\Service
                 'destinationPredefinedAcl' => [
                   'location' => 'query',
                   'type' => 'string',
+                ],
+                'dropContextGroups' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                  'repeated' => true,
                 ],
                 'ifGenerationMatch' => [
                   'location' => 'query',

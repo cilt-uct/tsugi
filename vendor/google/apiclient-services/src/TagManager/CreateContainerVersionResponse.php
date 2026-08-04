@@ -17,15 +17,24 @@
 
 namespace Google\Service\TagManager;
 
-class CreateContainerVersionResponse extends \Google\Model
+class CreateContainerVersionResponse extends \Google\Collection
 {
+  protected $collection_key = 'compilerErrors';
   /**
+   * Compiler errors or not.
+   *
    * @var bool
    */
   public $compilerError;
+  protected $compilerErrorsType = CompilerErrorLite::class;
+  protected $compilerErrorsDataType = 'array';
   protected $containerVersionType = ContainerVersion::class;
   protected $containerVersionDataType = '';
   /**
+   * Auto generated workspace path created as a result of version creation. This
+   * field should only be populated if the created version was not a quick
+   * preview.
+   *
    * @var string
    */
   public $newWorkspacePath;
@@ -33,7 +42,9 @@ class CreateContainerVersionResponse extends \Google\Model
   protected $syncStatusDataType = '';
 
   /**
-   * @param bool
+   * Compiler errors or not.
+   *
+   * @param bool $compilerError
    */
   public function setCompilerError($compilerError)
   {
@@ -47,7 +58,25 @@ class CreateContainerVersionResponse extends \Google\Model
     return $this->compilerError;
   }
   /**
-   * @param ContainerVersion
+   * Compiler error details.
+   *
+   * @param CompilerErrorLite[] $compilerErrors
+   */
+  public function setCompilerErrors($compilerErrors)
+  {
+    $this->compilerErrors = $compilerErrors;
+  }
+  /**
+   * @return CompilerErrorLite[]
+   */
+  public function getCompilerErrors()
+  {
+    return $this->compilerErrors;
+  }
+  /**
+   * The container version created.
+   *
+   * @param ContainerVersion $containerVersion
    */
   public function setContainerVersion(ContainerVersion $containerVersion)
   {
@@ -61,7 +90,11 @@ class CreateContainerVersionResponse extends \Google\Model
     return $this->containerVersion;
   }
   /**
-   * @param string
+   * Auto generated workspace path created as a result of version creation. This
+   * field should only be populated if the created version was not a quick
+   * preview.
+   *
+   * @param string $newWorkspacePath
    */
   public function setNewWorkspacePath($newWorkspacePath)
   {
@@ -75,7 +108,10 @@ class CreateContainerVersionResponse extends \Google\Model
     return $this->newWorkspacePath;
   }
   /**
-   * @param SyncStatus
+   * Whether version creation failed when syncing the workspace to the latest
+   * container version.
+   *
+   * @param SyncStatus $syncStatus
    */
   public function setSyncStatus(SyncStatus $syncStatus)
   {

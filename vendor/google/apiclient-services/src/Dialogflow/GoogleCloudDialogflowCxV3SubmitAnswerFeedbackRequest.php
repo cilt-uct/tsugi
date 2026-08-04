@@ -31,7 +31,7 @@ class GoogleCloudDialogflowCxV3SubmitAnswerFeedbackRequest extends \Google\Model
   public $updateMask;
 
   /**
-   * @param GoogleCloudDialogflowCxV3AnswerFeedback
+   * @param GoogleCloudDialogflowCxV3AnswerFeedback $answerFeedback
    */
   public function setAnswerFeedback(GoogleCloudDialogflowCxV3AnswerFeedback $answerFeedback)
   {
@@ -45,7 +45,7 @@ class GoogleCloudDialogflowCxV3SubmitAnswerFeedbackRequest extends \Google\Model
     return $this->answerFeedback;
   }
   /**
-   * @param string
+   * @param string $responseId
    */
   public function setResponseId($responseId)
   {
@@ -59,7 +59,7 @@ class GoogleCloudDialogflowCxV3SubmitAnswerFeedbackRequest extends \Google\Model
     return $this->responseId;
   }
   /**
-   * @param string
+   * @param string $updateMask
    */
   public function setUpdateMask($updateMask)
   {

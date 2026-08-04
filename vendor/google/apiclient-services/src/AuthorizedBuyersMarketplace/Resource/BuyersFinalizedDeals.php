@@ -90,7 +90,7 @@ class BuyersFinalizedDeals extends \Google\Service\Resource
    * buyers/apis/guides/list-filters) Supported columns for filtering are: *
    * deal.displayName * deal.dealType * deal.createTime * deal.updateTime *
    * deal.flightStartTime * deal.flightEndTime * deal.eligibleSeatIds *
-   * dealServingStatus
+   * dealServingStatus * readyToServe
    * @opt_param string orderBy An optional query string to sort finalized deals
    * using the [Cloud API sorting
    * syntax](https://cloud.google.com/apis/design/design_patterns#sorting_order).
@@ -162,11 +162,15 @@ class BuyersFinalizedDeals extends \Google\Service\Resource
    * use this method, finalized deals belonging to the bidder and its child seats
    * don't start serving until after you call `setReadyToServe`, and after the
    * deals become active. For example, you can use this method to delay receiving
-   * bid requests until your creative is ready. This method only applies to
-   * programmatic guaranteed deals. (finalizedDeals.setReadyToServe)
+   * bid requests until your creative is ready. In addition, bidders can use the
+   * URL path "/v1/bidders/{accountId}/finalizedDeals/{dealId}" to set ready to
+   * serve for the finalized deals belong to itself, its child seats and all their
+   * clients. This method only applies to programmatic guaranteed deals.
+   * (finalizedDeals.setReadyToServe)
    *
    * @param string $deal Required. Format:
-   * `buyers/{accountId}/finalizedDeals/{dealId}`
+   * `buyers/{accountId}/finalizedDeals/{dealId}` or
+   * `bidders/{accountId}/finalizedDeals/{dealId}`
    * @param SetReadyToServeRequest $postBody
    * @param array $optParams Optional parameters.
    * @return FinalizedDeal

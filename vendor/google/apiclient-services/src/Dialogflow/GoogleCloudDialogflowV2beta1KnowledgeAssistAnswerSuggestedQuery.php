@@ -25,7 +25,7 @@ class GoogleCloudDialogflowV2beta1KnowledgeAssistAnswerSuggestedQuery extends \G
   public $queryText;
 
   /**
-   * @param string
+   * @param string $queryText
    */
   public function setQueryText($queryText)
   {

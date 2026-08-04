@@ -37,7 +37,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
   protected $toolCallResultDataType = '';
 
   /**
-   * @param GoogleCloudDialogflowCxV3beta1AudioInput
+   * @param GoogleCloudDialogflowCxV3beta1AudioInput $audio
    */
   public function setAudio(GoogleCloudDialogflowCxV3beta1AudioInput $audio)
   {
@@ -51,7 +51,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->audio;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1DtmfInput
+   * @param GoogleCloudDialogflowCxV3beta1DtmfInput $dtmf
    */
   public function setDtmf(GoogleCloudDialogflowCxV3beta1DtmfInput $dtmf)
   {
@@ -65,7 +65,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->dtmf;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1EventInput
+   * @param GoogleCloudDialogflowCxV3beta1EventInput $event
    */
   public function setEvent(GoogleCloudDialogflowCxV3beta1EventInput $event)
   {
@@ -79,7 +79,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->event;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1IntentInput
+   * @param GoogleCloudDialogflowCxV3beta1IntentInput $intent
    */
   public function setIntent(GoogleCloudDialogflowCxV3beta1IntentInput $intent)
   {
@@ -93,7 +93,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->intent;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {
@@ -107,7 +107,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->languageCode;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1TextInput
+   * @param GoogleCloudDialogflowCxV3beta1TextInput $text
    */
   public function setText(GoogleCloudDialogflowCxV3beta1TextInput $text)
   {
@@ -121,7 +121,7 @@ class GoogleCloudDialogflowCxV3beta1QueryInput extends \Google\Model
     return $this->text;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1ToolCallResult
+   * @param GoogleCloudDialogflowCxV3beta1ToolCallResult $toolCallResult
    */
   public function setToolCallResult(GoogleCloudDialogflowCxV3beta1ToolCallResult $toolCallResult)
   {

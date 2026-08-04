@@ -9,10 +9,9 @@ require_once("../../config.php");
 require_once("../settings_util.php");
 session_start();
 
-if ( ! U::get($_SESSION,'id') ) {
-    $login_return = U::reconstruct_query($CFG->wwwroot . '/settings/privacy');
-    $_SESSION['login_return'] = $login_return;
-    Output::doRedirect($CFG->wwwroot.'/login.php');
+if ( ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl(U::reconstruct_query($CFG->wwwroot . '/settings/privacy'));
+    Output::doRedirect(\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 

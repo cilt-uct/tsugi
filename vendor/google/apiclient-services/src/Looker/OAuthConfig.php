@@ -20,16 +20,32 @@ namespace Google\Service\Looker;
 class OAuthConfig extends \Google\Model
 {
   /**
+   * Input only. Client ID from an external OAuth application. This is an input-
+   * only field, and thus will not be set in any responses.
+   *
    * @var string
    */
   public $clientId;
   /**
+   * Input only. Client secret from an external OAuth application. This is an
+   * input-only field, and thus will not be set in any responses.
+   *
    * @var string
    */
   public $clientSecret;
+  /**
+   * Optional. Whether to use the shared OAuth client. Instances specifying this
+   * field do not need to provide client_id and client_secret.
+   *
+   * @var bool
+   */
+  public $sharedOauthClientEnabled;
 
   /**
-   * @param string
+   * Input only. Client ID from an external OAuth application. This is an input-
+   * only field, and thus will not be set in any responses.
+   *
+   * @param string $clientId
    */
   public function setClientId($clientId)
   {
@@ -43,7 +59,10 @@ class OAuthConfig extends \Google\Model
     return $this->clientId;
   }
   /**
-   * @param string
+   * Input only. Client secret from an external OAuth application. This is an
+   * input-only field, and thus will not be set in any responses.
+   *
+   * @param string $clientSecret
    */
   public function setClientSecret($clientSecret)
   {
@@ -55,6 +74,23 @@ class OAuthConfig extends \Google\Model
   public function getClientSecret()
   {
     return $this->clientSecret;
+  }
+  /**
+   * Optional. Whether to use the shared OAuth client. Instances specifying this
+   * field do not need to provide client_id and client_secret.
+   *
+   * @param bool $sharedOauthClientEnabled
+   */
+  public function setSharedOauthClientEnabled($sharedOauthClientEnabled)
+  {
+    $this->sharedOauthClientEnabled = $sharedOauthClientEnabled;
+  }
+  /**
+   * @return bool
+   */
+  public function getSharedOauthClientEnabled()
+  {
+    return $this->sharedOauthClientEnabled;
   }
 }
 

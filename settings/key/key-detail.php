@@ -2,6 +2,7 @@
 // In the top frame, we use cookies for session.
 if (!defined('COOKIE_SESSION')) define('COOKIE_SESSION', true);
 require_once("../../config.php");
+require_once("../../admin/key/key-util.php");
 
 use \Tsugi\Util\U;
 use \Tsugi\Core\LTIX;
@@ -13,7 +14,7 @@ use \Tsugi\UI\SettingsDialog;
 header('Content-Type: text/html; charset=utf-8');
 session_start();
 
-if ( ! U::get($_SESSION,'id') ) {
+if ( ! isLoggedIn() ) {
     die('Must be logged in');
 }
 
@@ -31,52 +32,52 @@ if ( $inedit ) {
     $realfields = array('key_id', 'key_title', 'key_key', 'key_sha256', 'secret',
         'deploy_key', 'deploy_sha256', 'updated_at');
 } else {
-    $fields = array('key_id', 'key_title', 'key_key', 'secret', 'issuer_id', 'deploy_key', 'updated_at');
+    $fields = array('key_id', 'key_title', 'key_key', 'secret', 'deploy_key', 'updated_at');
     $realfields = array('key_id', 'key_title', 'key_key', 'key_sha256', 'secret',
-        'issuer_id', 'deploy_key', 'deploy_sha256', 'updated_at');
+        'deploy_key', 'deploy_sha256', 'updated_at');
 }
 
 $titles = array(
     'key_key' => 'LTI 1.1: OAuth Consumer Key',
     'secret' => 'LTI 1.1: OAuth Consumer Secret',
-    'deploy_key' => 'LTI 1.3: Deployment ID (from the Platform)',
-    'issuer_id' => 'LTI 1.3: Issuer',
+    'deploy_key' => 'LTI 1.3: Deployment ID (leave blank to accept any value from the LMS)',
 );
 
 $where_clause .= "user_id = :UID";
-$query_fields[":UID"] = $_SESSION['id'];
+$query_fields[":UID"] = loggedInUserId();
 
 // Load the row - to check a few things
 $sql = CrudForm::selectSql($tablename, $fields, $where_clause);
 $oldrow = $PDOX->rowDie($sql, $query_fields);
 if ( $oldrow === false ) {
-    $_SESSION['error'] = "Unable to retrieve row";
+    U::flashError("Unable to retrieve row");
     header("Location: ".$from_location);
     return;
 }
 
 if ( U::get($_POST,'key_key') && U::get($_POST,'key_key') != $oldrow['key_key'] ) {
-    $_SESSION['error'] = "Cannot change key value";
+    U::flashError("Cannot change key value");
     header("Location: ".$from_location);
     return;
 }
 
+if ( isset($_POST['deploy_key']) ) {
+    $_POST['deploy_key'] = normalize_deploy_key_input($_POST['deploy_key']);
+}
+
 // Handle the post data
+/** @var array|int $row */
 $row =  CrudForm::handleUpdate($tablename, $fields, $where_clause,
-    $query_fields, $allow_edit, $allow_delete, $titles);
+    $query_fields, $allow_edit, $allow_delete);
 
 if ( $row === CrudForm::CRUD_FAIL || $row === CrudForm::CRUD_SUCCESS ) {
     header("Location: ".$from_location);
     return;
 }
-
-if ( ! $inedit && U::get($row, 'issuer_id') > 0 ) {
-    $issuer_row = $PDOX->rowDie("SELECT issuer_key, issuer_client FROM {$CFG->dbprefix}lti_issuer WHERE issuer_id = :issuer_id",
-        array(':issuer_id' => U::get($row, 'issuer_id'))
-    );
-    if ( $issuer_row ) {
-        $row['issuer_id'] = $issuer_row['issuer_key'].' ('.$issuer_row['issuer_client'].')';
-    }
+if ( ! is_array($row) ) {
+    U::flashError('Unable to load key details');
+    header("Location: ".$from_location);
+    return;
 }
 
 // Make settings work
@@ -91,7 +92,7 @@ $settingsDialog = new \Tsugi\UI\SettingsDialog($key);
 $settingsDialog->instructor_override = true;
 $settingsDialog->ready_override = true;
 if ( $settingsDialog->handleSettingsPost() ) {
-    $_SESSION['success'] = __('Settings updated');
+    U::flashSuccess(__('Settings updated'));
     // Don't want this to effect the current logged in user
     unset($_SESSION['key_settings']);
     header( 'Location: '.addSession('key-detail.php?key_id='.htmlentities($_REQUEST['key_id'])) ) ;
@@ -151,4 +152,3 @@ $(document).ready( function() {
 
 <?php
 $OUTPUT->footerEnd();
-

@@ -2,6 +2,7 @@
 
 require_once "../../config.php";
 
+use Tsugi\Util\SakaiCustom;
 use Tsugi\Util\U;
 
 // See the end of the file for some documentation references
@@ -38,6 +39,8 @@ if ( isset($CFG->servicename) && $CFG->servicename ) {
 if ( isset($CFG->servicedesc) && $CFG->servicedesc ) {
     $json->description = $CFG->servicedesc;
 }
+
+$json->custom_fields = (object) SakaiCustom::deepLinkCustom(false);
 
 /* From IMS */
 

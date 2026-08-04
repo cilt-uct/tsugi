@@ -20,14 +20,22 @@ namespace Google\Service\ContainerAnalysis;
 class ContaineranalysisGoogleDevtoolsCloudbuildV1Dependency extends \Google\Model
 {
   /**
+   * If set to true disable all dependency fetching (ignoring the default source
+   * as well).
+   *
    * @var bool
    */
   public $empty;
+  protected $genericArtifactType = ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGenericArtifactDependency::class;
+  protected $genericArtifactDataType = '';
   protected $gitSourceType = ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGitSourceDependency::class;
   protected $gitSourceDataType = '';
 
   /**
-   * @param bool
+   * If set to true disable all dependency fetching (ignoring the default source
+   * as well).
+   *
+   * @param bool $empty
    */
   public function setEmpty($empty)
   {
@@ -41,7 +49,25 @@ class ContaineranalysisGoogleDevtoolsCloudbuildV1Dependency extends \Google\Mode
     return $this->empty;
   }
   /**
-   * @param ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGitSourceDependency
+   * Represents a generic artifact as a build dependency.
+   *
+   * @param ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGenericArtifactDependency $genericArtifact
+   */
+  public function setGenericArtifact(ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGenericArtifactDependency $genericArtifact)
+  {
+    $this->genericArtifact = $genericArtifact;
+  }
+  /**
+   * @return ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGenericArtifactDependency
+   */
+  public function getGenericArtifact()
+  {
+    return $this->genericArtifact;
+  }
+  /**
+   * Represents a git repository as a build dependency.
+   *
+   * @param ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGitSourceDependency $gitSource
    */
   public function setGitSource(ContaineranalysisGoogleDevtoolsCloudbuildV1DependencyGitSourceDependency $gitSource)
   {

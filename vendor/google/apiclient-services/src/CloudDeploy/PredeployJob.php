@@ -19,14 +19,20 @@ namespace Google\Service\CloudDeploy;
 
 class PredeployJob extends \Google\Collection
 {
-  protected $collection_key = 'actions';
+  protected $collection_key = 'tasks';
   /**
+   * Output only. The custom actions that the predeploy Job executes.
+   *
    * @var string[]
    */
   public $actions;
+  protected $tasksType = Task::class;
+  protected $tasksDataType = 'array';
 
   /**
-   * @param string[]
+   * Output only. The custom actions that the predeploy Job executes.
+   *
+   * @param string[] $actions
    */
   public function setActions($actions)
   {
@@ -38,6 +44,22 @@ class PredeployJob extends \Google\Collection
   public function getActions()
   {
     return $this->actions;
+  }
+  /**
+   * Output only. The tasks that are executed as part of the predeploy Job.
+   *
+   * @param Task[] $tasks
+   */
+  public function setTasks($tasks)
+  {
+    $this->tasks = $tasks;
+  }
+  /**
+   * @return Task[]
+   */
+  public function getTasks()
+  {
+    return $this->tasks;
   }
 }
 

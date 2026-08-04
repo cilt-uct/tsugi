@@ -26,7 +26,7 @@ class GoogleCloudDialogflowV2beta1TelephonyDtmfEvents extends \Google\Collection
   public $dtmfEvents;
 
   /**
-   * @param string[]
+   * @param string[] $dtmfEvents
    */
   public function setDtmfEvents($dtmfEvents)
   {

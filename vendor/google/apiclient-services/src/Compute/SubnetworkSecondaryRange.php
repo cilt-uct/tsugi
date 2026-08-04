@@ -20,20 +20,57 @@ namespace Google\Service\Compute;
 class SubnetworkSecondaryRange extends \Google\Model
 {
   /**
+   * The range of IP addresses belonging to this subnetwork secondary range.
+   * Provide this property when you create the subnetwork. Ranges must be unique
+   * and non-overlapping with all primary and secondary IP ranges within a
+   * network. Both IPv4 and IPv6 ranges are supported. For IPv4, the range can
+   * be any range listed in theValid ranges list.
+   *
+   * For IPv6: The range must have a /64 prefix length. The range must be
+   * omitted, for auto-allocation from Google-defined ULA IPv6 range. For BYOGUA
+   * internal IPv6 secondary range, the range may be specified along with the
+   * `ipCollection` field. If an `ipCollection` is specified, the requested
+   * ip_cidr_range must lie within the range of the PDP referenced by the
+   * `ipCollection` field for allocation. If `ipCollection` field is specified,
+   * but ip_cidr_range is not, the range is auto-allocated from the PDP
+   * referenced by the `ipCollection` field.
+   *
    * @var string
    */
   public $ipCidrRange;
   /**
+   * The name associated with this subnetwork secondary range, used when adding
+   * an alias IP/IPv6 range to a VM instance. The name must be 1-63 characters
+   * long, and comply withRFC1035. The name must be unique within the
+   * subnetwork.
+   *
    * @var string
    */
   public $rangeName;
   /**
+   * The URL of the reserved internal range. Only IPv4 is supported.
+   *
    * @var string
    */
   public $reservedInternalRange;
 
   /**
-   * @param string
+   * The range of IP addresses belonging to this subnetwork secondary range.
+   * Provide this property when you create the subnetwork. Ranges must be unique
+   * and non-overlapping with all primary and secondary IP ranges within a
+   * network. Both IPv4 and IPv6 ranges are supported. For IPv4, the range can
+   * be any range listed in theValid ranges list.
+   *
+   * For IPv6: The range must have a /64 prefix length. The range must be
+   * omitted, for auto-allocation from Google-defined ULA IPv6 range. For BYOGUA
+   * internal IPv6 secondary range, the range may be specified along with the
+   * `ipCollection` field. If an `ipCollection` is specified, the requested
+   * ip_cidr_range must lie within the range of the PDP referenced by the
+   * `ipCollection` field for allocation. If `ipCollection` field is specified,
+   * but ip_cidr_range is not, the range is auto-allocated from the PDP
+   * referenced by the `ipCollection` field.
+   *
+   * @param string $ipCidrRange
    */
   public function setIpCidrRange($ipCidrRange)
   {
@@ -47,7 +84,12 @@ class SubnetworkSecondaryRange extends \Google\Model
     return $this->ipCidrRange;
   }
   /**
-   * @param string
+   * The name associated with this subnetwork secondary range, used when adding
+   * an alias IP/IPv6 range to a VM instance. The name must be 1-63 characters
+   * long, and comply withRFC1035. The name must be unique within the
+   * subnetwork.
+   *
+   * @param string $rangeName
    */
   public function setRangeName($rangeName)
   {
@@ -61,7 +103,9 @@ class SubnetworkSecondaryRange extends \Google\Model
     return $this->rangeName;
   }
   /**
-   * @param string
+   * The URL of the reserved internal range. Only IPv4 is supported.
+   *
+   * @param string $reservedInternalRange
    */
   public function setReservedInternalRange($reservedInternalRange)
   {

@@ -12,18 +12,18 @@ use \Tsugi\Core\LTIX;
 header('Content-Type: text/html; charset=utf-8');
 session_start();
 
-if ( ! U::get($_SESSION,'id') ) {
+if ( ! isLoggedIn() ) {
     die('Must be logged in');
 }
 
-$query_parms = false;
+$query_parms = array(":UID" => loggedInUserId());
 $searchfields = array("C.context_id", "title", "C.created_at", "C.updated_at", "C.login_at", "C.login_count");
 $sql = "SELECT C.context_id AS context_id, title, count(M.user_id) AS members, C.key_id AS key_value,
             C.login_at, C.login_count, C.created_at, C.updated_at
         FROM {$CFG->dbprefix}lti_context AS C
         LEFT JOIN {$CFG->dbprefix}lti_membership AS M ON C.context_id = M.context_id
-        WHERE C.key_id IN (select key_id from {$CFG->dbprefix}lti_key where user_id = ".$_SESSION['id'].") 
-         OR C.user_id = ".$_SESSION['id']."
+        WHERE C.key_id IN (select key_id from {$CFG->dbprefix}lti_key where user_id = :UID ) 
+         OR C.user_id = :UID
         GROUP BY C.context_id";
 $orderfields = array("C.context_id", "key_value", "title", "C.created_at", "C.updated_at", "C.login_at", "C.login_count");
 
@@ -45,7 +45,7 @@ $OUTPUT->topNav();
 
 $OUTPUT->flashMessages();
 
-$extra_buttons = array(__("My Settings") =>   $CFG->wwwroot."/settings");
+$extra_buttons = array(__("My Settings") => htmlspecialchars($CFG->wwwroot, ENT_QUOTES, 'UTF-8') . "/settings");
 $params=false; // Defaults to _GET
 
 Table::pagedTable($newrows, $searchfields, $orderfields, "membership", $params, $extra_buttons);

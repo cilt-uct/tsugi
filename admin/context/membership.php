@@ -6,19 +6,70 @@ require_once("../../admin/admin_util.php");
 
 use \Tsugi\UI\Table;
 use \Tsugi\Core\LTIX;
+use \Tsugi\Util\U;
 
 \Tsugi\Core\LTIX::getConnection();
 
 header('Content-Type: text/html; charset=utf-8');
 session_start();
 
-if ( ! isAdmin() ) {
-    $_SESSION['login_return'] = LTIX::curPageUrlFolder();
-    header('Location: '.$CFG->wwwroot.'/login.php');
+if ( ! isset($_REQUEST['context_id']) ) {
+    U::flashError("No context_id provided");
+    header('Location: '.LTIX::curPageUrlFolder());
     return;
 }
 
-$query_parms = array();
+if ( ! is_numeric($_REQUEST['context_id']) ) {
+    U::flashError("Invalid context_id");
+    header('Location: '.LTIX::curPageUrlFolder());
+    return;
+}
+
+$context_id = $_REQUEST['context_id'] + 0;
+
+// Check if user is site admin OR instructor/admin for this context
+$is_context_admin = false;
+if ( isAdmin() ) {
+    $is_context_admin = true;
+} else if ( isLoggedIn() ) {
+    $effective_uid = loggedInUserId();
+    // Check if user is instructor/admin for this context
+    $membership = $PDOX->rowDie(
+        "SELECT role FROM {$CFG->dbprefix}lti_membership 
+         WHERE context_id = :CID AND user_id = :UID",
+        array(':CID' => $context_id, ':UID' => $effective_uid)
+    );
+    if ( $membership && isset($membership['role']) ) {
+        $role = $membership['role'] + 0;
+        // ROLE_INSTRUCTOR = 1000, ROLE_ADMINISTRATOR = 5000
+        if ( $role >= LTIX::ROLE_INSTRUCTOR ) {
+            $is_context_admin = true;
+        }
+    }
+    // Also check if user owns the context or its key
+    if ( ! $is_context_admin ) {
+        $context_check = $PDOX->rowDie(
+            "SELECT context_id FROM {$CFG->dbprefix}lti_context
+             WHERE context_id = :CID AND (
+                 key_id IN (SELECT key_id FROM {$CFG->dbprefix}lti_key WHERE user_id = :UID)
+                 OR user_id = :UID
+             )",
+            array(':CID' => $context_id, ':UID' => $effective_uid)
+        );
+        if ( $context_check ) {
+            $is_context_admin = true;
+        }
+    }
+}
+
+if ( ! $is_context_admin ) {
+    U::flashError("You must be an administrator or instructor for this context");
+    \Tsugi\Controllers\Login::setReturnUrl(LTIX::curPageUrlFolder());
+    header('Location: '.\Tsugi\Controllers\Login::loginUrl());
+    return;
+}
+
+$query_parms = array(":CID" => $context_id);
 
 $searchfields = array("M.membership_id", "context_id", "M.user_id", "role", "role_override", 
 	"M.created_at", "U.login_at", "email", "displayname", "user_key");
@@ -28,12 +79,9 @@ $sql = "SELECT membership_id, 'detail' AS 'Membership', context_id AS Context, M
         FROM {$CFG->dbprefix}lti_membership as M
         JOIN {$CFG->dbprefix}lti_user AS U ON M.user_id = U.user_id
         WHERE context_id = :CID";
-$query_parms = array(":CID" => $_REQUEST['context_id']);
 
 if ( !isAdmin() ) {
-    die ("Fix this");
-    $sql .= "\nWHERE R.user_id = :UID";
-    $query_parms = array(":UID" => $_SESSION['id']);
+    // Non-admins are already redirected above.
 }
 
 $newsql = Table::pagedQuery($sql, $query_parms, $searchfields);
@@ -52,10 +100,12 @@ $OUTPUT->flashMessages();
 ?>
 <p>
   <a href="<?= LTIX::curPageUrlFolder() ?>" class="btn btn-default">View Contexts</a>
+  <a href="context-settings?context_id=<?= htmlentities($context_id) ?>" class="btn btn-success">View/Edit Context Settings</a>
+  <a href="mailing-list.php?context_id=<?= htmlentities($context_id) ?>" class="btn btn-primary">Generate Mailing List</a>
 </p>
+
 <?php
 
 Table::pagedTable($newrows, $searchfields, $searchfields, "member-detail");
 
 $OUTPUT->footer();
-

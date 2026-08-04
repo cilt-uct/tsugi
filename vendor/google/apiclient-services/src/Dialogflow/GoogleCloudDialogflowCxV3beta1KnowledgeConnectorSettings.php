@@ -38,7 +38,7 @@ class GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings extends \Google\C
   protected $triggerFulfillmentDataType = '';
 
   /**
-   * @param GoogleCloudDialogflowCxV3beta1DataStoreConnection[]
+   * @param GoogleCloudDialogflowCxV3beta1DataStoreConnection[] $dataStoreConnections
    */
   public function setDataStoreConnections($dataStoreConnections)
   {
@@ -52,7 +52,7 @@ class GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings extends \Google\C
     return $this->dataStoreConnections;
   }
   /**
-   * @param bool
+   * @param bool $enabled
    */
   public function setEnabled($enabled)
   {
@@ -66,7 +66,7 @@ class GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings extends \Google\C
     return $this->enabled;
   }
   /**
-   * @param string
+   * @param string $targetFlow
    */
   public function setTargetFlow($targetFlow)
   {
@@ -80,7 +80,7 @@ class GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings extends \Google\C
     return $this->targetFlow;
   }
   /**
-   * @param string
+   * @param string $targetPage
    */
   public function setTargetPage($targetPage)
   {
@@ -94,7 +94,7 @@ class GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings extends \Google\C
     return $this->targetPage;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1Fulfillment
+   * @param GoogleCloudDialogflowCxV3beta1Fulfillment $triggerFulfillment
    */
   public function setTriggerFulfillment(GoogleCloudDialogflowCxV3beta1Fulfillment $triggerFulfillment)
   {

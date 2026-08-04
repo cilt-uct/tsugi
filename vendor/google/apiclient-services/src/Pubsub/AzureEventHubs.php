@@ -20,40 +20,103 @@ namespace Google\Service\Pubsub;
 class AzureEventHubs extends \Google\Model
 {
   /**
+   * Default value. This value is unused.
+   */
+  public const STATE_STATE_UNSPECIFIED = 'STATE_UNSPECIFIED';
+  /**
+   * Ingestion is active.
+   */
+  public const STATE_ACTIVE = 'ACTIVE';
+  /**
+   * Permission denied encountered while consuming data from Event Hubs. This
+   * can happen when `client_id`, or `tenant_id` are invalid. Or the right
+   * permissions haven't been granted.
+   */
+  public const STATE_EVENT_HUBS_PERMISSION_DENIED = 'EVENT_HUBS_PERMISSION_DENIED';
+  /**
+   * Permission denied encountered while publishing to the topic.
+   */
+  public const STATE_PUBLISH_PERMISSION_DENIED = 'PUBLISH_PERMISSION_DENIED';
+  /**
+   * The provided Event Hubs namespace couldn't be found.
+   */
+  public const STATE_NAMESPACE_NOT_FOUND = 'NAMESPACE_NOT_FOUND';
+  /**
+   * The provided Event Hub couldn't be found.
+   */
+  public const STATE_EVENT_HUB_NOT_FOUND = 'EVENT_HUB_NOT_FOUND';
+  /**
+   * The provided Event Hubs subscription couldn't be found.
+   */
+  public const STATE_SUBSCRIPTION_NOT_FOUND = 'SUBSCRIPTION_NOT_FOUND';
+  /**
+   * The provided Event Hubs resource group couldn't be found.
+   */
+  public const STATE_RESOURCE_GROUP_NOT_FOUND = 'RESOURCE_GROUP_NOT_FOUND';
+  /**
+   * Indicates an error state where the ingestion source cannot be processed
+   * because the selected ingestion region is not permitted by the Regional
+   * Access Boundary (RAB) restrictions on the project's service account.
+   */
+  public const STATE_CONFLICTING_REGION_CONSTRAINTS = 'CONFLICTING_REGION_CONSTRAINTS';
+  /**
+   * Optional. The client id of the Azure application that is being used to
+   * authenticate Pub/Sub.
+   *
    * @var string
    */
   public $clientId;
   /**
+   * Optional. The name of the Event Hub.
+   *
    * @var string
    */
   public $eventHub;
   /**
+   * Optional. The GCP service account to be used for Federated Identity
+   * authentication.
+   *
    * @var string
    */
   public $gcpServiceAccount;
   /**
+   * Optional. The name of the Event Hubs namespace.
+   *
    * @var string
    */
   public $namespace;
   /**
+   * Optional. Name of the resource group within the azure subscription.
+   *
    * @var string
    */
   public $resourceGroup;
   /**
+   * Output only. An output-only field that indicates the state of the Event
+   * Hubs ingestion source.
+   *
    * @var string
    */
   public $state;
   /**
+   * Optional. The Azure subscription id.
+   *
    * @var string
    */
   public $subscriptionId;
   /**
+   * Optional. The tenant id of the Azure application that is being used to
+   * authenticate Pub/Sub.
+   *
    * @var string
    */
   public $tenantId;
 
   /**
-   * @param string
+   * Optional. The client id of the Azure application that is being used to
+   * authenticate Pub/Sub.
+   *
+   * @param string $clientId
    */
   public function setClientId($clientId)
   {
@@ -67,7 +130,9 @@ class AzureEventHubs extends \Google\Model
     return $this->clientId;
   }
   /**
-   * @param string
+   * Optional. The name of the Event Hub.
+   *
+   * @param string $eventHub
    */
   public function setEventHub($eventHub)
   {
@@ -81,7 +146,10 @@ class AzureEventHubs extends \Google\Model
     return $this->eventHub;
   }
   /**
-   * @param string
+   * Optional. The GCP service account to be used for Federated Identity
+   * authentication.
+   *
+   * @param string $gcpServiceAccount
    */
   public function setGcpServiceAccount($gcpServiceAccount)
   {
@@ -95,7 +163,9 @@ class AzureEventHubs extends \Google\Model
     return $this->gcpServiceAccount;
   }
   /**
-   * @param string
+   * Optional. The name of the Event Hubs namespace.
+   *
+   * @param string $namespace
    */
   public function setNamespace($namespace)
   {
@@ -109,7 +179,9 @@ class AzureEventHubs extends \Google\Model
     return $this->namespace;
   }
   /**
-   * @param string
+   * Optional. Name of the resource group within the azure subscription.
+   *
+   * @param string $resourceGroup
    */
   public function setResourceGroup($resourceGroup)
   {
@@ -123,21 +195,31 @@ class AzureEventHubs extends \Google\Model
     return $this->resourceGroup;
   }
   /**
-   * @param string
+   * Output only. An output-only field that indicates the state of the Event
+   * Hubs ingestion source.
+   *
+   * Accepted values: STATE_UNSPECIFIED, ACTIVE, EVENT_HUBS_PERMISSION_DENIED,
+   * PUBLISH_PERMISSION_DENIED, NAMESPACE_NOT_FOUND, EVENT_HUB_NOT_FOUND,
+   * SUBSCRIPTION_NOT_FOUND, RESOURCE_GROUP_NOT_FOUND,
+   * CONFLICTING_REGION_CONSTRAINTS
+   *
+   * @param self::STATE_* $state
    */
   public function setState($state)
   {
     $this->state = $state;
   }
   /**
-   * @return string
+   * @return self::STATE_*
    */
   public function getState()
   {
     return $this->state;
   }
   /**
-   * @param string
+   * Optional. The Azure subscription id.
+   *
+   * @param string $subscriptionId
    */
   public function setSubscriptionId($subscriptionId)
   {
@@ -151,7 +233,10 @@ class AzureEventHubs extends \Google\Model
     return $this->subscriptionId;
   }
   /**
-   * @param string
+   * Optional. The tenant id of the Azure application that is being used to
+   * authenticate Pub/Sub.
+   *
+   * @param string $tenantId
    */
   public function setTenantId($tenantId)
   {

@@ -20,16 +20,29 @@ namespace Google\Service\Backupdr;
 class ComputeInstanceTargetEnvironment extends \Google\Model
 {
   /**
+   * Required. Target project for the Compute Engine instance.
+   *
    * @var string
    */
   public $project;
   /**
+   * Optional. Whether to use the project service account for the Compute Engine
+   * instance.
+   *
+   * @var bool
+   */
+  public $useProjectServiceAccount;
+  /**
+   * Required. The zone of the Compute Engine instance.
+   *
    * @var string
    */
   public $zone;
 
   /**
-   * @param string
+   * Required. Target project for the Compute Engine instance.
+   *
+   * @param string $project
    */
   public function setProject($project)
   {
@@ -43,7 +56,26 @@ class ComputeInstanceTargetEnvironment extends \Google\Model
     return $this->project;
   }
   /**
-   * @param string
+   * Optional. Whether to use the project service account for the Compute Engine
+   * instance.
+   *
+   * @param bool $useProjectServiceAccount
+   */
+  public function setUseProjectServiceAccount($useProjectServiceAccount)
+  {
+    $this->useProjectServiceAccount = $useProjectServiceAccount;
+  }
+  /**
+   * @return bool
+   */
+  public function getUseProjectServiceAccount()
+  {
+    return $this->useProjectServiceAccount;
+  }
+  /**
+   * Required. The zone of the Compute Engine instance.
+   *
+   * @param string $zone
    */
   public function setZone($zone)
   {

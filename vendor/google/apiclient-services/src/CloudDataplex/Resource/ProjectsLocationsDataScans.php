@@ -44,11 +44,12 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    *
    * @param string $parent Required. The resource name of the parent location:
    * projects/{project}/locations/{location_id} where project refers to a
-   * project_id or project_number and location_id refers to a GCP region.
+   * project_id or project_number and location_id refers to a Google Cloud region.
    * @param GoogleCloudDataplexV1DataScan $postBody
    * @param array $optParams Optional parameters.
    *
-   * @opt_param string dataScanId Required. DataScan identifier. Must contain only
+   * @opt_param string dataScanId Optional. DataScan identifier. If not provided,
+   * a unique ID will be generated with the prefix "data-scan-". Must contain only
    * lowercase letters, numbers and hyphens. Must start with a letter. Must end
    * with a number or a letter. Must be between 1-63 characters. Must be unique
    * within the customer project / location.
@@ -69,7 +70,7 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    * @param string $name Required. The resource name of the dataScan:
    * projects/{project}/locations/{location_id}/dataScans/{data_scan_id} where
    * project refers to a project_id or project_number and location_id refers to a
-   * GCP region.
+   * Google Cloud region.
    * @param array $optParams Optional parameters.
    *
    * @opt_param bool force Optional. If set to true, any child resources of this
@@ -110,7 +111,7 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    * @param string $name Required. The resource name of the dataScan:
    * projects/{project}/locations/{location_id}/dataScans/{data_scan_id} where
    * project refers to a project_id or project_number and location_id refers to a
-   * GCP region.
+   * Google Cloud region.
    * @param array $optParams Optional parameters.
    *
    * @opt_param string view Optional. Select the DataScan view to return. Defaults
@@ -159,7 +160,7 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    *
    * @param string $parent Required. The resource name of the parent location:
    * projects/{project}/locations/{location_id} where project refers to a
-   * project_id or project_number and location_id refers to a GCP region.
+   * project_id or project_number and location_id refers to a Google Cloud region.
    * @param array $optParams Optional parameters.
    *
    * @opt_param string filter Optional. Filter request.
@@ -189,7 +190,7 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    * the scan, of the form:
    * projects/{project}/locations/{location_id}/dataScans/{datascan_id}, where
    * project refers to a project_id or project_number and location_id refers to a
-   * GCP region.
+   * Google Cloud region.
    * @param GoogleCloudDataplexV1DataScan $postBody
    * @param array $optParams Optional parameters.
    *
@@ -211,7 +212,7 @@ class ProjectsLocationsDataScans extends \Google\Service\Resource
    * @param string $name Required. The resource name of the DataScan:
    * projects/{project}/locations/{location_id}/dataScans/{data_scan_id}. where
    * project refers to a project_id or project_number and location_id refers to a
-   * GCP region.Only OnDemand data scans are allowed.
+   * Google Cloud region.Only OnDemand data scans are allowed.
    * @param GoogleCloudDataplexV1RunDataScanRequest $postBody
    * @param array $optParams Optional parameters.
    * @return GoogleCloudDataplexV1RunDataScanResponse

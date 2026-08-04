@@ -19,6 +19,8 @@ namespace Google\Service\Docs;
 
 class Request extends \Google\Model
 {
+  protected $addDocumentTabType = AddDocumentTabRequest::class;
+  protected $addDocumentTabDataType = '';
   protected $createFooterType = CreateFooterRequest::class;
   protected $createFooterDataType = '';
   protected $createFootnoteType = CreateFootnoteRequest::class;
@@ -41,14 +43,22 @@ class Request extends \Google\Model
   protected $deleteParagraphBulletsDataType = '';
   protected $deletePositionedObjectType = DeletePositionedObjectRequest::class;
   protected $deletePositionedObjectDataType = '';
+  protected $deleteTabType = DeleteTabRequest::class;
+  protected $deleteTabDataType = '';
   protected $deleteTableColumnType = DeleteTableColumnRequest::class;
   protected $deleteTableColumnDataType = '';
   protected $deleteTableRowType = DeleteTableRowRequest::class;
   protected $deleteTableRowDataType = '';
+  protected $insertDateType = InsertDateRequest::class;
+  protected $insertDateDataType = '';
   protected $insertInlineImageType = InsertInlineImageRequest::class;
   protected $insertInlineImageDataType = '';
   protected $insertPageBreakType = InsertPageBreakRequest::class;
   protected $insertPageBreakDataType = '';
+  protected $insertPersonType = InsertPersonRequest::class;
+  protected $insertPersonDataType = '';
+  protected $insertRichLinkType = InsertRichLinkRequest::class;
+  protected $insertRichLinkDataType = '';
   protected $insertSectionBreakType = InsertSectionBreakRequest::class;
   protected $insertSectionBreakDataType = '';
   protected $insertTableType = InsertTableRequest::class;
@@ -73,6 +83,10 @@ class Request extends \Google\Model
   protected $unmergeTableCellsDataType = '';
   protected $updateDocumentStyleType = UpdateDocumentStyleRequest::class;
   protected $updateDocumentStyleDataType = '';
+  protected $updateDocumentTabPropertiesType = UpdateDocumentTabPropertiesRequest::class;
+  protected $updateDocumentTabPropertiesDataType = '';
+  protected $updateNamedStyleType = UpdateNamedStyleRequest::class;
+  protected $updateNamedStyleDataType = '';
   protected $updateParagraphStyleType = UpdateParagraphStyleRequest::class;
   protected $updateParagraphStyleDataType = '';
   protected $updateSectionStyleType = UpdateSectionStyleRequest::class;
@@ -87,7 +101,25 @@ class Request extends \Google\Model
   protected $updateTextStyleDataType = '';
 
   /**
-   * @param CreateFooterRequest
+   * Adds a document tab.
+   *
+   * @param AddDocumentTabRequest $addDocumentTab
+   */
+  public function setAddDocumentTab(AddDocumentTabRequest $addDocumentTab)
+  {
+    $this->addDocumentTab = $addDocumentTab;
+  }
+  /**
+   * @return AddDocumentTabRequest
+   */
+  public function getAddDocumentTab()
+  {
+    return $this->addDocumentTab;
+  }
+  /**
+   * Creates a footer.
+   *
+   * @param CreateFooterRequest $createFooter
    */
   public function setCreateFooter(CreateFooterRequest $createFooter)
   {
@@ -101,7 +133,9 @@ class Request extends \Google\Model
     return $this->createFooter;
   }
   /**
-   * @param CreateFootnoteRequest
+   * Creates a footnote.
+   *
+   * @param CreateFootnoteRequest $createFootnote
    */
   public function setCreateFootnote(CreateFootnoteRequest $createFootnote)
   {
@@ -115,7 +149,9 @@ class Request extends \Google\Model
     return $this->createFootnote;
   }
   /**
-   * @param CreateHeaderRequest
+   * Creates a header.
+   *
+   * @param CreateHeaderRequest $createHeader
    */
   public function setCreateHeader(CreateHeaderRequest $createHeader)
   {
@@ -129,7 +165,9 @@ class Request extends \Google\Model
     return $this->createHeader;
   }
   /**
-   * @param CreateNamedRangeRequest
+   * Creates a named range.
+   *
+   * @param CreateNamedRangeRequest $createNamedRange
    */
   public function setCreateNamedRange(CreateNamedRangeRequest $createNamedRange)
   {
@@ -143,7 +181,9 @@ class Request extends \Google\Model
     return $this->createNamedRange;
   }
   /**
-   * @param CreateParagraphBulletsRequest
+   * Creates bullets for paragraphs.
+   *
+   * @param CreateParagraphBulletsRequest $createParagraphBullets
    */
   public function setCreateParagraphBullets(CreateParagraphBulletsRequest $createParagraphBullets)
   {
@@ -157,7 +197,9 @@ class Request extends \Google\Model
     return $this->createParagraphBullets;
   }
   /**
-   * @param DeleteContentRangeRequest
+   * Deletes content from the document.
+   *
+   * @param DeleteContentRangeRequest $deleteContentRange
    */
   public function setDeleteContentRange(DeleteContentRangeRequest $deleteContentRange)
   {
@@ -171,7 +213,9 @@ class Request extends \Google\Model
     return $this->deleteContentRange;
   }
   /**
-   * @param DeleteFooterRequest
+   * Deletes a footer from the document.
+   *
+   * @param DeleteFooterRequest $deleteFooter
    */
   public function setDeleteFooter(DeleteFooterRequest $deleteFooter)
   {
@@ -185,7 +229,9 @@ class Request extends \Google\Model
     return $this->deleteFooter;
   }
   /**
-   * @param DeleteHeaderRequest
+   * Deletes a header from the document.
+   *
+   * @param DeleteHeaderRequest $deleteHeader
    */
   public function setDeleteHeader(DeleteHeaderRequest $deleteHeader)
   {
@@ -199,7 +245,9 @@ class Request extends \Google\Model
     return $this->deleteHeader;
   }
   /**
-   * @param DeleteNamedRangeRequest
+   * Deletes a named range.
+   *
+   * @param DeleteNamedRangeRequest $deleteNamedRange
    */
   public function setDeleteNamedRange(DeleteNamedRangeRequest $deleteNamedRange)
   {
@@ -213,7 +261,9 @@ class Request extends \Google\Model
     return $this->deleteNamedRange;
   }
   /**
-   * @param DeleteParagraphBulletsRequest
+   * Deletes bullets from paragraphs.
+   *
+   * @param DeleteParagraphBulletsRequest $deleteParagraphBullets
    */
   public function setDeleteParagraphBullets(DeleteParagraphBulletsRequest $deleteParagraphBullets)
   {
@@ -227,7 +277,9 @@ class Request extends \Google\Model
     return $this->deleteParagraphBullets;
   }
   /**
-   * @param DeletePositionedObjectRequest
+   * Deletes a positioned object from the document.
+   *
+   * @param DeletePositionedObjectRequest $deletePositionedObject
    */
   public function setDeletePositionedObject(DeletePositionedObjectRequest $deletePositionedObject)
   {
@@ -241,7 +293,25 @@ class Request extends \Google\Model
     return $this->deletePositionedObject;
   }
   /**
-   * @param DeleteTableColumnRequest
+   * Deletes a document tab.
+   *
+   * @param DeleteTabRequest $deleteTab
+   */
+  public function setDeleteTab(DeleteTabRequest $deleteTab)
+  {
+    $this->deleteTab = $deleteTab;
+  }
+  /**
+   * @return DeleteTabRequest
+   */
+  public function getDeleteTab()
+  {
+    return $this->deleteTab;
+  }
+  /**
+   * Deletes a column from a table.
+   *
+   * @param DeleteTableColumnRequest $deleteTableColumn
    */
   public function setDeleteTableColumn(DeleteTableColumnRequest $deleteTableColumn)
   {
@@ -255,7 +325,9 @@ class Request extends \Google\Model
     return $this->deleteTableColumn;
   }
   /**
-   * @param DeleteTableRowRequest
+   * Deletes a row from a table.
+   *
+   * @param DeleteTableRowRequest $deleteTableRow
    */
   public function setDeleteTableRow(DeleteTableRowRequest $deleteTableRow)
   {
@@ -269,7 +341,25 @@ class Request extends \Google\Model
     return $this->deleteTableRow;
   }
   /**
-   * @param InsertInlineImageRequest
+   * Inserts a date.
+   *
+   * @param InsertDateRequest $insertDate
+   */
+  public function setInsertDate(InsertDateRequest $insertDate)
+  {
+    $this->insertDate = $insertDate;
+  }
+  /**
+   * @return InsertDateRequest
+   */
+  public function getInsertDate()
+  {
+    return $this->insertDate;
+  }
+  /**
+   * Inserts an inline image at the specified location.
+   *
+   * @param InsertInlineImageRequest $insertInlineImage
    */
   public function setInsertInlineImage(InsertInlineImageRequest $insertInlineImage)
   {
@@ -283,7 +373,9 @@ class Request extends \Google\Model
     return $this->insertInlineImage;
   }
   /**
-   * @param InsertPageBreakRequest
+   * Inserts a page break at the specified location.
+   *
+   * @param InsertPageBreakRequest $insertPageBreak
    */
   public function setInsertPageBreak(InsertPageBreakRequest $insertPageBreak)
   {
@@ -297,7 +389,41 @@ class Request extends \Google\Model
     return $this->insertPageBreak;
   }
   /**
-   * @param InsertSectionBreakRequest
+   * Inserts a person mention.
+   *
+   * @param InsertPersonRequest $insertPerson
+   */
+  public function setInsertPerson(InsertPersonRequest $insertPerson)
+  {
+    $this->insertPerson = $insertPerson;
+  }
+  /**
+   * @return InsertPersonRequest
+   */
+  public function getInsertPerson()
+  {
+    return $this->insertPerson;
+  }
+  /**
+   * Insert a rich link.
+   *
+   * @param InsertRichLinkRequest $insertRichLink
+   */
+  public function setInsertRichLink(InsertRichLinkRequest $insertRichLink)
+  {
+    $this->insertRichLink = $insertRichLink;
+  }
+  /**
+   * @return InsertRichLinkRequest
+   */
+  public function getInsertRichLink()
+  {
+    return $this->insertRichLink;
+  }
+  /**
+   * Inserts a section break at the specified location.
+   *
+   * @param InsertSectionBreakRequest $insertSectionBreak
    */
   public function setInsertSectionBreak(InsertSectionBreakRequest $insertSectionBreak)
   {
@@ -311,7 +437,9 @@ class Request extends \Google\Model
     return $this->insertSectionBreak;
   }
   /**
-   * @param InsertTableRequest
+   * Inserts a table at the specified location.
+   *
+   * @param InsertTableRequest $insertTable
    */
   public function setInsertTable(InsertTableRequest $insertTable)
   {
@@ -325,7 +453,9 @@ class Request extends \Google\Model
     return $this->insertTable;
   }
   /**
-   * @param InsertTableColumnRequest
+   * Inserts an empty column into a table.
+   *
+   * @param InsertTableColumnRequest $insertTableColumn
    */
   public function setInsertTableColumn(InsertTableColumnRequest $insertTableColumn)
   {
@@ -339,7 +469,9 @@ class Request extends \Google\Model
     return $this->insertTableColumn;
   }
   /**
-   * @param InsertTableRowRequest
+   * Inserts an empty row into a table.
+   *
+   * @param InsertTableRowRequest $insertTableRow
    */
   public function setInsertTableRow(InsertTableRowRequest $insertTableRow)
   {
@@ -353,7 +485,9 @@ class Request extends \Google\Model
     return $this->insertTableRow;
   }
   /**
-   * @param InsertTextRequest
+   * Inserts text at the specified location.
+   *
+   * @param InsertTextRequest $insertText
    */
   public function setInsertText(InsertTextRequest $insertText)
   {
@@ -367,7 +501,9 @@ class Request extends \Google\Model
     return $this->insertText;
   }
   /**
-   * @param MergeTableCellsRequest
+   * Merges cells in a table.
+   *
+   * @param MergeTableCellsRequest $mergeTableCells
    */
   public function setMergeTableCells(MergeTableCellsRequest $mergeTableCells)
   {
@@ -381,7 +517,9 @@ class Request extends \Google\Model
     return $this->mergeTableCells;
   }
   /**
-   * @param PinTableHeaderRowsRequest
+   * Updates the number of pinned header rows in a table.
+   *
+   * @param PinTableHeaderRowsRequest $pinTableHeaderRows
    */
   public function setPinTableHeaderRows(PinTableHeaderRowsRequest $pinTableHeaderRows)
   {
@@ -395,7 +533,9 @@ class Request extends \Google\Model
     return $this->pinTableHeaderRows;
   }
   /**
-   * @param ReplaceAllTextRequest
+   * Replaces all instances of the specified text.
+   *
+   * @param ReplaceAllTextRequest $replaceAllText
    */
   public function setReplaceAllText(ReplaceAllTextRequest $replaceAllText)
   {
@@ -409,7 +549,9 @@ class Request extends \Google\Model
     return $this->replaceAllText;
   }
   /**
-   * @param ReplaceImageRequest
+   * Replaces an image in the document.
+   *
+   * @param ReplaceImageRequest $replaceImage
    */
   public function setReplaceImage(ReplaceImageRequest $replaceImage)
   {
@@ -423,7 +565,9 @@ class Request extends \Google\Model
     return $this->replaceImage;
   }
   /**
-   * @param ReplaceNamedRangeContentRequest
+   * Replaces the content in a named range.
+   *
+   * @param ReplaceNamedRangeContentRequest $replaceNamedRangeContent
    */
   public function setReplaceNamedRangeContent(ReplaceNamedRangeContentRequest $replaceNamedRangeContent)
   {
@@ -437,7 +581,9 @@ class Request extends \Google\Model
     return $this->replaceNamedRangeContent;
   }
   /**
-   * @param UnmergeTableCellsRequest
+   * Unmerges cells in a table.
+   *
+   * @param UnmergeTableCellsRequest $unmergeTableCells
    */
   public function setUnmergeTableCells(UnmergeTableCellsRequest $unmergeTableCells)
   {
@@ -451,7 +597,9 @@ class Request extends \Google\Model
     return $this->unmergeTableCells;
   }
   /**
-   * @param UpdateDocumentStyleRequest
+   * Updates the style of the document.
+   *
+   * @param UpdateDocumentStyleRequest $updateDocumentStyle
    */
   public function setUpdateDocumentStyle(UpdateDocumentStyleRequest $updateDocumentStyle)
   {
@@ -465,7 +613,41 @@ class Request extends \Google\Model
     return $this->updateDocumentStyle;
   }
   /**
-   * @param UpdateParagraphStyleRequest
+   * Updates the properties of a document tab.
+   *
+   * @param UpdateDocumentTabPropertiesRequest $updateDocumentTabProperties
+   */
+  public function setUpdateDocumentTabProperties(UpdateDocumentTabPropertiesRequest $updateDocumentTabProperties)
+  {
+    $this->updateDocumentTabProperties = $updateDocumentTabProperties;
+  }
+  /**
+   * @return UpdateDocumentTabPropertiesRequest
+   */
+  public function getUpdateDocumentTabProperties()
+  {
+    return $this->updateDocumentTabProperties;
+  }
+  /**
+   * Updates a named style.
+   *
+   * @param UpdateNamedStyleRequest $updateNamedStyle
+   */
+  public function setUpdateNamedStyle(UpdateNamedStyleRequest $updateNamedStyle)
+  {
+    $this->updateNamedStyle = $updateNamedStyle;
+  }
+  /**
+   * @return UpdateNamedStyleRequest
+   */
+  public function getUpdateNamedStyle()
+  {
+    return $this->updateNamedStyle;
+  }
+  /**
+   * Updates the paragraph style at the specified range.
+   *
+   * @param UpdateParagraphStyleRequest $updateParagraphStyle
    */
   public function setUpdateParagraphStyle(UpdateParagraphStyleRequest $updateParagraphStyle)
   {
@@ -479,7 +661,9 @@ class Request extends \Google\Model
     return $this->updateParagraphStyle;
   }
   /**
-   * @param UpdateSectionStyleRequest
+   * Updates the section style of the specified range.
+   *
+   * @param UpdateSectionStyleRequest $updateSectionStyle
    */
   public function setUpdateSectionStyle(UpdateSectionStyleRequest $updateSectionStyle)
   {
@@ -493,7 +677,9 @@ class Request extends \Google\Model
     return $this->updateSectionStyle;
   }
   /**
-   * @param UpdateTableCellStyleRequest
+   * Updates the style of table cells.
+   *
+   * @param UpdateTableCellStyleRequest $updateTableCellStyle
    */
   public function setUpdateTableCellStyle(UpdateTableCellStyleRequest $updateTableCellStyle)
   {
@@ -507,7 +693,9 @@ class Request extends \Google\Model
     return $this->updateTableCellStyle;
   }
   /**
-   * @param UpdateTableColumnPropertiesRequest
+   * Updates the properties of columns in a table.
+   *
+   * @param UpdateTableColumnPropertiesRequest $updateTableColumnProperties
    */
   public function setUpdateTableColumnProperties(UpdateTableColumnPropertiesRequest $updateTableColumnProperties)
   {
@@ -521,7 +709,9 @@ class Request extends \Google\Model
     return $this->updateTableColumnProperties;
   }
   /**
-   * @param UpdateTableRowStyleRequest
+   * Updates the row style in a table.
+   *
+   * @param UpdateTableRowStyleRequest $updateTableRowStyle
    */
   public function setUpdateTableRowStyle(UpdateTableRowStyleRequest $updateTableRowStyle)
   {
@@ -535,7 +725,9 @@ class Request extends \Google\Model
     return $this->updateTableRowStyle;
   }
   /**
-   * @param UpdateTextStyleRequest
+   * Updates the text style at the specified range.
+   *
+   * @param UpdateTextStyleRequest $updateTextStyle
    */
   public function setUpdateTextStyle(UpdateTextStyleRequest $updateTextStyle)
   {

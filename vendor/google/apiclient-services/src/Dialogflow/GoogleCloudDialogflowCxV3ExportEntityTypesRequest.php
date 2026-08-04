@@ -19,6 +19,9 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowCxV3ExportEntityTypesRequest extends \Google\Collection
 {
+  public const DATA_FORMAT_DATA_FORMAT_UNSPECIFIED = 'DATA_FORMAT_UNSPECIFIED';
+  public const DATA_FORMAT_BLOB = 'BLOB';
+  public const DATA_FORMAT_JSON_PACKAGE = 'JSON_PACKAGE';
   protected $collection_key = 'entityTypes';
   /**
    * @var string
@@ -42,21 +45,21 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesRequest extends \Google\Collecti
   public $languageCode;
 
   /**
-   * @param string
+   * @param self::DATA_FORMAT_* $dataFormat
    */
   public function setDataFormat($dataFormat)
   {
     $this->dataFormat = $dataFormat;
   }
   /**
-   * @return string
+   * @return self::DATA_FORMAT_*
    */
   public function getDataFormat()
   {
     return $this->dataFormat;
   }
   /**
-   * @param string[]
+   * @param string[] $entityTypes
    */
   public function setEntityTypes($entityTypes)
   {
@@ -70,7 +73,7 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesRequest extends \Google\Collecti
     return $this->entityTypes;
   }
   /**
-   * @param bool
+   * @param bool $entityTypesContentInline
    */
   public function setEntityTypesContentInline($entityTypesContentInline)
   {
@@ -84,7 +87,7 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesRequest extends \Google\Collecti
     return $this->entityTypesContentInline;
   }
   /**
-   * @param string
+   * @param string $entityTypesUri
    */
   public function setEntityTypesUri($entityTypesUri)
   {
@@ -98,7 +101,7 @@ class GoogleCloudDialogflowCxV3ExportEntityTypesRequest extends \Google\Collecti
     return $this->entityTypesUri;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {

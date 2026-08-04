@@ -19,6 +19,9 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowCxV3AnswerFeedback extends \Google\Model
 {
+  public const RATING_RATING_UNSPECIFIED = 'RATING_UNSPECIFIED';
+  public const RATING_THUMBS_UP = 'THUMBS_UP';
+  public const RATING_THUMBS_DOWN = 'THUMBS_DOWN';
   /**
    * @var string
    */
@@ -31,7 +34,7 @@ class GoogleCloudDialogflowCxV3AnswerFeedback extends \Google\Model
   protected $ratingReasonDataType = '';
 
   /**
-   * @param string
+   * @param string $customRating
    */
   public function setCustomRating($customRating)
   {
@@ -45,21 +48,21 @@ class GoogleCloudDialogflowCxV3AnswerFeedback extends \Google\Model
     return $this->customRating;
   }
   /**
-   * @param string
+   * @param self::RATING_* $rating
    */
   public function setRating($rating)
   {
     $this->rating = $rating;
   }
   /**
-   * @return string
+   * @return self::RATING_*
    */
   public function getRating()
   {
     return $this->rating;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3AnswerFeedbackRatingReason
+   * @param GoogleCloudDialogflowCxV3AnswerFeedbackRatingReason $ratingReason
    */
   public function setRatingReason(GoogleCloudDialogflowCxV3AnswerFeedbackRatingReason $ratingReason)
   {

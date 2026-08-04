@@ -29,13 +29,15 @@ class GoogleCloudDialogflowCxV3GenerativeSettings extends \Google\Model
    * @var string
    */
   public $languageCode;
+  protected $llmModelSettingsType = GoogleCloudDialogflowCxV3LlmModelSettings::class;
+  protected $llmModelSettingsDataType = '';
   /**
    * @var string
    */
   public $name;
 
   /**
-   * @param GoogleCloudDialogflowCxV3GenerativeSettingsFallbackSettings
+   * @param GoogleCloudDialogflowCxV3GenerativeSettingsFallbackSettings $fallbackSettings
    */
   public function setFallbackSettings(GoogleCloudDialogflowCxV3GenerativeSettingsFallbackSettings $fallbackSettings)
   {
@@ -49,7 +51,7 @@ class GoogleCloudDialogflowCxV3GenerativeSettings extends \Google\Model
     return $this->fallbackSettings;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3SafetySettings
+   * @param GoogleCloudDialogflowCxV3SafetySettings $generativeSafetySettings
    */
   public function setGenerativeSafetySettings(GoogleCloudDialogflowCxV3SafetySettings $generativeSafetySettings)
   {
@@ -63,7 +65,7 @@ class GoogleCloudDialogflowCxV3GenerativeSettings extends \Google\Model
     return $this->generativeSafetySettings;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3GenerativeSettingsKnowledgeConnectorSettings
+   * @param GoogleCloudDialogflowCxV3GenerativeSettingsKnowledgeConnectorSettings $knowledgeConnectorSettings
    */
   public function setKnowledgeConnectorSettings(GoogleCloudDialogflowCxV3GenerativeSettingsKnowledgeConnectorSettings $knowledgeConnectorSettings)
   {
@@ -77,7 +79,7 @@ class GoogleCloudDialogflowCxV3GenerativeSettings extends \Google\Model
     return $this->knowledgeConnectorSettings;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {
@@ -91,7 +93,21 @@ class GoogleCloudDialogflowCxV3GenerativeSettings extends \Google\Model
     return $this->languageCode;
   }
   /**
-   * @param string
+   * @param GoogleCloudDialogflowCxV3LlmModelSettings $llmModelSettings
+   */
+  public function setLlmModelSettings(GoogleCloudDialogflowCxV3LlmModelSettings $llmModelSettings)
+  {
+    $this->llmModelSettings = $llmModelSettings;
+  }
+  /**
+   * @return GoogleCloudDialogflowCxV3LlmModelSettings
+   */
+  public function getLlmModelSettings()
+  {
+    return $this->llmModelSettings;
+  }
+  /**
+   * @param string $name
    */
   public function setName($name)
   {

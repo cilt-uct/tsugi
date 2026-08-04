@@ -21,11 +21,15 @@ class GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPoint exten
 {
   protected $conversationMeasureType = GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointConversationMeasure::class;
   protected $conversationMeasureDataType = '';
+  protected $dialogflowInteractionMeasureType = GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointDialogflowInteractionMeasure::class;
+  protected $dialogflowInteractionMeasureDataType = '';
   protected $intervalType = GoogleTypeInterval::class;
   protected $intervalDataType = '';
 
   /**
-   * @param GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointConversationMeasure
+   * The measure related to conversations.
+   *
+   * @param GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointConversationMeasure $conversationMeasure
    */
   public function setConversationMeasure(GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointConversationMeasure $conversationMeasure)
   {
@@ -39,7 +43,28 @@ class GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPoint exten
     return $this->conversationMeasure;
   }
   /**
-   * @param GoogleTypeInterval
+   * The measure related to dialogflow interactions.
+   *
+   * @param GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointDialogflowInteractionMeasure $dialogflowInteractionMeasure
+   */
+  public function setDialogflowInteractionMeasure(GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointDialogflowInteractionMeasure $dialogflowInteractionMeasure)
+  {
+    $this->dialogflowInteractionMeasure = $dialogflowInteractionMeasure;
+  }
+  /**
+   * @return GoogleCloudContactcenterinsightsV1QueryMetricsResponseSliceDataPointDialogflowInteractionMeasure
+   */
+  public function getDialogflowInteractionMeasure()
+  {
+    return $this->dialogflowInteractionMeasure;
+  }
+  /**
+   * The interval that this data point represents. * If this is the total data
+   * point, the interval is [starting create time, ending create time) from the
+   * request. * If this a data point from the time series, the interval is
+   * [time, time + time granularity from the request).
+   *
+   * @param GoogleTypeInterval $interval
    */
   public function setInterval(GoogleTypeInterval $interval)
   {

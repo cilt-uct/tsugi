@@ -11,10 +11,9 @@ require_once("expire_util.php");
 
 session_start();
 
-if ( ! U::get($_SESSION,'id') ) {
-    $login_return = U::reconstruct_query($CFG->wwwroot . '/settings/expire');
-    $_SESSION['login_return'] = $login_return;
-    Output::doRedirect($CFG->wwwroot.'/login.php');
+if ( ! isLoggedIn() ) {
+    \Tsugi\Controllers\Login::setReturnUrl(U::reconstruct_query($CFG->wwwroot . '/settings/expire'));
+    Output::doRedirect(\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 
@@ -39,37 +38,40 @@ $pii_days = U::get($_GET,'pii_days',$pii_days);
 $pii_expire =  get_pii_count($pii_days);
 
 $check = sanity_check_days();
-if ( is_string($check) ) $_SESSION["error"] = $check;
+if ( is_string($check) ) U::flashError($check);
 
 $OUTPUT->header();
 $OUTPUT->bodyStart();
 $OUTPUT->topNav();
 $OUTPUT->flashMessages();
 ?>
-<div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
-   <img src="<?= $OUTPUT->getSpinnerUrl() ?>" id="iframe-spinner"><br/>
-   <iframe name="iframe-frame" style="height:600px" id="iframe-frame"
+<div id="iframe-dialog" title="Read Only Dialog" style="display: none;" role="dialog" aria-modal="true" aria-label="Read only content">
+   <div id="iframe-spinner" role="status" aria-live="polite">
+   <img src="<?= htmlspecialchars($OUTPUT->getSpinnerUrl(), ENT_QUOTES, 'UTF-8') ?>" alt="" role="presentation"><br/>
+   <span class="sr-only">Loading content</span>
+   </div>
+   <iframe name="iframe-frame" style="height:600px" id="iframe-frame" title="Data expiry content viewer"
     onload="document.getElementById('iframe-spinner').style.display='none';">
    </iframe>
 </div>
 <h1>Manage Data Expiry</h1>
 <p>
-  <a href="<?= $CFG->wwwroot ?>/settings" class="btn btn-default">My Settings</a>
+  <a href="<?= htmlspecialchars($CFG->wwwroot, ENT_QUOTES, 'UTF-8') ?>/settings" class="btn btn-default" aria-label="My Settings">My Settings</a>
 </p>
 <form>
 <ul>
-<li>User count: <?= $user_count ?>  <br/>
+<li>User count: <?= (int)$user_count ?>  <br/>
 <ul>
 <li>
-Users with PII and no activity in
-<input type="text" name="pii_days" size=5 class="auto_days" value="<?= $pii_days ?>"> days:
-<?= $pii_expire ?>
+<label for="pii_days">Users with PII and no activity in</label>
+<input type="text" name="pii_days" id="pii_days" size=5 class="auto_days" value="<?= htmlspecialchars($pii_days, ENT_QUOTES, 'UTF-8') ?>"> days:
+<?= (int)$pii_expire ?>
 <?php if ( $pii_expire > 0 ) { ?>
   <br/>
-  <a href="pii-detail?pii_days=<?= $pii_days ?>" class="auto_expire btn btn-xs btn-default">View</a>
-  <a href="#" title="Expire PII" class="auto_expire btn btn-xs btn-danger"
-  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'pii-expire?pii_days=<?= $pii_days ?>', _TSUGI.spinnerUrl, true); return false;" >
-  Expire PII &gt; <?= $pii_days ?> Days
+  <a href="pii-detail?pii_days=<?= urlencode($pii_days) ?>" class="auto_expire btn btn-xs btn-default" aria-label="View PII expiry details">View</a>
+  <a href="#" title="Expire PII" class="auto_expire btn btn-xs btn-danger" role="button" aria-label="Expire PII older than <?= (int)$pii_days ?> days"
+  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'pii-expire?pii_days=<?= urlencode($pii_days) ?>', _TSUGI.spinnerUrl, true); return false;" >
+  Expire PII &gt; <?= (int)$pii_days ?> Days
   </a>
 <?php } ?>
 </li>

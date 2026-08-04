@@ -28,7 +28,7 @@ class GoogleCloudDialogflowCxV3ListGeneratorsResponse extends \Google\Collection
   public $nextPageToken;
 
   /**
-   * @param GoogleCloudDialogflowCxV3Generator[]
+   * @param GoogleCloudDialogflowCxV3Generator[] $generators
    */
   public function setGenerators($generators)
   {
@@ -42,7 +42,7 @@ class GoogleCloudDialogflowCxV3ListGeneratorsResponse extends \Google\Collection
     return $this->generators;
   }
   /**
-   * @param string
+   * @param string $nextPageToken
    */
   public function setNextPageToken($nextPageToken)
   {

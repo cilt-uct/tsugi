@@ -20,16 +20,53 @@ namespace Google\Service\DiscoveryEngine;
 class GoogleCloudDiscoveryengineV1alphaActionConfig extends \Google\Model
 {
   /**
+   * Optional. Action parameters in structured json format.
+   *
    * @var array[]
    */
   public $actionParams;
   /**
+   * Optional. Whether to create a BAP connection for the connector.
+   *
+   * @var bool
+   */
+  public $createBapConnection;
+  /**
+   * Output only. The connector contains the necessary parameters and is
+   * configured to support actions.
+   *
    * @var bool
    */
   public $isActionConfigured;
+  /**
+   * Optional. Action parameters in json string format.
+   *
+   * @var string
+   */
+  public $jsonActionParams;
+  /**
+   * Optional. The Service Directory resource name
+   * (projects/locations/namespaces/services) representing a VPC network
+   * endpoint used to connect to the data source's `instance_uri`, defined in
+   * DataConnector.params. Required when VPC Service Controls are enabled.
+   *
+   * @var string
+   */
+  public $serviceName;
+  /**
+   * Optional. Whether to use static secrets for the connector. If true, the
+   * secrets provided in the action_params will be ignored.
+   *
+   * @var bool
+   */
+  public $useStaticSecrets;
+  protected $userDefinedScopesMappingType = GoogleCloudDiscoveryengineV1alphaActionConfigScopeList::class;
+  protected $userDefinedScopesMappingDataType = 'map';
 
   /**
-   * @param array[]
+   * Optional. Action parameters in structured json format.
+   *
+   * @param array[] $actionParams
    */
   public function setActionParams($actionParams)
   {
@@ -43,7 +80,26 @@ class GoogleCloudDiscoveryengineV1alphaActionConfig extends \Google\Model
     return $this->actionParams;
   }
   /**
-   * @param bool
+   * Optional. Whether to create a BAP connection for the connector.
+   *
+   * @param bool $createBapConnection
+   */
+  public function setCreateBapConnection($createBapConnection)
+  {
+    $this->createBapConnection = $createBapConnection;
+  }
+  /**
+   * @return bool
+   */
+  public function getCreateBapConnection()
+  {
+    return $this->createBapConnection;
+  }
+  /**
+   * Output only. The connector contains the necessary parameters and is
+   * configured to support actions.
+   *
+   * @param bool $isActionConfigured
    */
   public function setIsActionConfigured($isActionConfigured)
   {
@@ -55,6 +111,75 @@ class GoogleCloudDiscoveryengineV1alphaActionConfig extends \Google\Model
   public function getIsActionConfigured()
   {
     return $this->isActionConfigured;
+  }
+  /**
+   * Optional. Action parameters in json string format.
+   *
+   * @param string $jsonActionParams
+   */
+  public function setJsonActionParams($jsonActionParams)
+  {
+    $this->jsonActionParams = $jsonActionParams;
+  }
+  /**
+   * @return string
+   */
+  public function getJsonActionParams()
+  {
+    return $this->jsonActionParams;
+  }
+  /**
+   * Optional. The Service Directory resource name
+   * (projects/locations/namespaces/services) representing a VPC network
+   * endpoint used to connect to the data source's `instance_uri`, defined in
+   * DataConnector.params. Required when VPC Service Controls are enabled.
+   *
+   * @param string $serviceName
+   */
+  public function setServiceName($serviceName)
+  {
+    $this->serviceName = $serviceName;
+  }
+  /**
+   * @return string
+   */
+  public function getServiceName()
+  {
+    return $this->serviceName;
+  }
+  /**
+   * Optional. Whether to use static secrets for the connector. If true, the
+   * secrets provided in the action_params will be ignored.
+   *
+   * @param bool $useStaticSecrets
+   */
+  public function setUseStaticSecrets($useStaticSecrets)
+  {
+    $this->useStaticSecrets = $useStaticSecrets;
+  }
+  /**
+   * @return bool
+   */
+  public function getUseStaticSecrets()
+  {
+    return $this->useStaticSecrets;
+  }
+  /**
+   * Optional. Mapping from operation name to the list of scopes. Only be
+   * populated if there are user specified scopes.
+   *
+   * @param GoogleCloudDiscoveryengineV1alphaActionConfigScopeList[] $userDefinedScopesMapping
+   */
+  public function setUserDefinedScopesMapping($userDefinedScopesMapping)
+  {
+    $this->userDefinedScopesMapping = $userDefinedScopesMapping;
+  }
+  /**
+   * @return GoogleCloudDiscoveryengineV1alphaActionConfigScopeList[]
+   */
+  public function getUserDefinedScopesMapping()
+  {
+    return $this->userDefinedScopesMapping;
   }
 }
 

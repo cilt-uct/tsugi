@@ -19,13 +19,56 @@ namespace Google\Service\Connectors;
 
 class RefreshAccessTokenRequest extends \Google\Model
 {
+  protected $executionConfigType = ExecutionConfig::class;
+  protected $executionConfigDataType = '';
+  protected $oauth2ConfigType = OAuth2Config::class;
+  protected $oauth2ConfigDataType = '';
   /**
+   * Optional. Refresh Token String. If the Refresh Token is not provided, the
+   * runtime will read the data from the secret manager.
+   *
    * @var string
    */
   public $refreshToken;
 
   /**
-   * @param string
+   * ExecutionConfig contains the configuration for the execution of the
+   * request.
+   *
+   * @param ExecutionConfig $executionConfig
+   */
+  public function setExecutionConfig(ExecutionConfig $executionConfig)
+  {
+    $this->executionConfig = $executionConfig;
+  }
+  /**
+   * @return ExecutionConfig
+   */
+  public function getExecutionConfig()
+  {
+    return $this->executionConfig;
+  }
+  /**
+   * OAuth2Config contains the OAuth2 config for the connection.
+   *
+   * @param OAuth2Config $oauth2Config
+   */
+  public function setOauth2Config(OAuth2Config $oauth2Config)
+  {
+    $this->oauth2Config = $oauth2Config;
+  }
+  /**
+   * @return OAuth2Config
+   */
+  public function getOauth2Config()
+  {
+    return $this->oauth2Config;
+  }
+  /**
+   * Optional. Refresh Token String. If the Refresh Token is not provided, the
+   * runtime will read the data from the secret manager.
+   *
+   * @param string $refreshToken
    */
   public function setRefreshToken($refreshToken)
   {

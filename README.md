@@ -46,7 +46,7 @@ Mostly because PHP is evolving from version 7.0 to version 9.0 in ways that brea
 dependencies, we are maintaining several long term branches for those stuck on older versions
 of PHP - we maintain these as branches.
 
-* Branch: master - Requires PHP 8.2 or greater - probably would work on 8.1 but not 8.0
+* Branch: master - Requires PHP 8.4 or greater
 
 * Branch: php-80-x - If you are running PHP 8.0 or a late version of PHP 7.x this is a good branch
 
@@ -73,7 +73,7 @@ your web server can read it
 * Create a database and get authentication info for the database (MySQL 8.0
 will need different commands):
 
-        CREATE DATABASE tsugi DEFAULT CHARACTER SET utf8;
+        CREATE DATABASE tsugi DEFAULT CHARACTER SET utf8mb4;
         CREATE USER 'ltiuser'@'localhost' IDENTIFIED BY 'ltipassword';
         GRANT ALL ON tsugi.* TO 'ltiuser'@'localhost';
         CREATE USER 'ltiuser'@'127.0.0.1' IDENTIFIED BY 'ltipassword';
@@ -81,7 +81,7 @@ will need different commands):
 
         Or
 
-        CREATE DATABASE tsugi DEFAULT CHARACTER SET utf8;
+        CREATE DATABASE tsugi DEFAULT CHARACTER SET utf8mb4;
         GRANT ALL ON tsugi.* TO ltiuser@'localhost';
         GRANT ALL ON tsugi.* TO ltiuser@'127.0.0.1';
         SET PASSWORD FOR 'ltiuser'@'localhost' = PASSWORD('ltipassword');
@@ -202,5 +202,4 @@ pre-emergent code and not under active development.
 Please join the
 [Tsugi Developer List](https://groups.google.com/a/apereo.org/forum/#!forum/tsugi-dev)
 so you can stay up to date with the progress regarding Tsugi.
-
 

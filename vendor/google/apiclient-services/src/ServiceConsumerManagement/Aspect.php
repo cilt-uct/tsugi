@@ -17,19 +17,29 @@
 
 namespace Google\Service\ServiceConsumerManagement;
 
-class Aspect extends \Google\Model
+class Aspect extends \Google\Collection
 {
+  protected $collection_key = 'rules';
   /**
+   * The type of this aspect configuration.
+   *
    * @var string
    */
   public $kind;
+  protected $rulesType = AspectRule::class;
+  protected $rulesDataType = 'array';
   /**
+   * Content of the configuration. The underlying schema should be defined by
+   * Aspect owners as protobuf message under `google/api/configaspects/proto`.
+   *
    * @var array[]
    */
   public $spec;
 
   /**
-   * @param string
+   * The type of this aspect configuration.
+   *
+   * @param string $kind
    */
   public function setKind($kind)
   {
@@ -43,7 +53,26 @@ class Aspect extends \Google\Model
     return $this->kind;
   }
   /**
-   * @param array[]
+   * Optional. Rules of the Configuration.
+   *
+   * @param AspectRule[] $rules
+   */
+  public function setRules($rules)
+  {
+    $this->rules = $rules;
+  }
+  /**
+   * @return AspectRule[]
+   */
+  public function getRules()
+  {
+    return $this->rules;
+  }
+  /**
+   * Content of the configuration. The underlying schema should be defined by
+   * Aspect owners as protobuf message under `google/api/configaspects/proto`.
+   *
+   * @param array[] $spec
    */
   public function setSpec($spec)
   {

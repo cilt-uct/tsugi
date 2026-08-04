@@ -30,7 +30,12 @@ class ThirdPartyMeasurementConfigs extends \Google\Collection
   protected $viewabilityVendorConfigsDataType = 'array';
 
   /**
-   * @param ThirdPartyVendorConfig[]
+   * Optional. The third-party vendors measuring brand lift. The following
+   * third-party vendors are applicable: * `THIRD_PARTY_VENDOR_DYNATA` *
+   * `THIRD_PARTY_VENDOR_KANTAR` * `THIRD_PARTY_VENDOR_INTAGE` *
+   * `THIRD_PARTY_VENDOR_NIELSEN` * `THIRD_PARTY_VENDOR_MACROMILL`
+   *
+   * @param ThirdPartyVendorConfig[] $brandLiftVendorConfigs
    */
   public function setBrandLiftVendorConfigs($brandLiftVendorConfigs)
   {
@@ -44,7 +49,12 @@ class ThirdPartyMeasurementConfigs extends \Google\Collection
     return $this->brandLiftVendorConfigs;
   }
   /**
-   * @param ThirdPartyVendorConfig[]
+   * Optional. The third-party vendors measuring brand safety. The following
+   * third-party vendors are applicable: * `THIRD_PARTY_VENDOR_ZEFR` *
+   * `THIRD_PARTY_VENDOR_DOUBLE_VERIFY` *
+   * `THIRD_PARTY_VENDOR_INTEGRAL_AD_SCIENCE`
+   *
+   * @param ThirdPartyVendorConfig[] $brandSafetyVendorConfigs
    */
   public function setBrandSafetyVendorConfigs($brandSafetyVendorConfigs)
   {
@@ -58,7 +68,14 @@ class ThirdPartyMeasurementConfigs extends \Google\Collection
     return $this->brandSafetyVendorConfigs;
   }
   /**
-   * @param ThirdPartyVendorConfig[]
+   * Optional. The third-party vendors measuring reach. The following third-
+   * party vendors are applicable: * `THIRD_PARTY_VENDOR_NIELSEN` *
+   * `THIRD_PARTY_VENDOR_COMSCORE` * `THIRD_PARTY_VENDOR_KANTAR` *
+   * `THIRD_PARTY_VENDOR_VIDEO_RESEARCH` * `THIRD_PARTY_VENDOR_MEDIA_SCOPE` *
+   * `THIRD_PARTY_VENDOR_AUDIENCE_PROJECT` * `THIRD_PARTY_VENDOR_VIDEO_AMP` *
+   * `THIRD_PARTY_VENDOR_ISPOT_TV` * `THIRD_PARTY_VENDOR_GEMIUS`
+   *
+   * @param ThirdPartyVendorConfig[] $reachVendorConfigs
    */
   public function setReachVendorConfigs($reachVendorConfigs)
   {
@@ -72,7 +89,13 @@ class ThirdPartyMeasurementConfigs extends \Google\Collection
     return $this->reachVendorConfigs;
   }
   /**
-   * @param ThirdPartyVendorConfig[]
+   * Optional. The third-party vendors measuring viewability. The following
+   * third-party vendors are applicable: * `THIRD_PARTY_VENDOR_MOAT` *
+   * `THIRD_PARTY_VENDOR_DOUBLE_VERIFY` *
+   * `THIRD_PARTY_VENDOR_INTEGRAL_AD_SCIENCE` * `THIRD_PARTY_VENDOR_COMSCORE` *
+   * `THIRD_PARTY_VENDOR_TELEMETRY` * `THIRD_PARTY_VENDOR_MEETRICS`
+   *
+   * @param ThirdPartyVendorConfig[] $viewabilityVendorConfigs
    */
   public function setViewabilityVendorConfigs($viewabilityVendorConfigs)
   {

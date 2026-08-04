@@ -24,12 +24,22 @@ class GoogleCloudAiplatformV1BatchPredictionJobInputConfig extends \Google\Model
   protected $gcsSourceType = GoogleCloudAiplatformV1GcsSource::class;
   protected $gcsSourceDataType = '';
   /**
+   * Required. The format in which instances are given, must be one of the
+   * Model's supported_input_storage_formats.
+   *
    * @var string
    */
   public $instancesFormat;
+  protected $vertexMultimodalDatasetSourceType = GoogleCloudAiplatformV1VertexMultimodalDatasetSource::class;
+  protected $vertexMultimodalDatasetSourceDataType = '';
 
   /**
-   * @param GoogleCloudAiplatformV1BigQuerySource
+   * The BigQuery location of the input table. The schema of the table should be
+   * in the format described by the given context OpenAPI Schema, if one is
+   * provided. The table may contain additional columns that are not described
+   * by the schema, and they will be ignored.
+   *
+   * @param GoogleCloudAiplatformV1BigQuerySource $bigquerySource
    */
   public function setBigquerySource(GoogleCloudAiplatformV1BigQuerySource $bigquerySource)
   {
@@ -43,7 +53,9 @@ class GoogleCloudAiplatformV1BatchPredictionJobInputConfig extends \Google\Model
     return $this->bigquerySource;
   }
   /**
-   * @param GoogleCloudAiplatformV1GcsSource
+   * The Cloud Storage location for the input instances.
+   *
+   * @param GoogleCloudAiplatformV1GcsSource $gcsSource
    */
   public function setGcsSource(GoogleCloudAiplatformV1GcsSource $gcsSource)
   {
@@ -57,7 +69,10 @@ class GoogleCloudAiplatformV1BatchPredictionJobInputConfig extends \Google\Model
     return $this->gcsSource;
   }
   /**
-   * @param string
+   * Required. The format in which instances are given, must be one of the
+   * Model's supported_input_storage_formats.
+   *
+   * @param string $instancesFormat
    */
   public function setInstancesFormat($instancesFormat)
   {
@@ -69,6 +84,23 @@ class GoogleCloudAiplatformV1BatchPredictionJobInputConfig extends \Google\Model
   public function getInstancesFormat()
   {
     return $this->instancesFormat;
+  }
+  /**
+   * A Vertex Managed Dataset. Currently, only datasets of type Multimodal are
+   * supported.
+   *
+   * @param GoogleCloudAiplatformV1VertexMultimodalDatasetSource $vertexMultimodalDatasetSource
+   */
+  public function setVertexMultimodalDatasetSource(GoogleCloudAiplatformV1VertexMultimodalDatasetSource $vertexMultimodalDatasetSource)
+  {
+    $this->vertexMultimodalDatasetSource = $vertexMultimodalDatasetSource;
+  }
+  /**
+   * @return GoogleCloudAiplatformV1VertexMultimodalDatasetSource
+   */
+  public function getVertexMultimodalDatasetSource()
+  {
+    return $this->vertexMultimodalDatasetSource;
   }
 }
 

@@ -27,7 +27,7 @@ class GoogleCloudDialogflowCxV3DataStoreConnectionSignalsCitedSnippet extends \G
   public $snippetIndex;
 
   /**
-   * @param GoogleCloudDialogflowCxV3DataStoreConnectionSignalsSearchSnippet
+   * @param GoogleCloudDialogflowCxV3DataStoreConnectionSignalsSearchSnippet $searchSnippet
    */
   public function setSearchSnippet(GoogleCloudDialogflowCxV3DataStoreConnectionSignalsSearchSnippet $searchSnippet)
   {
@@ -41,7 +41,7 @@ class GoogleCloudDialogflowCxV3DataStoreConnectionSignalsCitedSnippet extends \G
     return $this->searchSnippet;
   }
   /**
-   * @param int
+   * @param int $snippetIndex
    */
   public function setSnippetIndex($snippetIndex)
   {

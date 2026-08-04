@@ -19,6 +19,9 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowCxV3RestoreAgentRequest extends \Google\Model
 {
+  public const RESTORE_OPTION_RESTORE_OPTION_UNSPECIFIED = 'RESTORE_OPTION_UNSPECIFIED';
+  public const RESTORE_OPTION_KEEP = 'KEEP';
+  public const RESTORE_OPTION_FALLBACK = 'FALLBACK';
   /**
    * @var string
    */
@@ -35,7 +38,7 @@ class GoogleCloudDialogflowCxV3RestoreAgentRequest extends \Google\Model
   public $restoreOption;
 
   /**
-   * @param string
+   * @param string $agentContent
    */
   public function setAgentContent($agentContent)
   {
@@ -49,7 +52,7 @@ class GoogleCloudDialogflowCxV3RestoreAgentRequest extends \Google\Model
     return $this->agentContent;
   }
   /**
-   * @param string
+   * @param string $agentUri
    */
   public function setAgentUri($agentUri)
   {
@@ -63,7 +66,7 @@ class GoogleCloudDialogflowCxV3RestoreAgentRequest extends \Google\Model
     return $this->agentUri;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3RestoreAgentRequestGitSource
+   * @param GoogleCloudDialogflowCxV3RestoreAgentRequestGitSource $gitSource
    */
   public function setGitSource(GoogleCloudDialogflowCxV3RestoreAgentRequestGitSource $gitSource)
   {
@@ -77,14 +80,14 @@ class GoogleCloudDialogflowCxV3RestoreAgentRequest extends \Google\Model
     return $this->gitSource;
   }
   /**
-   * @param string
+   * @param self::RESTORE_OPTION_* $restoreOption
    */
   public function setRestoreOption($restoreOption)
   {
     $this->restoreOption = $restoreOption;
   }
   /**
-   * @return string
+   * @return self::RESTORE_OPTION_*
    */
   public function getRestoreOption()
   {

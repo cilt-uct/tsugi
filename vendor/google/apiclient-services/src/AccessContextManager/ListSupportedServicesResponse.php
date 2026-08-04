@@ -21,6 +21,9 @@ class ListSupportedServicesResponse extends \Google\Collection
 {
   protected $collection_key = 'supportedServices';
   /**
+   * Use this pagination token to retrieve the next page of results. An empty
+   * value indicates that no further results are available.
+   *
    * @var string
    */
   public $nextPageToken;
@@ -28,7 +31,10 @@ class ListSupportedServicesResponse extends \Google\Collection
   protected $supportedServicesDataType = 'array';
 
   /**
-   * @param string
+   * Use this pagination token to retrieve the next page of results. An empty
+   * value indicates that no further results are available.
+   *
+   * @param string $nextPageToken
    */
   public function setNextPageToken($nextPageToken)
   {
@@ -42,7 +48,9 @@ class ListSupportedServicesResponse extends \Google\Collection
     return $this->nextPageToken;
   }
   /**
-   * @param SupportedService[]
+   * List of services supported by VPC Service Controls instances.
+   *
+   * @param SupportedService[] $supportedServices
    */
   public function setSupportedServices($supportedServices)
   {

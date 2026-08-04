@@ -17,17 +17,21 @@
 
 namespace Google\Service\ChromeManagement\Resource;
 
+use Google\Service\ChromeManagement\GoogleChromeManagementV1CountActiveDevicesResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeBrowsersNeedingAttentionResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeCrashEventsResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeDevicesReachingAutoExpirationDateResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeDevicesThatNeedAttentionResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeHardwareFleetDevicesResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountChromeVersionsResponse;
+use Google\Service\ChromeManagement\GoogleChromeManagementV1CountDevicesPerBootTypeResponse;
+use Google\Service\ChromeManagement\GoogleChromeManagementV1CountDevicesPerReleaseChannelResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountInstalledAppsResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountPrintJobsByPrinterResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1CountPrintJobsByUserResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1EnumeratePrintJobsResponse;
 use Google\Service\ChromeManagement\GoogleChromeManagementV1FindInstalledAppDevicesResponse;
+use Google\Service\ChromeManagement\GoogleChromeManagementV1FindInstalledAppProfilesResponse;
 
 /**
  * The "reports" collection of methods.
@@ -39,6 +43,30 @@ use Google\Service\ChromeManagement\GoogleChromeManagementV1FindInstalledAppDevi
  */
 class CustomersReports extends \Google\Service\Resource
 {
+  /**
+   * Get a count of active devices per set time frames.
+   * (reports.countActiveDevices)
+   *
+   * @param string $customer Required. Obfuscated customer ID prefixed with
+   * "customers/C" or "customers/my_customer".
+   * @param array $optParams Optional parameters.
+   *
+   * @opt_param int date.day Day of a month. Must be from 1 to 31 and valid for
+   * the year and month, or 0 to specify a year by itself or a year and month
+   * where the day isn't significant.
+   * @opt_param int date.month Month of a year. Must be from 1 to 12, or 0 to
+   * specify a year without a month and day.
+   * @opt_param int date.year Year of the date. Must be from 1 to 9999, or 0 to
+   * specify a date without a year.
+   * @return GoogleChromeManagementV1CountActiveDevicesResponse
+   * @throws \Google\Service\Exception
+   */
+  public function countActiveDevices($customer, $optParams = [])
+  {
+    $params = ['customer' => $customer];
+    $params = array_merge($params, $optParams);
+    return $this->call('countActiveDevices', [$params], GoogleChromeManagementV1CountActiveDevicesResponse::class);
+  }
   /**
    * Count of Chrome Browsers that have been recently enrolled, have new policy to
    * be synced, or have no recent activity.
@@ -183,6 +211,52 @@ class CustomersReports extends \Google\Service\Resource
     return $this->call('countChromeVersions', [$params], GoogleChromeManagementV1CountChromeVersionsResponse::class);
   }
   /**
+   * Get a count of devices per boot type. (reports.countDevicesPerBootType)
+   *
+   * @param string $customer Required. Obfuscated customer ID prefixed with
+   * "customers/C" or "customers/my_customer".
+   * @param array $optParams Optional parameters.
+   *
+   * @opt_param int date.day Day of a month. Must be from 1 to 31 and valid for
+   * the year and month, or 0 to specify a year by itself or a year and month
+   * where the day isn't significant.
+   * @opt_param int date.month Month of a year. Must be from 1 to 12, or 0 to
+   * specify a year without a month and day.
+   * @opt_param int date.year Year of the date. Must be from 1 to 9999, or 0 to
+   * specify a date without a year.
+   * @return GoogleChromeManagementV1CountDevicesPerBootTypeResponse
+   * @throws \Google\Service\Exception
+   */
+  public function countDevicesPerBootType($customer, $optParams = [])
+  {
+    $params = ['customer' => $customer];
+    $params = array_merge($params, $optParams);
+    return $this->call('countDevicesPerBootType', [$params], GoogleChromeManagementV1CountDevicesPerBootTypeResponse::class);
+  }
+  /**
+   * Get a count of devices per channel. (reports.countDevicesPerReleaseChannel)
+   *
+   * @param string $customer Required. Obfuscated customer ID prefixed with
+   * "customers/C" or "customers/my_customer".
+   * @param array $optParams Optional parameters.
+   *
+   * @opt_param int date.day Day of a month. Must be from 1 to 31 and valid for
+   * the year and month, or 0 to specify a year by itself or a year and month
+   * where the day isn't significant.
+   * @opt_param int date.month Month of a year. Must be from 1 to 12, or 0 to
+   * specify a year without a month and day.
+   * @opt_param int date.year Year of the date. Must be from 1 to 9999, or 0 to
+   * specify a date without a year.
+   * @return GoogleChromeManagementV1CountDevicesPerReleaseChannelResponse
+   * @throws \Google\Service\Exception
+   */
+  public function countDevicesPerReleaseChannel($customer, $optParams = [])
+  {
+    $params = ['customer' => $customer];
+    $params = array_merge($params, $optParams);
+    return $this->call('countDevicesPerReleaseChannel', [$params], GoogleChromeManagementV1CountDevicesPerReleaseChannelResponse::class);
+  }
+  /**
    * Generate report of app installations. (reports.countInstalledApps)
    *
    * @param string $customer Required. Customer id or "my_customer" to use the
@@ -323,7 +397,8 @@ class CustomersReports extends \Google\Service\Resource
    * @opt_param string appId Unique identifier of the app. For Chrome apps and
    * extensions, the 32-character id (e.g. ehoadneljpdggcbbknedodolkkjodefl). For
    * Android apps, the package name (e.g. com.evernote).
-   * @opt_param string appType Type of the app.
+   * @opt_param string appType Type of the app. Optional. If not provided, an app
+   * type will be inferred from the format of the app ID.
    * @opt_param string filter Query string to filter results, AND-separated fields
    * in EBNF syntax. Note: OR operations are not supported in this filter.
    * Supported filter fields: * last_active_date
@@ -342,6 +417,39 @@ class CustomersReports extends \Google\Service\Resource
     $params = ['customer' => $customer];
     $params = array_merge($params, $optParams);
     return $this->call('findInstalledAppDevices', [$params], GoogleChromeManagementV1FindInstalledAppDevicesResponse::class);
+  }
+  /**
+   * Generate report of managed Chrome profiles that have a specified app
+   * installed. (reports.findInstalledAppProfiles)
+   *
+   * @param string $customer Required. Customer id or "my_customer" to use the
+   * customer associated to the account making the request.
+   * @param array $optParams Optional parameters.
+   *
+   * @opt_param string appId Required. Unique identifier of the app. For Chrome
+   * apps and extensions, the 32-character id (e.g.
+   * ehoadneljpdggcbbknedodolkkjodefl). For Android apps, the package name (e.g.
+   * com.evernote).
+   * @opt_param string appType Type of the app. Optional. If not provided, an app
+   * type will be inferred from the format of the app ID.
+   * @opt_param string filter Optional. Query string to filter results, AND-
+   * separated fields in EBNF syntax. Note: OR operations are not supported in
+   * this filter. Supported filter fields: * last_active_date
+   * @opt_param string orderBy Optional. Field used to order results. Supported
+   * order by fields: * email * profile_id * profile_permanent_id
+   * @opt_param string orgUnitId Optional. The ID of the organizational unit.
+   * @opt_param int pageSize Optional. Maximum number of results to return.
+   * Maximum and default are 100.
+   * @opt_param string pageToken Optional. Token to specify the page of the
+   * request to be returned.
+   * @return GoogleChromeManagementV1FindInstalledAppProfilesResponse
+   * @throws \Google\Service\Exception
+   */
+  public function findInstalledAppProfiles($customer, $optParams = [])
+  {
+    $params = ['customer' => $customer];
+    $params = array_merge($params, $optParams);
+    return $this->call('findInstalledAppProfiles', [$params], GoogleChromeManagementV1FindInstalledAppProfilesResponse::class);
   }
 }
 

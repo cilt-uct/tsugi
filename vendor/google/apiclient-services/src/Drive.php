@@ -27,7 +27,7 @@ use Google\Client;
  *
  * <p>
  * For more information about this service, see the API
- * <a href="https://developers.google.com/drive/" target="_blank">Documentation</a>
+ * <a href="https://developers.google.com/workspace/drive/" target="_blank">Documentation</a>
  * </p>
  *
  * @author Google, Inc.
@@ -67,6 +67,7 @@ class Drive extends \Google\Service
 
   public $about;
   public $accessproposals;
+  public $approvals;
   public $apps;
   public $changes;
   public $channels;
@@ -160,6 +161,134 @@ class Drive extends \Google\Service
                   'required' => true,
                 ],
                 'proposalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],
+          ]
+        ]
+    );
+    $this->approvals = new Drive\Resource\Approvals(
+        $this,
+        $this->serviceName,
+        'approvals',
+        [
+          'methods' => [
+            'approve' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}:approve',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'cancel' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}:cancel',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'comment' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}:comment',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'decline' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}:decline',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'get' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'list' => [
+              'path' => 'files/{fileId}/approvals',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'pageSize' => [
+                  'location' => 'query',
+                  'type' => 'integer',
+                ],
+                'pageToken' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'reassign' => [
+              'path' => 'files/{fileId}/approvals/{approvalId}:reassign',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'approvalId' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'start' => [
+              'path' => 'files/{fileId}/approvals:start',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'fileId' => [
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
@@ -734,6 +863,19 @@ class Drive extends \Google\Service
                   'required' => true,
                 ],
               ],
+            ],'generateCseToken' => [
+              'path' => 'files/generateCseToken',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'fileId' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'parent' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
             ],'generateIds' => [
               'path' => 'files/generateIds',
               'httpMethod' => 'GET',
@@ -964,27 +1106,7 @@ class Drive extends \Google\Service
         'operations',
         [
           'methods' => [
-            'cancel' => [
-              'path' => 'operations/{name}:cancel',
-              'httpMethod' => 'POST',
-              'parameters' => [
-                'name' => [
-                  'location' => 'path',
-                  'type' => 'string',
-                  'required' => true,
-                ],
-              ],
-            ],'delete' => [
-              'path' => 'operations/{name}',
-              'httpMethod' => 'DELETE',
-              'parameters' => [
-                'name' => [
-                  'location' => 'path',
-                  'type' => 'string',
-                  'required' => true,
-                ],
-              ],
-            ],'get' => [
+            'get' => [
               'path' => 'operations/{name}',
               'httpMethod' => 'GET',
               'parameters' => [
@@ -992,27 +1114,6 @@ class Drive extends \Google\Service
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
-                ],
-              ],
-            ],'list' => [
-              'path' => 'operations',
-              'httpMethod' => 'GET',
-              'parameters' => [
-                'filter' => [
-                  'location' => 'query',
-                  'type' => 'string',
-                ],
-                'name' => [
-                  'location' => 'query',
-                  'type' => 'string',
-                ],
-                'pageSize' => [
-                  'location' => 'query',
-                  'type' => 'integer',
-                ],
-                'pageToken' => [
-                  'location' => 'query',
-                  'type' => 'string',
                 ],
               ],
             ],
@@ -1037,6 +1138,10 @@ class Drive extends \Google\Service
                 'emailMessage' => [
                   'location' => 'query',
                   'type' => 'string',
+                ],
+                'enforceExpansiveAccess' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
                 ],
                 'enforceSingleParent' => [
                   'location' => 'query',

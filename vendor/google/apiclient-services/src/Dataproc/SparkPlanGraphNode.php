@@ -24,6 +24,12 @@ class SparkPlanGraphNode extends \Google\Collection
    * @var string
    */
   public $desc;
+  /**
+   * Optional. Additional metadata for the spark plan graph cluster.
+   *
+   * @var string[]
+   */
+  public $metadata;
   protected $metricsType = SqlPlanMetric::class;
   protected $metricsDataType = 'array';
   /**
@@ -36,7 +42,7 @@ class SparkPlanGraphNode extends \Google\Collection
   public $sparkPlanGraphNodeId;
 
   /**
-   * @param string
+   * @param string $desc
    */
   public function setDesc($desc)
   {
@@ -50,7 +56,23 @@ class SparkPlanGraphNode extends \Google\Collection
     return $this->desc;
   }
   /**
-   * @param SqlPlanMetric[]
+   * Optional. Additional metadata for the spark plan graph cluster.
+   *
+   * @param string[] $metadata
+   */
+  public function setMetadata($metadata)
+  {
+    $this->metadata = $metadata;
+  }
+  /**
+   * @return string[]
+   */
+  public function getMetadata()
+  {
+    return $this->metadata;
+  }
+  /**
+   * @param SqlPlanMetric[] $metrics
    */
   public function setMetrics($metrics)
   {
@@ -64,7 +86,7 @@ class SparkPlanGraphNode extends \Google\Collection
     return $this->metrics;
   }
   /**
-   * @param string
+   * @param string $name
    */
   public function setName($name)
   {
@@ -78,7 +100,7 @@ class SparkPlanGraphNode extends \Google\Collection
     return $this->name;
   }
   /**
-   * @param string
+   * @param string $sparkPlanGraphNodeId
    */
   public function setSparkPlanGraphNodeId($sparkPlanGraphNodeId)
   {

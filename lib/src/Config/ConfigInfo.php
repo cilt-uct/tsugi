@@ -1,0 +1,1846 @@
+<?php
+
+namespace Tsugi\Config;
+
+use Tsugi\Util\U;
+
+/**
+ * A class that contains the configuration fields and defaults.
+ *
+ * The normal way you configure Tsugi is copy the file
+ * config-dist.php to config.php and then edit the fields.
+ * you generally leave the default values in this file unchanged
+ * and overide the fields in your config.php.
+ */
+
+#[\AllowDynamicProperties]
+class ConfigInfo {
+
+    /**
+     * Extensions
+     */
+    public $extensions;
+
+    /**
+     * The URL where tsugi is located
+     *
+     * Do not add a trailing slash to this string
+     * If you get this value wrong, the first problem will
+     * be that CSS files will not load
+     *
+     * If you are using MAMP, you should set this to something
+     * like:
+     *
+     *     $wwwroot = 'http://localhost:8888/tsugi';
+     */
+    public $wwwroot = 'http://localhost/tsugi';
+
+    /**
+     * The Application URL when Tsugi is *part* of an application
+     *
+     * Do not add a trailing slash to this string
+     *
+     * An example configuration might be:
+     *
+     *     $wwwroot = 'http://localhost:8888/wa4e/tsugi';
+     *     $apphome = 'http://localhost:8888/wa4e';
+     *
+     * This is not required, its default for this is $wwwroot.
+     */
+    public $apphome = null;
+
+    /**
+     * Enable lesson authoring. Only set to true on localhost - never in production.
+     * When true, the /lessons/_author interface is available to instructors.
+     * When false (default), authoring is only allowed when wwwroot contains localhost or 127.0.0.1.
+     */
+    public $author_allow = false;
+
+    /**
+     * This is how the system will refer to itself.
+     */
+    public $servicename = 'TSUGI (dev)';
+
+    /**
+     * This is how the system will describe itself.
+     *
+     * This should be a sentance and end with a period.  It
+     * can include HTML tags - so be careful.
+     */
+    public $servicedesc = false;
+
+    /**
+     * Information on the owner of this system
+     *
+     * The $ownername and $owneremail can be generic values like
+     * "Support Team at Example Com" and "support@example.com"
+     */
+    public $ownername = false;
+    public $owneremail = false;
+
+    /**
+     * Whether or not we accept key requests on this system
+     *
+     * Tsugi has a workflow to allow users to come directly to
+     * the Tsugi web site and request an LTI 1.x or 2.x key.
+     * If this value is 'false', this feature is not available.
+     * To enable this feature, you must configure both the
+     * $ownername and $owneremail parameters so the system
+     * knows who to send the mail for key requests to.
+     */
+    public $providekeys = false;
+    public $autoapprovekeys = false; // A regex like - '/.+@gmail\\.com/'
+
+    /**
+     * Database connection information to configure the PDO connection
+     *
+     * You need to point this at a database with am account and password
+     * that can create tables.   To make the initial tables go into Admin
+     * to run the upgrade.php script which auto-creates the tables.
+     *
+     * As an example, to run this on MAMP with its database server on
+     * port 8889 you might use:
+     *
+     *     $pdo = 'mysql:host=127.0.0.1;port=8889;dbname=tsugi';
+     *
+     * You will need to create a database, user, and password
+     * like this:
+     *
+     *     CREATE DATABASE tsugi DEFAULT CHARACTER SET utf8mb4;
+     *     GRANT ALL ON tsugi.* TO 'ltiuser'@'localhost' IDENTIFIED BY 'ltipassword';
+     *     GRANT ALL ON tsugi.* TO 'ltiuser'@'127.0.0.1' IDENTIFIED BY 'ltipassword';
+     *
+     * Of course clever people would choose wiser passwords.
+     */
+    public $pdo       = 'mysql:host=127.0.0.1;dbname=tsugi';
+
+    /**
+     * Database user for the PDO connection
+     */
+    public $dbuser    = 'ltiuser';
+
+    /**
+     * Database password for the PDO connection
+     */
+    public $dbpass    = 'ltipassword';
+
+    /**
+     * Additional parameter for the PDO constructor with an array of key-value options
+     *
+     * $CFG->pdo_options = array(\PDO::MYSQL_ATTR_SSL_CA => './BaltimoreCyberTrustRoot.crt.pem'))
+     *
+     * See also: https://www.php.net/manual/en/pdo.construct.php
+     */
+    public $pdo_options  = false;
+
+    /**
+     * A prefix to prepend to all table names.
+     *
+     * The dbprefix allows you to give all the tables a prefix
+     * in case your hosting only gives you one database.  This
+     * can be short like "t_" and can even be an empty string if you
+     * can make a separate database for each instance of TSUGI.
+     * This allows you to host multiple instances of TSUGI in a
+     * single database if your hosting choices are limited.  For
+     * example, you might only have one MySql database and host
+     * Moodle tables with an "mdl_" prefix and Tsugi tables with
+     * a "t_" prefix.
+     */
+    public $dbprefix  = 't_';
+
+    /**
+     * The slow_query setting indicated when we want PDOX to log a query for being too slow.
+     */
+    public $slow_query;
+
+    /**
+     * Support memcache for session caching
+     *
+     * Memcache is php-only and so is likely to require less overall dependencies.
+     *
+     * http://php.net/manual/en/memcache.sessions.php
+     *
+     * Installed on Ubuntu using
+     *
+     * apt-get install -y php${TSUGI_PHP_VERSION}-memcache
+     *
+     * You should only select one of memcache and memcached
+     *
+     * $CFG->memcache = 'tcp://memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
+     *
+     * In addition to setting this variable, your config.php must include the code
+     * to configure the PHP session save handler as shown in config-dist.php
+     *
+     */
+    public $memcache;
+
+    /**
+     * Support memcached for session caching
+     *
+     * Memcached is a combination of PHP and C and so may require extra dependencies.
+     *
+     * http://php.net/manual/en/memcached.sessions.php
+     *
+     * Installed on Ubuntu using
+     *
+     * apt-get install -y php${TSUGI_PHP_VERSION}-memcached
+     *
+     * You should only select one of memcache and memcached
+     *
+     * $CFG->memcached = 'memcache-tsugi.4984vw.cfg.use2.cache.amazonaws.com:11211';
+     *
+     * Note no "tcp://" for the memcached version of the url
+     *
+     * In addition to setting this variable, your config.php must include the code
+     * to configure the PHP session save handler as shown in config-dist.php
+     */
+    public $memcached;
+
+    /**
+     * Adding in support for using Redis for session caching.
+     *
+     * $CFG->redis = 'tcp://localhost:6379?auth=addYourRedisPasswordHere';
+     */
+    public $redis;
+
+    /**
+     * This is the PW that you need to access the Administration features of this application.
+     *
+     * You should change this from the default.
+     */
+    public $adminpw = 'warning:please-change-adminpw-89b543!';
+
+    /**
+     * Prefix for tool registration codes.
+     *
+     * For LTI 2.0 registrations: This is a prefix applied to the tool registration
+     * codes for LTI 2.0. You may want to keep this default if you want LMS's to use
+     * the local equivalent for the tools hosted herein.
+     */
+    public $resource_type_prefix = 'tsugi_';
+
+    /**
+     * Set to true to redirect all requests to the upgrading.php script
+     *
+     * This allows you to turn off access to the application with a single
+     * variable.  Also copy upgrading-dist.php to upgrading.php and
+     * add your message.
+     */
+    public $upgrading = false;
+
+    /**
+     * Default time zone - see http://www.php.net/....
+     */
+    public $timezone = 'America/New_York';
+
+    /**
+     * Indicate whether the PHP on this server wants to verify SSL or not
+     */
+    public $verifypeer;
+
+    /**
+     * Enable developer features of the application.
+     *
+     * When this is true it enables a Developer test harness that can launch
+     * tools using LTI.  It allows quick testing without setting up an LMS
+     * course, etc.
+     *
+     * If you turn this on in a production environment, you should change
+     * the developer PW (in lti_key table) for the 12345 key to something
+     * other than 'secret'.
+     */
+    public $DEVELOPER = true;
+
+    /**
+     * Set the URL prefix for the static content folder (i.e. on a CDN)
+     *
+     * This allows you to serve the materials in the static folder using
+     * a content distribution network - it is normal and typical for this
+     * to be the same as wwwroot
+     *
+     * This field is generally left as default.
+     */
+
+    public $staticroot;
+
+    /**
+     * Top level file system folder for the application
+     *
+     * This should not be changed.  It allows included PHP files to reference
+     * library files with an absolute path.
+     *
+     * This is usually set automatically in config.php to be the folder
+     * containing config.php.
+     *
+     * Unless you are using a CDN, this should be the same as wwwroot.
+     */
+    public $dirroot;
+
+    /**
+     * Configure  where TSUGI will store uploaded files.
+     *
+     * It is ideal for this not to be in the same folder as the rest of
+     * the application, but you may have no other choice to leave this false
+     * (default). Make sure that this folder is readable and writable by
+     * the web server.
+     *
+     * If you set $dataroot to a writeable folder, Tsugi will store blobs on disk
+     * instead of the database using the following folder / file pattern
+     *     tsugi_blobs/1f/84/00001754/1f84ab151...56a
+     *     tsugi_blobs/67/fb/00001754/67fba23c8...123b
+     * The folders are based on the sha256 of file contents
+     *
+     * In a normal setup - make sure the folder is writable by the web server,
+     * backed up and not in the document root hierarchy.
+     *
+     * It is important to note that changing dataroot does not migrate the data.
+     * Tsugi stores the blob path in the blob_file table.  Data uploaded to a blob
+     * will stay there and data uploaded to a path will stay there regardless of
+     * this setting.  There will are separate migration processes to move blob data
+     * from the database to dataroot.  See tsugi/admin/blob for more detail.
+     *
+     * You can set dataroot to a temporary folder for dev but never for production
+     */
+    public $dataroot = false; // '/backedup/tsugi_blobs';
+
+    /**
+     * This turns on auto-migration of blobs from the database to dataroot, as
+     * blobs are accessed
+     */
+    public $migrateblobs = false;
+
+    /**
+     * Configure lti keys that go into blob_blob regardless of $dataroot
+     *
+     * The use case for this can be for testing.  Many servers set up the
+     * 12345/secret ask key and secret to allow testing.   The Admin tool
+     * has the ability to clear out the 12345 data regularly.   We want to
+     * wipe out any blob data that is stored whlist testing with 12345.
+     *
+     * Blobs in the blob_blob table get removed during the 12345 cleanup.
+     *
+     * This can also be used for testing to route a particular key into
+     * blob_blob.
+     */
+    public $testblobs = false; // array('12345');
+
+    /**
+     * Configure the long-term login cookie encryption values.
+     *
+     * These values configure the cookie used to record the overall
+     * login in a long-lived encrypted cookie.   Look at the library
+     * code SecureCookie::create() for more detail on how these operate.
+     *
+     * When enable_secure_cookie_login is false (the default), Tsugi does not
+     * set or process that auto-login cookie; set it true to restore the
+     * long-lived encrypted login behavior.
+     */
+    public $cookiesecret = 'warning:please-change-cookie-secret-a289b543';
+    public $cookiename = 'TSUGIAUTO';
+    public $cookiepad = '390b246ea9';
+    public $enable_secure_cookie_login = false;
+
+    /**
+     * Configure mail sending.
+     *
+     * If you leave maildomain false, mail will not be sent.  If you set
+     * maildomain to a real domain, best practice is for it to be a
+     * real address with a wildcard box that you check periodially.
+     */
+    public $maildomain = false;  // Don't send mail
+    // public $maildomain = 'mail.example.com';
+    public $mailsecret = 'warning:please-change-mailsecret-92ds29';
+    public $maileol = "\n";  // Depends on your mailer - may need to be \r\n
+
+    /**
+     * Configure the security for constructing LTI Launch session IDs
+     *
+     * Since we want to reuse sessions across multiple LTI launches
+     * we construct our session ids from launch data.  See LTIX::getCompositeKey()
+     * for detail on how this operates.  But we do not want folks
+     * to be able to guess a session id solely on the launch data so
+     * we add a bit of secret info to each pre-hash string before we hash
+     * it.
+     *
+     * Just make this a long random string - the longer and randomer -
+     * the better.
+     */
+    public $sessionsalt = "warning:please-change-sessionsalt-89b543";
+
+    /**
+     * Store sessions in database instead of default PHP session storage
+     *
+     * When enabled, Tsugi will use database-backed session storage
+     * instead of the default PHP session handler.
+     *
+     * $CFG->sessions_in_db = false;
+     */
+    public $sessions_in_db = false;
+
+    /*
+     * The default language for this system
+     */
+    public $lang = 'en';
+
+    /**
+     * Fallback locale when Accept-Language header is not available
+     *
+     * If set, this locale will be used when the browser doesn't provide
+     * an Accept-Language header or when locale detection fails.
+     *
+     * $CFG->fallbacklocale = 'de_DE';
+     */
+    public $fallbacklocale = false;
+
+    /**
+     * Enable translation checking/recording
+     *
+     * When enabled, Tsugi will record all translatable strings to the
+     * database for translation management.
+     *
+     * $CFG->checktranslation = true;
+     */
+    public $checktranslation = false;
+
+    /**
+     * Enable Google Translate on this site
+     *
+     * You must go to Google Translate and set up your web site
+     *
+     * http://translate.google.com/manager/website/
+     */
+    public $google_translate = false;
+
+    /**
+     * Effectively an "airplane mode" for the appliction.
+     *
+     * Setting this to true makes it so that when you are completely
+     * disconnected, various tools * will not access network resources
+     * like Google's map library and hang.  Also the Google login will
+     * be faked.  Don't run this in production.
+     */
+    public $OFFLINE = false;
+
+    /**
+     * Indicate which directories to scan for tools.
+     *
+     *  This allows you to include various tool folders.  These are scanned
+     *  for register.php, database.php and index.php files to do automatic
+     *  table creation as well as making lists of tools in various UI places
+     *  such as ContentItem and Deep Linking.
+     */
+    public $tool_folders = array("admin", "mod", "tool");
+
+    /**
+     * Indicate which folder to install new modules into.
+     *
+     * By default we use the built-in admin tools, and
+     * install new tools (see /admin/install/) into mod.  If this is left to
+     * false, it will suppress automatic tool installation in Tsugi admin.
+     *
+     * $CFG->install_folder = $CFG->dirroot.'/mod';
+     */
+    public $install_folder = false;
+
+    /**
+     * Configure git for auto-installation
+     *
+     * On Windows, to run the automatic install of modules:
+     *
+     * (1) Make sure Git is installed (https://git-scm.com/download/win
+     * Maybe also install a GIT GUI https://git-scm.com/downloads/guis
+     *
+     * (2) Open "cmd" and type "git --version"
+     * this should give you the current version of git. If this fails
+     * then git is not setup in your path
+     * (Control Panel > System and Security > System > Advanced System Settings > Environment Variables)
+     *
+     * (3) Then in "config.php":
+     * $CFG->git_command = 'git'
+     *
+     * In order to run git from the a PHP script, we may need a setuid version
+     * of git - example commands if you are not root:
+     *
+     *    cd /home/csev
+     *    cp /usr/bin/git .
+     *    chmod a+s git
+     *
+     * If you are root, your web area and git must belong to the user that owns
+     * the web process.  You can check this using:
+     *
+     * apache2ctl -S
+     *  ..
+     *  User: name="www-data" id=33
+     *  Group: name="www-data" id=33
+     *
+     * cd /var/www/html
+     * chown -R 33:33 site-folder
+     * chown 33:33 /home/csev/git
+     *
+     * This of course is something to consider carefully.
+     * $CFG->git_command = '/home/csev/git';
+     */
+    public $git_command = false;
+
+    /**
+     * If defined, this is displayed as the privacy URL when Tsugi
+     * is used as an "App Store".  If you want to use Google login,
+     * you need these URLs available on the OAuth application.
+     *
+     * You can see sample wording at:
+     *
+     * https://www.py4e.com/service.php
+     */
+    public $privacy_url = false;
+
+    /**
+     * If defined, this is displayed as the SLA URL when Tsugi
+     * is used as an "App Store".  If you want to use Google login,
+     * you need these URLs available on the OAuth application.
+     *
+     * You can see sample wording at:
+     *
+     * https://www.py4e.com/service.php
+     */
+    public $sla_url = false;
+
+    /**
+     *
+     * Tools to hide in the store for non-admin users.  Each tool sets their status
+     * in their register.php with a line like:
+     *     "tool_phase" => "sample",
+     * If this is null, then all tools are shown.
+     */
+    public $storehide = null; // A regex like - '/dev|sample|test|beta/';
+
+    /**
+     * Set the session timeout - in seconds
+     */
+    public $sessionlifetime = 3000;
+
+    /**
+     * Set the nonce clearing factor
+     *
+     * If this is zero, we do not store nonces in the database.  If this
+     * is non-zero we take a modulo of the current time in seconds and
+     * if the remainder is zero, we remove old entries from the nonce
+     * table based on the $noncetime setting.  Setting this to 1 causes
+     * the process to run every time a launch happens - which is nice for
+     * testing the nonce clearing process.
+     */
+    public $noncecheck = 100;
+
+    /**
+     * Set the expiration time for nonces in seconds
+     *
+     * This is enforced probabilistically depending on the value for
+     * $noncecheck - We can be assured that when the cleanup run executes
+     * we will purge all nonces that are older than the expiration time.
+     * But unitl the cleanup runs we might have older nonces in the tables
+     * for a while.  It is not harmful to check against more nonces - we just
+     * don't want the table to grow forever.
+     */
+    public $noncetime = 1800;
+
+    /**
+     * An array of css styles to apply to css variables used to skin Tsugi.
+     *
+     * Example:
+     *
+     *     $CFG->theme = array(
+     *        "primary" => "#336791", //default color for nav background, splash background, buttons, text of tool menu
+     *        "secondary" => "#EEEEEE", // Nav text and nav item border color, background of tool menu
+     *        "text" => "#111111", // Standard copy color
+     *        "text-light" => "#5E5E5E", // A lighter version of the standard text color for elements like "small"
+     *        "font-url" => "https://fonts.googleapis.com/css2?family=Open+Sans", // Optional custom font url for using Google fonts
+     *        "font-family" => "'Open Sans', Corbel, Avenir, 'Lucida Grande', 'Lucida Sans', sans-serif", // Font family
+     *        "font-size" => "14px", // This is the base font size used for body copy. Headers,etc. are scaled off this value
+     *    );
+     */
+    public $theme;
+
+    /**
+     * The color to be used as the theme base
+     * This could optionally be overridden by a launch parameter
+     */
+    public $theme_base;
+
+    /**
+     * A boolean indicator as to whether dark mode should be used
+     * This could optionally be overridden by a launch parameter
+     */
+    public $theme_dark_mode;
+
+    /**
+     * The path to an LTI-launch error handling page
+     *
+     * When the LTI runtime (LTIX.php) is lost and confused because
+     * something is broken with the launch, it pops up an error modal
+     * with a "Continue" button.  When you press the button, it goes
+     * to "https://www.tsugi.org/launcherror" and passed a "detail"
+     * parameter.   This allows www.tsugi.org to have much longer error
+     * explanations.  But if you want to provide your own error handling
+     * endpoint you can send these errors to your own code.
+     *
+     * $CFG->launcherror = $CFG->apphome . "/launcherror";
+     */
+    public $launcherror;
+
+    /**
+     * A default menu for pages
+     *
+     * Normally, when you navigate to a site like www.py4e.com it defines a default
+     * top navigation menu and stores it in the session.  The $OUTPUT code adds this
+     * menu when it generates pages.  But sometimes the user navigates to a subfolder
+     * link in a Tsugi/Koseu site and sees the default menu - which is not too pretty.
+     * This value allows you to define a menu (must be a MenuSet object) to be
+     * used when Tsugi's $OUTPUT code has no other menu.
+     *
+     * $set = new \Tsugi\UI\MenuSet();
+     * $set->addLeft('Lessons', $CFG->apphome.'/lessons');
+     *  ...
+     * $CFG->defaultmenu = $set;
+     */
+    public $defaultmenu = false;
+
+    /**
+     * Optional callable that returns a MenuSet for the enclosing site.
+     *
+     * Set this in the site's config (not in Tsugi core). On cookie-session pages,
+     * topNav() invokes it before using $CFG->defaultmenu.
+     *
+     * $CFG->top_menu_callback = function() {
+     *     global $CFG;
+     *     $buildmenu = $CFG->dirroot.'/../buildmenu.php';
+     *     if ( ! file_exists($buildmenu) ) {
+     *         return false;
+     *     }
+     *     require_once $buildmenu;
+     *     return buildMenu();
+     * };
+     */
+    public $top_menu_callback = false;
+
+    /*
+     * If we are running Embedded Tsugi we need to set the
+     * "course title" for the course that represents
+     * the "local" students that log in through Google.
+     *
+     * $CFG->context_title = "Web Applications for Everybody";
+     */
+    public $context_title = false;
+
+    /**
+     * Path (on disk) to the gift quiz content.
+     *
+     * You can maintain a set of gift quizes
+     * as text files in github if you like.   These can be part of your main
+     * Koseu repository or a separate checked-out private repository.
+     * When you are configuring a quiz, quiz content can be loaded from these files.
+     * There is a '.lock' file in the folder if you want to hide the quiz content
+     * from those using the test feature in the store.
+     *
+     * $CFG->giftquizzes = $CFG->dirroot.'/../py4e-private/quiz';
+     */
+    public $giftquizzes;
+
+    /**
+     * The url of the installed instance of the tdiscus tool.
+     *
+     * When you set this, and you add discussions to lessons.json
+     * LTI links to your dicussions are added to exported common
+     * cartridges.  It also enables the "/discussions" Koseu tool
+     * as well.
+     *
+     * $CFG->tdiscus = $CFG->apphome . '/mod/tdiscus/';
+     */
+    public $tdiscus;
+
+    /**
+     * The url of the installed YouTube tool
+     *
+     * If you want lessons to launch YouTube URLs using the tracking
+     * tool, put its path here.  If you have not installed this tool,
+     * leave this value blank.
+     *
+     * $CFG->youtube_url = $CFG->apphome . '/mod/youtube/';
+     *
+     */
+    public $youtube_url = false;
+
+    /**
+     * YouTube playlist ID for embedding or linking
+     *
+     * When set, this is added to the global _TSUGI JavaScript variable
+     * so tools can access it. Example: PLlRFEj9h3CjHjgV3xeKMJGj7HHoQhCQZ
+     *
+     * $CFG->youtube_playlist = 'PLlRFEj9h3CjHjgV3xeKMJGj7HHoQhCQZ';
+     */
+    public $youtube_playlist = false;
+
+    /**
+     * Use labnol lightweight YouTube embeds in Lessons
+     *
+     * When true, YouTube videos use the labnol embed pattern (overlay with
+     * lazy-loaded player). When false (default), YouTube links render as
+     * simple <a href target="_blank"> links.
+     *
+     * Note: As of early 2026, it is likely pointless to turn this on, because
+     * YouTube and browser security / privacy / cookie changes have largely
+     * broken YouTube embedding.this mostly is an old deprecated feature
+     * that will likely be removed unless YouTube embedding is fixed.
+     *
+     * $CFG->youtube_use_labnol = true;
+     */
+    public $youtube_use_labnol = false;
+
+    /*
+     * If we are going to use the lessons tool and/or badges, we need to
+     * create and point to a lessons.json file
+     *
+     * $CFG->lessons = $CFG->dirroot.'/../lessons.json';
+     */
+    public $lessons = false;
+
+    /*
+     * If we are going to use the Topics section, we need to create and
+     * point to the topics.json file
+     *
+     * $CFG->topics = $CFG->dirroot.'/../topics.json';
+     */
+    public $topics = false;
+
+    /**
+     * Storage location for Lumen Application.
+     *
+     * Needed for log files, by default dirroot."/storage/". This needs
+     * to be a location on your server that has write access.
+     *
+     */
+    public $lumen_storage;
+
+    /*
+     * Whether or not to track launch activity
+     */
+    public $launchactivity = true;
+
+    /*
+     * Set this to true if you are running certification since it is wonky at times
+     */
+    public $certification = false;
+    public $require_conformance_parameters = false;
+    public $prefer_lti1_for_grade_send = false;
+
+    /*
+     * Legacy: Link Accounts feature (unify) - no longer implemented.
+     * Previously allowed linking LTI-launched users to site-wide login.
+     * Kept for config compatibility only.
+     */
+    public $unify = false;
+
+    /*
+     * Controls the event push logic
+     */
+    public $eventcheck = false;
+    public $eventtime = 7*24*60*60;
+    public $eventpushtime = 2;
+    public $eventpushcount = 0;
+
+    /*
+     * Controls google log in and maps setup.
+     *
+     * Go to https://console.developers.google.com/apis/credentials
+     * create a new OAuth 2.0 credential for a web application,
+     * get the key and secret, and put them in these attributes
+     */
+    public $google_client_id = false;
+    public $google_client_secret = false;
+    public $google_map_api_key = false;
+
+    /**
+     * Enable service worker for push notifications and offline support
+     *
+     * When set to true, enables the service worker registration script
+     * in the page footer. The service worker is required for web push
+     * notifications to work.
+     *
+     * Defaults to false. Set to true to enable service worker functionality.
+     * Note: You must also configure VAPID keys for push notifications to work.
+     *
+     * Example:
+     *     $CFG->service_worker = true;
+     */
+    public $service_worker = false;
+
+    /**
+     * Notification de-duplication time window (in seconds)
+     *
+     * When two notifications with the same dedupe_key are created for the same user
+     * within this time window, the second will update the first instead of creating
+     * a new notification.
+     *
+     * Defaults to 900 seconds (15 minutes). Set to 0 to disable de-duplication.
+     *
+     * Example:
+     *     $CFG->notification_dedupe_window = 900; // 15 minutes
+     */
+    public $notification_dedupe_window = 900;
+
+    /**
+     * Notification expiration period (in days)
+     *
+     * Notifications older than this number of days will be automatically deleted
+     * during opportunistic cleanup operations. Cleanup runs when notifications are
+     * accessed, but at most once per hour to avoid performance impact.
+     *
+     * Defaults to 30 days (1 month). Set to 0 to disable expiration.
+     *
+     * Example:
+     *     $CFG->notification_expiration_days = 30; // 1 month
+     */
+    public $notification_expiration_days = 30;
+
+    /**
+     * VAPID keys for push notifications
+     *
+     * VAPID (Voluntary Application Server Identification) keys are required
+     * for web push notifications. These keys identify your server to push
+     * notification services.
+     *
+     * To generate VAPID keys:
+     * 1. Use an online generator: https://giga.tools/developer-tools/vapid-key-generator
+     * 2. Or use Node.js: npm install -g web-push && web-push generate-vapid-keys
+     * 3. Or use the PHP script: php tsugi/scripts/generate-vapid-keys.php
+     *
+     * See docs/vapid.md for detailed instructions.
+     *
+     * The vapid_subject should be a mailto: URL with your email address.
+     * This is used to identify your server to push notification services.
+     *
+     * Example:
+     *     $CFG->vapid_public_key = 'BKx...long_base64_string...';
+     *     $CFG->vapid_private_key = 'xYz...long_base64_string...';
+     *     $CFG->vapid_subject = 'mailto:admin@example.com';
+     */
+    public $vapid_public_key = false;
+    public $vapid_private_key = false;
+    public $vapid_subject = false;
+
+    /**
+     * Explicit Google OAuth redirect URI (optional)
+     *
+     * If set, this will be used as the redirect URI for Google OAuth login.
+     * This should match exactly what you configure in Google's OAuth console.
+     *
+     * Example:
+     *     $CFG->google_login_redirect = 'https://local.ca4e.com/login';
+     *
+     * If not set, the redirect URI is automatically constructed from $wwwroot
+     * based on the $google_login_new setting.
+     */
+    public $google_login_redirect = false;
+
+    /*
+     * Tells Google to come back to "/login" after Google Login.
+     * If set to false our login comes back to "login.php".
+     *
+     * The login return is part of your OAuth 2.0 configuration
+     * in Google.  And some old integrations used login.php.
+     * New integrations should use "/login" and leave this true.
+     * This is here to for old integrations.
+     *
+     * Note: This is ignored if $google_login_redirect is set.
+     */
+    public $google_login_new = true;
+
+    /*
+     * This allows you to force login.php to always go to the same
+     * page after login success.  Tsugi looks at the session for a
+     * "go back after login" URL, and will go to apphome or wwwroot.
+     *
+     * But if you want for the return to always go to some particular
+     * URL, set this field.
+     *
+     * $CFG->login_return_url = $CFG->apphome . "/welcome";
+     */
+    public $login_return_url = false;
+
+    /**
+     * Defaults to $CFG->apphome if defined and $CFG->wwwroot if that is not defined or false
+     */
+    public $logout_return_url;
+
+    /**
+     * If we have a web socket server, put its URL here
+     * Do not add a path here - just the host and port
+     * Make sure the port is open on your server
+     *
+     * $CFG->websocket_secret = 'changeme';
+     * $CFG->websocket_url = 'ws://localhost:2021'; // Local dev test
+     * $CFG->websocket_url = 'wss://socket.tsugicloud.org:443'; // Production
+     *
+     * If you are running a reverse proxy (proxy_wstunnel) set this to the port
+     * you will forward to in your apache config
+     *
+     * $CFG->websocket_proxyport = 8080;
+    */
+    public $websocket_secret = false;
+    public $websocket_url = false;
+    public $websocket_proxyport = false;
+
+    /**
+     * If the web server is NOT behind a reverse proxy, you may optionally wish
+     * to ignore forwarded IP headers such as x-forwarded-for and variations by
+     * setting this to false. This will help to preserve authenticity of IPs by
+     * only trusting IP addresses directly seen by the server.
+     *
+     * Never set this to false if you ARE behind a reverse proxy, otherwise all
+     * requests will appear to originate from the same IP address (the proxy).
+     *
+     * If behind a reverse proxy, set to `true`:
+     *     $CFG->trust_forwarded_ip = true; // (default)
+     *
+     * If not using a reverse proxy, set to `false`:
+     *     $CFG->trust_forwarded_ip = false;
+     */
+    public $trust_forwarded_ip = true;
+
+    /*
+     * This is the internal version of the datbase.   This is an internal
+     * value and set in setup.php and read in migrate.php - you should not
+     * touch this value.
+     */
+    public $dbversion = false;
+
+    public $vendorinclude = false;    // No longer used in the code base
+    public $vendorroot = false;       // No longer used in the code base
+    public $vendorstatic = false;     // No longer used in the code base
+
+    /**
+     * The autoloader to be used when loading classes.
+     *
+     * This is part of configuration startup and should be left as-is
+     * from config.dist
+     */
+    public $loader = false;
+
+    /*
+     * Allows you to run your Tsugi on a branch other than master
+     *
+     * This is an array of key value pairs when Tsugi is auto-upgrading Tsugi
+     * or a tool.   If it is checking out a particular remote, once
+     * that is checked out - it will switch to the specified branch instead
+     * of master.
+     *
+     *   $CFG->branch_override = array(
+     *    "https://github.com/tsugiproject/tsugi.git" => "php81"
+      *  }
+     */
+    public $branch_override = false;
+
+    // Legacy values no longer used
+    public $bootswatch = false;
+    public $bootswatch_color = false;
+    public $fontawesome = false;
+    public $analytics_key = false;
+    public $analytics_name = false;
+    public $universal_analytics = false;
+
+    /**
+     * Badge generation settings - once you start issuing badges - don't change these
+     */
+    public $badge_encrypt_password = null; // "somethinglongwithhex387438758974987";
+    public $badge_assert_salt = null; // "mediumlengthhexstring";
+    public $badge_path = null; // $CFG->dirroot . '/../bimages';
+    public $badge_url = null; // $CFG->apphome . '/bimages';
+    
+    /**
+     * Email address for Open Badges issuer (OB2 required field)
+     * 
+     * This email address is used in badge issuer assertions.
+     * If not set, defaults to "badge_issuer_email_not_set@example.com"
+     * 
+     * $CFG->badge_issuer_email = 'py4e@learnxp.com';
+     */
+    public $badge_issuer_email = null;
+    
+    /**
+     * Organization name for badge issuer assertions
+     * 
+     * If not set, defaults to the result of getBadgeOrganization() method,
+     * which falls back to "$CFG->servicedesc ($CFG->servicename)" format,
+     * or just $CFG->servicename if servicedesc is not set.
+     * 
+     * $CFG->badge_organization = 'Learning Experiences';
+     */
+    public $badge_organization = null;
+    
+    /**
+     * Organization URL for badge issuer assertions
+     * 
+     * The URL that represents the badge issuing organization.
+     * If not set, defaults to $CFG->apphome.
+     * 
+     * $CFG->badge_organization_url = 'https://www.learnxp.com';
+     */
+    public $badge_organization_url = null;
+    
+    /**
+     * Organization logo URL for badge issuer assertions
+     * 
+     * Optional logo image URL to include in OB3 issuer profiles.
+     * If set, will be included as an "image" property in the issuer JSON.
+     * 
+     * $CFG->badge_organization_logo = 'https://www.learnxp.com/logo-square.png';
+     */
+    public $badge_organization_logo = null;
+    
+    /**
+     * OB3 DataIntegrityProof signing - Base64-encoded Ed25519 secret key (64 bytes).
+     * Run: php scripts/badge_ob3_keygen.php to generate. Required for 1EdTech OB3 certification.
+     * $CFG->badge_ob3_secret_key = 'base64-encoded-key';
+     */
+    public $badge_ob3_secret_key = null;
+    
+    /**
+     * OB3 verification method URL for proof (e.g. issuer URL + #key-0).
+     * $CFG->badge_ob3_verification_method_id = 'https://yoursite.com/tsugi/assertions/issuer.json#key-0';
+     */
+    public $badge_ob3_verification_method_id = null;
+    
+    /**
+     * LinkedIn organization/company page URL
+     * 
+     * If set, displays a LinkedIn link on badge pages and may be included
+     * in badge issuer extensions.
+     * 
+     * $CFG->linkedin_url = 'https://www.linkedin.com/company/learn-xp';
+     */
+    public $linkedin_url = null;
+    
+    /**
+     * LinkedIn organization ID for badge sharing
+     * 
+     * The numeric organization ID used when generating LinkedIn "Add to Profile" URLs.
+     * This replaces organizationName in LinkedIn certification URLs.
+     * 
+     * $CFG->linkedin_organization_id = '4264503';
+     */
+    public $linkedin_organization_id = null;
+
+    /**
+     * The defaults for data expiration.  Data expiration is not done by default, but can
+     * be triggered in the Tsugi Admin UI or via a php CLI program.
+     */
+    public $expire_pii_days = 150;  // Three months
+    public $expire_user_days = 400;  // One year
+    public $expire_context_days = 600; // 1.5 Years
+    public $expire_tenant_days = 800; // Two years
+
+    /**
+     * Legacy: Google Classroom support - this was an experiment and is no longer supported
+     * First, Go to https://console.developers.google.com/apis/credentials
+     * And add access to "Google Classroom API" to your google_client_id (above)
+
+     * (legacy) Set the secret to a long random string - this is used for internal
+     * url Tsugi signing - not for Google interactions.  Don't change it
+     * once you set it.
+     */
+    public $google_classroom_secret = null;
+
+    /**
+     * (legacy) This should be an absolute URL that will be used to populate previews
+     * in Google Classroom
+     */
+    public $google_classroom_logo = null;
+
+    /**
+     * Create the configuration object.
+     *
+     * Generally this is done once to create the global variable $CFG
+     * in the file config.php.
+     *
+     * Example call with constants:
+     *
+     *     $CFG = new \Tsugi\Config\ConfigInfo('/Applications/MAMP/htdocs/tsugi',
+     *         'http://localhost:8888/tsugi');
+     *
+     * Example call in config.php that does not hard-code the actual path:
+     *
+     *     $CFG = new \Tsugi\Config\ConfigInfo(realpath(dirname(__FILE__)),
+     *         'http://localhost:8888/tsugi');
+     *
+     * Once the variable is constructed, the public member variables are
+     * overridden directly by setting them in the PHP code in config.php.
+     *
+     *     $CFG = new \Tsugi ...
+     *     $CFG->pdo = 'mysql:host=127.0.0.1;port=8889;dbname=tsugi'; // MAMP
+     *     $CFG->dbuser = 'zippy';
+     *     ...
+     *
+     * @param $dirroot The full path of the Tsugi source code.  This
+     * value is used throughout Tsugi to include files with absolute
+     * paths. Make sure not to include a trailing slash.
+     *
+     * @param $wwwroot The URL where Tsugi is being hosted.  Make sure
+     * not to include a trailing slash.
+     *
+     * @param $dataroot An optional parameter that is and absolute path
+     * preferably not a sub-folder of $dirroot that is readable and
+     * writeable by the PHP code.   Tsugi uses this folder to store
+     * and serve uploaded file blobs.  If this parameter is left off
+     * Tsugi will attempt to use a folder named '/_files/a/' within
+     * $dirroot as its blob storage area.
+     */
+    public function __construct($dirroot, $wwwroot, $dataroot=false) {
+        $this->dirroot = $dirroot;
+        $this->wwwroot = $wwwroot;
+        $this->extensions = array();
+        $this->staticroot = 'https://static.tsugi.org';
+        $this->lumen_storage = sprintf("%s/storage/", $dirroot);
+    }
+
+    function getExtension($key, $default=null) {
+	    return $this->extensions[$key] ?? $default;
+    }
+
+    /**
+     * Set an extension value
+     */
+    function setExtension($key, $value) {
+	    $this->extensions[$key] = $value;
+    }
+
+    function getCurrentFile($file) {
+        $root = $this->dirroot;
+        $path = realpath($file);
+        if ( strlen($path) < strlen($root) ) return false;
+        // The root must be the prefix of path
+        if ( strpos($path, $root) !== 0 ) return false;
+        $retval = substr($path, strlen($root));
+        return $retval;
+    }
+
+    // Get the foldername of the currently called script
+    // ["SCRIPT_FILENAME"]=> string(52) "/Applications/MAMP/htdocs/tsugi/mod/attend/index.php"
+    // This function will return "attend"
+    function getScriptFolder() {
+        $path = self::getScriptPathFull();
+        if ( $path === false ) return false;
+        // Don't use DIRECTORY_SEPARATOR, PHP makes these forward slashes on Windows
+        $pieces = explode('/', $path);
+        if ( count($pieces) < 1 ) return false;
+        return $pieces[count($pieces)-1];
+    }
+
+    // This should be deprecated since it only works under tsugi
+    function getCurrentFileUrl($file) {
+        return $this->wwwroot.$this->getCurrentFile($file);
+    }
+
+    function getLoginUrl() {
+        return \Tsugi\Controllers\Login::loginUrl();
+    }
+
+    /**
+     * Get the current working directory of a file
+     */
+    function getPwd($file) {
+        $root = $this->dirroot;
+        $path = realpath(dirname($file));
+        $root .= '/'; // Add the trailing slash
+        if ( strlen($path) < strlen($root) ) return false;
+        // The root must be the prefix of path
+        if ( strpos($path, $root) !== 0 ) return false;
+        $retval = substr($path, strlen($root));
+        return $retval;
+    }
+
+    function getUrlFull($file) {
+        $path = self::getPwd($file);
+        return $this->wwwroot . "/" . $path;
+    }
+
+    public function getScriptPath() {
+        $path = self::getScriptPathFull();
+        if ( strpos($path, $this->dirroot) === 0 )  {
+            $x = substr($path, strlen($this->dirroot)+1 ) ;
+            return $x;
+        } else {
+            return "";
+        }
+    }
+
+    public static function getScriptPathFull() {
+        if ( ! isset( $_SERVER['SCRIPT_FILENAME']) ) return false;
+        $script = $_SERVER['SCRIPT_FILENAME'];
+        $path = dirname($script);
+        return $path;
+    }
+
+    /**
+     * Get the name of the script relative to the server document root
+     *
+     * /py4e/mod/peer-grade/maint.php
+     */
+    public static function getScriptName() {
+        if ( ! isset( $_SERVER['SCRIPT_NAME']) ) return false;
+        $script = $_SERVER['SCRIPT_NAME'];
+        return $script;
+    }
+
+    /**
+     * Get the current URL we are executing - no query parameters
+     *
+     * http://localhost:8888/py4e/mod/peer-grade/maint.php
+     */
+    public function getCurrentUrl() {
+        $script = self::getScriptName();
+        if ( $script === false ) return false;
+        $pieces = $this->apphome;
+        if ( $this->apphome ) {
+            $pieces = parse_url($this->apphome);
+        }
+        // We only take scheme, host, and port from wwwroot / apphome
+        if ( ! isset($pieces['scheme']) ) return false;
+        $retval = $pieces['scheme'].'://'.$pieces['host'];
+        if ( isset($pieces['port']) ) $retval .= ':'.$pieces['port'];
+        return $retval . $script;
+    }
+
+    /**
+     * Get the current folder of the URL we are executing - no trailing slash
+     *
+     * input: http://localhost:8888/py4e/mod/peer-grade/maint.php
+     * output: http://localhost:8888/py4e/mod/peer-grade
+     *
+     */
+    public function getCurrentUrlFolder() {
+        $url = self::getCurrentUrl();
+        $pieces = explode('/', $url);
+        array_pop($pieces);
+        $retval = implode('/', $pieces);
+        return $retval;
+    }
+
+    /**
+     * Are we on localhost?
+     *
+     * Returns true if wwwroot contains localhost or 127.0.0.1.
+     */
+    public function localhost() {
+        if ( strpos($this->wwwroot,'://localhost') !== false ) return true;
+        if ( strpos($this->wwwroot,'://127.0.0.1') !== false ) return true;
+        return false;
+    }
+
+    /**
+     * Is lesson authoring allowed?
+     *
+     * Returns true if localhost/127.0.0.1 in wwwroot, or if $CFG->author_allow is true.
+     * Use author_allow for dev domains like local.dj4e.com - only enable on localhost.
+     */
+    public function canAuthor() {
+        if ( $this->localhost() ) return true;
+        return !empty($this->author_allow);
+    }
+
+    /**
+     * Return a prefix unique to this server for things like shared cache keys
+     */
+    public function serverPrefix() : string {
+        $prefix = $this->wwwroot;
+        if ( is_string($this->apphome) && strlen($this->apphome) > 0 ) $prefix = $this->apphome;
+        $prefix = preg_replace('/https?:\/\//', '', $prefix);
+        if (strlen($prefix) > 50 ) $prefix = md5($prefix);
+        return $prefix;
+    }
+
+    /**
+     * Get the badge organization name with fallback logic
+     * 
+     * Returns $badge_organization if set, otherwise falls back to
+     * "$servicedesc ($servicename)" format, or just $servicename if servicedesc is not set.
+     * 
+     * @return string The badge organization name
+     */
+    public function getBadgeOrganization() : string {
+        // Use badge_organization if set
+        if (isset($this->badge_organization) && !empty($this->badge_organization)) {
+            return $this->badge_organization;
+        }
+        
+        // Build fallback: servicedesc (servicename) or just servicename if servicedesc not set
+        if (isset($this->servicedesc) && !empty($this->servicedesc)) {
+            return $this->servicedesc . ' (' . $this->servicename . ')';
+        }
+        
+        // Final fallback to just servicename
+        return $this->servicename;
+    }
+
+    // -------------------------------------------------------------------------
+    // Hostname-based vhost helpers (embedded *4e sites). Configure via:
+    //   $CFG->setExtension('vhost', array(
+    //       'suffixes' => array('py4e.com'),
+    //       'site_root' => dirname($CFG->dirroot),
+    //       'vhosts' => array(
+    //           'www' => array('apphomes' => array('https://local.example.com', ...)),
+    //           'labs' => array('apphomes' => array(...), 'dir' => 'site-labs'),
+    //       ),
+    //   ));
+    // localhost / 127.0.0.1 (any port) keep config.php apphome/wwwroot — no rewriting.
+    // -------------------------------------------------------------------------
+
+    private $vhostNormalized = null;
+    private $vhostId = false;
+    private $vhostIdResolved = false;
+
+    public function vhostRequestHost() {
+        $host = strtolower($_SERVER['HTTP_HOST'] ?? '');
+        if ( strpos($host, ':') !== false ) {
+            $host = explode(':', $host, 2)[0];
+        }
+        return $host;
+    }
+
+    /**
+     * True when the request should use apphome/wwwroot from config.php (e.g. localhost:8888/py4e).
+     */
+    public function vhostUsesDefaultHost() {
+        $host = $this->vhostRequestHost();
+        return $host === 'localhost' || $host === '127.0.0.1';
+    }
+
+    public function vhostUsesVhostUrls() {
+        if ( $this->vhostUsesDefaultHost() ) {
+            return false;
+        }
+        $host = $this->vhostRequestHost();
+        $config = $this->getVhostConfig();
+        if ( array_key_exists($host, $config['host_map']) ) {
+            return true;
+        }
+        if ( $this->getVhostId() ) {
+            return true;
+        }
+        return $this->vhostIsLocalWwwSite() || $this->vhostIsProductionWwwSite();
+    }
+
+    public function applyVhostHostUrls() {
+        if ( ! $this->vhostUsesVhostUrls() ) {
+            return;
+        }
+        $apphome = $this->vhostApphomeFromList();
+        if ( $apphome !== false ) {
+            $this->apphome = $apphome;
+            $this->wwwroot = $this->apphome . '/tsugi';
+            return;
+        }
+        $this->apphome = $this->vhostRequestScheme() . '://' . $this->vhostRequestHost();
+        $this->wwwroot = $this->apphome . '/tsugi';
+    }
+
+    /**
+     * @return string|false
+     */
+    public function getVhostId() {
+        if ( $this->vhostIdResolved ) {
+            return $this->vhostId;
+        }
+        $this->vhostIdResolved = true;
+        $this->vhostId = false;
+
+        if ( $this->vhostUsesDefaultHost() ) {
+            return $this->vhostId;
+        }
+
+        $host = $this->vhostRequestHost();
+        $config = $this->getVhostConfig();
+        if ( array_key_exists($host, $config['host_map']) ) {
+            $this->vhostId = $config['host_map'][$host];
+            return $this->vhostId;
+        }
+
+        if ( preg_match('/^([a-z0-9-]+)\.localhost$/', $host, $m) && $m[1] !== 'www' ) {
+            $this->vhostId = $m[1];
+            return $this->vhostId;
+        }
+
+        foreach ( $config['suffixes'] as $suffix ) {
+            $quoted = preg_quote($suffix, '/');
+            if ( preg_match('/^([a-z0-9-]+)\.' . $quoted . '$/', $host, $m) && $m[1] !== 'www' ) {
+                $this->vhostId = $m[1];
+                return $this->vhostId;
+            }
+            if ( preg_match('/^([a-z0-9-]+)\.local\.' . $quoted . '$/', $host, $m) ) {
+                $this->vhostId = $m[1];
+                return $this->vhostId;
+            }
+        }
+
+        return $this->vhostId;
+    }
+
+    /**
+     * @param string|false|null $id
+     * @return string|false
+     */
+    public function getVhostVariantDir($id = null) {
+        if ( $id === null ) {
+            $id = $this->getVhostId();
+        }
+        if ( ! $id ) {
+            return false;
+        }
+        $map = $this->getVhostConfig()['variants'];
+        if ( isset($map[$id]) && is_string($map[$id]) && $map[$id] !== '' ) {
+            return $map[$id];
+        }
+        return $id;
+    }
+
+    public function getVhostSiteRoot() {
+        return $this->getVhostConfig()['site_root'];
+    }
+
+    public function getVhostSiteFile($filename) {
+        $dir = $this->getVhostVariantDir();
+        if ( $dir ) {
+            $variant_path = $this->getVhostSiteRoot() . '/' . $dir . '/' . $filename;
+            if ( file_exists($variant_path) ) {
+                return $variant_path;
+            }
+        }
+        return $this->getVhostSiteRoot() . '/' . $filename;
+    }
+
+    public function requireVhostVariant($filename) {
+        $dir = $this->getVhostVariantDir();
+        if ( ! $dir ) {
+            return false;
+        }
+        $path = $this->getVhostSiteRoot() . '/' . $dir . '/' . $filename;
+        if ( ! is_readable($path) ) {
+            return false;
+        }
+        require $path;
+        return true;
+    }
+
+    public function applyVhostVariantConfig() {
+        $id = $this->getVhostId();
+        if ( ! $id ) {
+            return;
+        }
+        $dir = $this->getVhostVariantDir($id);
+        if ( ! $dir ) {
+            return;
+        }
+        $base = $this->getVhostSiteRoot() . '/' . $dir . '/';
+        $config = $base . 'vhost.php';
+        if ( ! is_readable($config) ) {
+            // Legacy name; often gitignored when named config.php
+            $config = $base . 'config.php';
+        }
+        if ( ! is_readable($config) ) {
+            return;
+        }
+        require_once $config;
+        $fn = $id . '_apply_vhost_config';
+        if ( function_exists($fn) ) {
+            $fn($this);
+        }
+    }
+
+    /**
+     * @return array{suffixes: string[], site_root: string, apphomes: string[], variants: array<string, string>, vhosts: array, host_map: array<string, string|false>}
+     */
+    private function getVhostConfig() {
+        if ( $this->vhostNormalized !== null ) {
+            return $this->vhostNormalized;
+        }
+        $raw = $this->getExtension('vhost', false);
+        $this->vhostNormalized = $this->normalizeVhostConfig(is_array($raw) ? $raw : array());
+        return $this->vhostNormalized;
+    }
+
+    private function normalizeVhostConfig(array $config) {
+        $site_root = $config['site_root'] ?? '';
+        if ( ! is_string($site_root) || $site_root === '' ) {
+            if ( ! empty($this->dirroot) ) {
+                $site_root = dirname($this->dirroot);
+            } else {
+                $site_root = dirname(__DIR__, 3);
+            }
+        }
+
+        if ( is_array($config['vhosts'] ?? null) && count($config['vhosts']) > 0 ) {
+            $parsed = $this->normalizeVhostEntries($config['vhosts']);
+            return array(
+                'suffixes' => is_array($config['suffixes'] ?? null) ? $config['suffixes'] : array(),
+                'site_root' => $site_root,
+                'vhosts' => $parsed['vhosts'],
+                'apphomes' => $parsed['apphomes'],
+                'variants' => $parsed['variants'],
+                'host_map' => $parsed['host_map'],
+            );
+        }
+
+        return array(
+            'suffixes' => is_array($config['suffixes'] ?? null) ? $config['suffixes'] : array(),
+            'site_root' => $site_root,
+            'vhosts' => array(),
+            'apphomes' => $this->normalizeApphomeUrls($config['apphomes'] ?? array()),
+            'variants' => $this->normalizeVariantDirs($config['variants'] ?? array()),
+            'host_map' => array(),
+        );
+    }
+
+    /**
+     * @return string[]
+     */
+    private function normalizeApphomeUrls($list) {
+        if ( ! is_array($list) ) {
+            return array();
+        }
+        $normalized = array();
+        foreach ( $list as $url ) {
+            if ( ! is_string($url) || strlen(trim($url)) < 1 ) {
+                continue;
+            }
+            $normalized[] = rtrim(trim($url), '/');
+        }
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function normalizeVariantDirs($variants) {
+        $map = array();
+        if ( ! is_array($variants) ) {
+            return $map;
+        }
+        foreach ( $variants as $id => $spec ) {
+            if ( is_string($spec) && $spec !== '' ) {
+                $map[$id] = $spec;
+            } else if ( is_array($spec) && ! empty($spec['dir']) && is_string($spec['dir']) ) {
+                $map[$id] = $spec['dir'];
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * @return array{vhosts: array, apphomes: string[], variants: array<string, string>, host_map: array<string, string|false>}
+     */
+    private function normalizeVhostEntries($vhosts) {
+        $normalized_vhosts = array();
+        $apphomes = array();
+        $variants = array();
+        $host_map = array();
+
+        foreach ( $vhosts as $id => $spec ) {
+            if ( ! is_array($spec) ) {
+                continue;
+            }
+            $urls = $this->normalizeApphomeUrls($spec['apphomes'] ?? array());
+            $dir = $spec['dir'] ?? null;
+            if ( ! is_string($dir) || $dir === '' ) {
+                $dir = null;
+            }
+
+            $normalized_vhosts[$id] = array(
+                'apphomes' => $urls,
+                'dir' => $dir,
+            );
+
+            foreach ( $urls as $url ) {
+                $host = strtolower(parse_url($url, PHP_URL_HOST) ?? '');
+                if ( $host === '' ) {
+                    continue;
+                }
+                $host_map[$host] = ( $id === 'www' ) ? false : $id;
+                $apphomes[] = $url;
+            }
+
+            if ( $id !== 'www' && $dir !== null ) {
+                $variants[$id] = $dir;
+            }
+        }
+
+        return array(
+            'vhosts' => $normalized_vhosts,
+            'apphomes' => $apphomes,
+            'variants' => $variants,
+            'host_map' => $host_map,
+        );
+    }
+
+    private function vhostIsLocalWwwSite() {
+        $host = $this->vhostRequestHost();
+        foreach ( $this->getVhostConfig()['suffixes'] as $suffix ) {
+            if ( $host === 'local.' . $suffix ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function vhostIsProductionWwwSite() {
+        $host = $this->vhostRequestHost();
+        foreach ( $this->getVhostConfig()['suffixes'] as $suffix ) {
+            if ( $host === 'www.' . $suffix || $host === $suffix ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function vhostRequestScheme() {
+        if ( ! empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ) {
+            return 'https';
+        }
+        if ( ! empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https' ) {
+            return 'https';
+        }
+        return 'http';
+    }
+
+    private function vhostHostIsLocalDev($host) {
+        if ( strpos($host, '.local.') !== false ) {
+            return true;
+        }
+        foreach ( $this->getVhostConfig()['suffixes'] as $suffix ) {
+            if ( $host === 'local.' . $suffix ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return string|false
+     */
+    private function vhostApphomeFromList() {
+        $list = $this->getVhostConfig()['apphomes'];
+        if ( count($list) < 1 ) {
+            return false;
+        }
+        $host = $this->vhostRequestHost();
+        foreach ( $list as $apphome ) {
+            $entry_host = strtolower(parse_url($apphome, PHP_URL_HOST) ?? '');
+            if ( $entry_host !== '' && $entry_host === $host ) {
+                return $apphome;
+            }
+        }
+
+        $local_request = $this->vhostHostIsLocalDev($host);
+        foreach ( $list as $apphome ) {
+            $entry_host = strtolower(parse_url($apphome, PHP_URL_HOST) ?? '');
+            if ( $entry_host === '' ) {
+                continue;
+            }
+            if ( $this->vhostHostIsLocalDev($entry_host) === $local_request ) {
+                return $apphome;
+            }
+        }
+
+        return $list[0];
+    }
+
+    /**
+     * Premium extension config block.
+     *
+     * @return array<string,mixed>
+     */
+    public function premiumConfig()
+    {
+        $cfg = $this->getExtension('premium');
+        return is_array($cfg) ? $cfg : array();
+    }
+
+    /**
+     * Payment provider id from the premium extension (e.g. "stripe").
+     *
+     * @return string|false
+     */
+    public function premiumProvider()
+    {
+        $provider = trim((string) U::get($this->premiumConfig(), 'premium_provider', ''));
+        if ( strlen($provider) < 1 ) {
+            return false;
+        }
+        return $provider;
+    }
+
+    /**
+     * Config block for the configured premium payment provider.
+     *
+     * @return array<string,mixed>
+     */
+    public function premiumProviderConfig()
+    {
+        $provider = $this->premiumProvider();
+        if ( $provider === false ) {
+            return array();
+        }
+        $cfg = $this->getExtension($provider);
+        return is_array($cfg) ? $cfg : array();
+    }
+
+    /**
+     * Whether supporter/premium signup is configured on this site.
+     */
+    public function isPremiumAvailable(): bool
+    {
+        return $this->supporterUrl() !== false;
+    }
+
+    /**
+     * Stripe extension config block.
+     *
+     * @return array<string,mixed>
+     */
+    public function stripeConfig()
+    {
+        $cfg = $this->getExtension('stripe');
+        return is_array($cfg) ? $cfg : array();
+    }
+
+    /**
+     * Whether Stripe checkout is configured (stripe extension with required keys).
+     */
+    public function isStripeConfigured(): bool
+    {
+        $stripe_cfg = $this->stripeConfig();
+        if ( count($stripe_cfg) < 1 ) {
+            return false;
+        }
+
+        $secret_key = trim((string) U::get($stripe_cfg, 'secret_key', ''));
+        $supporter_price = trim((string) U::get($stripe_cfg, 'supporter_price', ''));
+        $site = trim((string) U::get($stripe_cfg, 'site', ''));
+
+        return $secret_key !== '' && $supporter_price !== '' && $site !== '';
+    }
+
+    /**
+     * Whether the configured premium payment provider extension is present and usable.
+     */
+    public function isPremiumProviderConfigured(): bool
+    {
+        $provider = $this->premiumProvider();
+        if ( $provider === false ) {
+            return false;
+        }
+
+        if ( $provider === 'stripe' ) {
+            return $this->isStripeConfigured();
+        }
+
+        return count($this->premiumProviderConfig()) > 0;
+    }
+
+    /**
+     * Whether supporter UI (status, invite, renew) may be shown.
+     *
+     * Requires premium display config plus the provider named in premium_provider.
+     */
+    public function isSupporterUiAvailable(): bool
+    {
+        return $this->isPremiumAvailable() && $this->isPremiumProviderConfigured();
+    }
+
+    public function supporterSiteName()
+    {
+        if (isset($this->servicename) && is_string($this->servicename)) {
+            $name = trim($this->servicename);
+            if (strlen($name) > 0) {
+                return $name;
+            }
+        }
+        return 'this site';
+    }
+
+    /**
+     * Human-facing site label for supporter copy (servicedesc, then servicename).
+     */
+    public function supporterSiteLabel()
+    {
+        if (isset($this->servicedesc) && is_string($this->servicedesc)) {
+            $desc = trim(strip_tags($this->servicedesc));
+            if (strlen($desc) > 0) {
+                return $desc;
+            }
+        }
+        return $this->supporterSiteName();
+    }
+
+    public function supporterLabel()
+    {
+        return '💚 ' . $this->supporterSiteName() . ' Supporter';
+    }
+
+    /**
+     * Human-facing price from the premium extension (e.g. "$4.20").
+     */
+    public function supporterPriceLabel()
+    {
+        return trim((string) U::get($this->premiumConfig(), 'price', ''));
+    }
+
+    public function supporterPricePhrase()
+    {
+        $price = $this->supporterPriceLabel();
+        if ($price === '') {
+            return '';
+        }
+        return 'about ' . $price . ' (local currency at checkout)';
+    }
+
+    public function premiumMonths()
+    {
+        $months = (int) U::get($this->premiumConfig(), 'premium_months', 12);
+        if ($months < 1) {
+            $months = 12;
+        }
+        return $months;
+    }
+
+    public function premiumMonthsLabel()
+    {
+        $months = $this->premiumMonths();
+        if ($months === 1) {
+            return 'one month';
+        }
+        if ($months === 12) {
+            return 'one year';
+        }
+        return $months . ' months';
+    }
+
+    /**
+     * Optional refund policy text from the premium extension (plain text).
+     */
+    public function refundPolicy()
+    {
+        return trim((string) U::get($this->premiumConfig(), 'refund_policy', ''));
+    }
+
+    /**
+     * Optional supporter landing URL from the premium extension.
+     *
+     * @return string|false
+     */
+    public function supporterUrl()
+    {
+        $url = trim((string) U::get($this->premiumConfig(), 'supporter_url', ''));
+        if (strlen($url) < 1) {
+            return false;
+        }
+        return $url;
+    }
+}
+

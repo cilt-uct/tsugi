@@ -19,16 +19,27 @@ namespace Google\Service\OracleDatabase;
 
 class ListCloudVmClustersResponse extends \Google\Collection
 {
-  protected $collection_key = 'cloudVmClusters';
+  protected $collection_key = 'unreachable';
   protected $cloudVmClustersType = CloudVmCluster::class;
   protected $cloudVmClustersDataType = 'array';
   /**
+   * A token to fetch the next page of results.
+   *
    * @var string
    */
   public $nextPageToken;
+  /**
+   * Unreachable locations when listing resources across all locations using
+   * wildcard location '-'.
+   *
+   * @var string[]
+   */
+  public $unreachable;
 
   /**
-   * @param CloudVmCluster[]
+   * The list of VM Clusters.
+   *
+   * @param CloudVmCluster[] $cloudVmClusters
    */
   public function setCloudVmClusters($cloudVmClusters)
   {
@@ -42,7 +53,9 @@ class ListCloudVmClustersResponse extends \Google\Collection
     return $this->cloudVmClusters;
   }
   /**
-   * @param string
+   * A token to fetch the next page of results.
+   *
+   * @param string $nextPageToken
    */
   public function setNextPageToken($nextPageToken)
   {
@@ -54,6 +67,23 @@ class ListCloudVmClustersResponse extends \Google\Collection
   public function getNextPageToken()
   {
     return $this->nextPageToken;
+  }
+  /**
+   * Unreachable locations when listing resources across all locations using
+   * wildcard location '-'.
+   *
+   * @param string[] $unreachable
+   */
+  public function setUnreachable($unreachable)
+  {
+    $this->unreachable = $unreachable;
+  }
+  /**
+   * @return string[]
+   */
+  public function getUnreachable()
+  {
+    return $this->unreachable;
   }
 }
 

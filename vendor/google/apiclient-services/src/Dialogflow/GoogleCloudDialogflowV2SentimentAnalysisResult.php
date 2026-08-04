@@ -23,7 +23,7 @@ class GoogleCloudDialogflowV2SentimentAnalysisResult extends \Google\Model
   protected $queryTextSentimentDataType = '';
 
   /**
-   * @param GoogleCloudDialogflowV2Sentiment
+   * @param GoogleCloudDialogflowV2Sentiment $queryTextSentiment
    */
   public function setQueryTextSentiment(GoogleCloudDialogflowV2Sentiment $queryTextSentiment)
   {

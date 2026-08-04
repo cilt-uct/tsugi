@@ -35,10 +35,14 @@ class GoogleCloudDialogflowCxV3beta1WebhookGenericWebServiceOAuthConfig extends 
   /**
    * @var string
    */
+  public $secretVersionForClientSecret;
+  /**
+   * @var string
+   */
   public $tokenEndpoint;
 
   /**
-   * @param string
+   * @param string $clientId
    */
   public function setClientId($clientId)
   {
@@ -52,7 +56,7 @@ class GoogleCloudDialogflowCxV3beta1WebhookGenericWebServiceOAuthConfig extends 
     return $this->clientId;
   }
   /**
-   * @param string
+   * @param string $clientSecret
    */
   public function setClientSecret($clientSecret)
   {
@@ -66,7 +70,7 @@ class GoogleCloudDialogflowCxV3beta1WebhookGenericWebServiceOAuthConfig extends 
     return $this->clientSecret;
   }
   /**
-   * @param string[]
+   * @param string[] $scopes
    */
   public function setScopes($scopes)
   {
@@ -80,7 +84,21 @@ class GoogleCloudDialogflowCxV3beta1WebhookGenericWebServiceOAuthConfig extends 
     return $this->scopes;
   }
   /**
-   * @param string
+   * @param string $secretVersionForClientSecret
+   */
+  public function setSecretVersionForClientSecret($secretVersionForClientSecret)
+  {
+    $this->secretVersionForClientSecret = $secretVersionForClientSecret;
+  }
+  /**
+   * @return string
+   */
+  public function getSecretVersionForClientSecret()
+  {
+    return $this->secretVersionForClientSecret;
+  }
+  /**
+   * @param string $tokenEndpoint
    */
   public function setTokenEndpoint($tokenEndpoint)
   {

@@ -17,9 +17,9 @@ if ( U::get($_POST,'email') && U::get($_POST,'subject') && U::get($_POST,'body')
     $body = U::get($_POST,'body');
     $retval = Mail::send($to, $subject, $body);
     if ( $retval ) {
-        $_SESSION['success'] = 'PHP mail() returned true';
+        U::flashSuccess('PHP mail() returned true');
     } else {
-        $_SESSION['error'] = 'PHP mail() returned false';
+        U::flashError('PHP mail() returned false');
     }
     header("Location: testmail.php");
     return;
@@ -54,7 +54,7 @@ Subject:<br/>
 </p>
 <p>
 <input type="submit" onclick="$('#myspinner').show();return true;" name="delete" value="Send Mail"/>
-<img id="myspinner" src="<?= $OUTPUT->getSpinnerUrl() ?>" style="display:none">
+<img id="myspinner" src="<?= $OUTPUT->getSpinnerUrl() ?>" alt="" role="presentation" style="display:none">
 </p>
 </form>
 <p>

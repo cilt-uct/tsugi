@@ -35,6 +35,21 @@ use Google\Client;
  */
 class WorkspaceEvents extends \Google\Service
 {
+  /** On their own behalf, apps in Google Chat can see, add, update, and remove members from conversations and spaces. */
+  const CHAT_APP_MEMBERSHIPS =
+      "https://www.googleapis.com/auth/chat.app.memberships";
+  /** On their own behalf, apps in Google Chat can see members of conversations and spaces. */
+  const CHAT_APP_MEMBERSHIPS_READONLY =
+      "https://www.googleapis.com/auth/chat.app.memberships.readonly";
+  /** On their own behalf, apps in Google Chat can see all messages and their associated reactions and message content. */
+  const CHAT_APP_MESSAGES_READONLY =
+      "https://www.googleapis.com/auth/chat.app.messages.readonly";
+  /** On their own behalf, apps in Google Chat can create conversations and spaces and see or update their metadata (including history settings and access settings). */
+  const CHAT_APP_SPACES =
+      "https://www.googleapis.com/auth/chat.app.spaces";
+  /** On their own behalf, apps in Google Chat can see conversations and spaces and their metadata (including history settings and access settings). */
+  const CHAT_APP_SPACES_READONLY =
+      "https://www.googleapis.com/auth/chat.app.spaces.readonly";
   /** Private Service: https://www.googleapis.com/auth/chat.bot. */
   const CHAT_BOT =
       "https://www.googleapis.com/auth/chat.bot";
@@ -62,6 +77,18 @@ class WorkspaceEvents extends \Google\Service
   /** View chat and spaces in Google Chat. */
   const CHAT_SPACES_READONLY =
       "https://www.googleapis.com/auth/chat.spaces.readonly";
+  /** See and change your availability status in Google Chat.. */
+  const CHAT_USERS_AVAILABILITY =
+      "https://www.googleapis.com/auth/chat.users.availability";
+  /** See your availability status in Google Chat.. */
+  const CHAT_USERS_AVAILABILITY_READONLY =
+      "https://www.googleapis.com/auth/chat.users.availability.readonly";
+  /** View and modify last read time for Google Chat conversations. */
+  const CHAT_USERS_READSTATE =
+      "https://www.googleapis.com/auth/chat.users.readstate";
+  /** View last read time for Google Chat conversations. */
+  const CHAT_USERS_READSTATE_READONLY =
+      "https://www.googleapis.com/auth/chat.users.readstate.readonly";
   /** See, edit, create, and delete all of your Google Drive files. */
   const DRIVE =
       "https://www.googleapis.com/auth/drive";
@@ -84,8 +111,11 @@ class WorkspaceEvents extends \Google\Service
   const MEETINGS_SPACE_READONLY =
       "https://www.googleapis.com/auth/meetings.space.readonly";
 
+  public $message;
   public $operations;
   public $subscriptions;
+  public $tasks;
+  public $tasks_pushNotificationConfigs;
   public $rootUrlTemplate;
 
   /**
@@ -105,6 +135,20 @@ class WorkspaceEvents extends \Google\Service
     $this->version = 'v1';
     $this->serviceName = 'workspaceevents';
 
+    $this->message = new WorkspaceEvents\Resource\Message(
+        $this,
+        $this->serviceName,
+        'message',
+        [
+          'methods' => [
+            'stream' => [
+              'path' => 'v1/message:stream',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],
+          ]
+        ]
+    );
     $this->operations = new WorkspaceEvents\Resource\Operations(
         $this,
         $this->serviceName,
@@ -215,6 +259,136 @@ class WorkspaceEvents extends \Google\Service
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
+                ],
+              ],
+            ],
+          ]
+        ]
+    );
+    $this->tasks = new WorkspaceEvents\Resource\Tasks(
+        $this,
+        $this->serviceName,
+        'tasks',
+        [
+          'methods' => [
+            'cancel' => [
+              'path' => 'v1/{+name}:cancel',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+              ],
+            ],'get' => [
+              'path' => 'v1/{+name}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'historyLength' => [
+                  'location' => 'query',
+                  'type' => 'integer',
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'subscribe' => [
+              'path' => 'v1/{+name}:subscribe',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],
+          ]
+        ]
+    );
+    $this->tasks_pushNotificationConfigs = new WorkspaceEvents\Resource\TasksPushNotificationConfigs(
+        $this,
+        $this->serviceName,
+        'pushNotificationConfigs',
+        [
+          'methods' => [
+            'create' => [
+              'path' => 'v1/{+parent}',
+              'httpMethod' => 'POST',
+              'parameters' => [
+                'parent' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'configId' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'delete' => [
+              'path' => 'v1/{+name}',
+              'httpMethod' => 'DELETE',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'get' => [
+              'path' => 'v1/{+name}',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'list' => [
+              'path' => 'v1/{+parent}/pushNotificationConfigs',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'parent' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'pageSize' => [
+                  'location' => 'query',
+                  'type' => 'integer',
+                ],
+                'pageToken' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'tenant' => [
+                  'location' => 'query',
+                  'type' => 'string',
                 ],
               ],
             ],

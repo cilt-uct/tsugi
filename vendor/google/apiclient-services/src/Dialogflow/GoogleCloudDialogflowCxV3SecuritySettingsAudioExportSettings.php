@@ -19,6 +19,10 @@ namespace Google\Service\Dialogflow;
 
 class GoogleCloudDialogflowCxV3SecuritySettingsAudioExportSettings extends \Google\Model
 {
+  public const AUDIO_FORMAT_AUDIO_FORMAT_UNSPECIFIED = 'AUDIO_FORMAT_UNSPECIFIED';
+  public const AUDIO_FORMAT_MULAW = 'MULAW';
+  public const AUDIO_FORMAT_MP3 = 'MP3';
+  public const AUDIO_FORMAT_OGG = 'OGG';
   /**
    * @var string
    */
@@ -41,7 +45,7 @@ class GoogleCloudDialogflowCxV3SecuritySettingsAudioExportSettings extends \Goog
   public $storeTtsAudio;
 
   /**
-   * @param string
+   * @param string $audioExportPattern
    */
   public function setAudioExportPattern($audioExportPattern)
   {
@@ -55,21 +59,21 @@ class GoogleCloudDialogflowCxV3SecuritySettingsAudioExportSettings extends \Goog
     return $this->audioExportPattern;
   }
   /**
-   * @param string
+   * @param self::AUDIO_FORMAT_* $audioFormat
    */
   public function setAudioFormat($audioFormat)
   {
     $this->audioFormat = $audioFormat;
   }
   /**
-   * @return string
+   * @return self::AUDIO_FORMAT_*
    */
   public function getAudioFormat()
   {
     return $this->audioFormat;
   }
   /**
-   * @param bool
+   * @param bool $enableAudioRedaction
    */
   public function setEnableAudioRedaction($enableAudioRedaction)
   {
@@ -83,7 +87,7 @@ class GoogleCloudDialogflowCxV3SecuritySettingsAudioExportSettings extends \Goog
     return $this->enableAudioRedaction;
   }
   /**
-   * @param string
+   * @param string $gcsBucket
    */
   public function setGcsBucket($gcsBucket)
   {
@@ -97,7 +101,7 @@ class GoogleCloudDialogflowCxV3SecuritySettingsAudioExportSettings extends \Goog
     return $this->gcsBucket;
   }
   /**
-   * @param bool
+   * @param bool $storeTtsAudio
    */
   public function setStoreTtsAudio($storeTtsAudio)
   {

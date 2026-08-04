@@ -20,20 +20,34 @@ namespace Google\Service\OnDemandScanning;
 class BaseImage extends \Google\Model
 {
   /**
+   * The number of layers that the base image is composed of.
+   *
    * @var int
    */
   public $layerCount;
   /**
+   * The name of the base image.
+   *
    * @var string
    */
   public $name;
   /**
+   * The registry in which the base image is from.
+   *
+   * @var string
+   */
+  public $registry;
+  /**
+   * The repository name in which the base image is from.
+   *
    * @var string
    */
   public $repository;
 
   /**
-   * @param int
+   * The number of layers that the base image is composed of.
+   *
+   * @param int $layerCount
    */
   public function setLayerCount($layerCount)
   {
@@ -47,7 +61,9 @@ class BaseImage extends \Google\Model
     return $this->layerCount;
   }
   /**
-   * @param string
+   * The name of the base image.
+   *
+   * @param string $name
    */
   public function setName($name)
   {
@@ -61,7 +77,25 @@ class BaseImage extends \Google\Model
     return $this->name;
   }
   /**
-   * @param string
+   * The registry in which the base image is from.
+   *
+   * @param string $registry
+   */
+  public function setRegistry($registry)
+  {
+    $this->registry = $registry;
+  }
+  /**
+   * @return string
+   */
+  public function getRegistry()
+  {
+    return $this->registry;
+  }
+  /**
+   * The repository name in which the base image is from.
+   *
+   * @param string $repository
    */
   public function setRepository($repository)
   {

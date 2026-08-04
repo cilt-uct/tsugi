@@ -17,19 +17,43 @@
 
 namespace Google\Service\DiscoveryEngine;
 
-class GoogleCloudDiscoveryengineV1HealthcareFhirConfig extends \Google\Model
+class GoogleCloudDiscoveryengineV1HealthcareFhirConfig extends \Google\Collection
 {
+  protected $collection_key = 'initialFilterGroups';
   /**
+   * Whether to enable configurable schema for `HEALTHCARE_FHIR` vertical. If
+   * set to `true`, the predefined healthcare fhir schema can be extended for
+   * more customized searching and filtering.
+   *
    * @var bool
    */
   public $enableConfigurableSchema;
   /**
+   * Whether to enable static indexing for `HEALTHCARE_FHIR` batch ingestion. If
+   * set to `true`, the batch ingestion will be processed in a static indexing
+   * mode which is slower but more capable of handling larger volume.
+   *
    * @var bool
    */
   public $enableStaticIndexingForBatchIngestion;
+  /**
+   * Optional. Names of the Group resources to use as a basis for the initial
+   * patient filter, in format `projects/{project_id}/locations/{location_id}/da
+   * tasets/{dataset_id}/fhirStores/{fhir_store_id}/fhir/Group/{group_id}`. The
+   * filter group must be a FHIR resource name of type Group, and the filter
+   * will be constructed from the direct members of the group which are Patient
+   * resources.
+   *
+   * @var string[]
+   */
+  public $initialFilterGroups;
 
   /**
-   * @param bool
+   * Whether to enable configurable schema for `HEALTHCARE_FHIR` vertical. If
+   * set to `true`, the predefined healthcare fhir schema can be extended for
+   * more customized searching and filtering.
+   *
+   * @param bool $enableConfigurableSchema
    */
   public function setEnableConfigurableSchema($enableConfigurableSchema)
   {
@@ -43,7 +67,11 @@ class GoogleCloudDiscoveryengineV1HealthcareFhirConfig extends \Google\Model
     return $this->enableConfigurableSchema;
   }
   /**
-   * @param bool
+   * Whether to enable static indexing for `HEALTHCARE_FHIR` batch ingestion. If
+   * set to `true`, the batch ingestion will be processed in a static indexing
+   * mode which is slower but more capable of handling larger volume.
+   *
+   * @param bool $enableStaticIndexingForBatchIngestion
    */
   public function setEnableStaticIndexingForBatchIngestion($enableStaticIndexingForBatchIngestion)
   {
@@ -55,6 +83,27 @@ class GoogleCloudDiscoveryengineV1HealthcareFhirConfig extends \Google\Model
   public function getEnableStaticIndexingForBatchIngestion()
   {
     return $this->enableStaticIndexingForBatchIngestion;
+  }
+  /**
+   * Optional. Names of the Group resources to use as a basis for the initial
+   * patient filter, in format `projects/{project_id}/locations/{location_id}/da
+   * tasets/{dataset_id}/fhirStores/{fhir_store_id}/fhir/Group/{group_id}`. The
+   * filter group must be a FHIR resource name of type Group, and the filter
+   * will be constructed from the direct members of the group which are Patient
+   * resources.
+   *
+   * @param string[] $initialFilterGroups
+   */
+  public function setInitialFilterGroups($initialFilterGroups)
+  {
+    $this->initialFilterGroups = $initialFilterGroups;
+  }
+  /**
+   * @return string[]
+   */
+  public function getInitialFilterGroups()
+  {
+    return $this->initialFilterGroups;
   }
 }
 

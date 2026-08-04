@@ -20,27 +20,78 @@ namespace Google\Service\CloudRedis;
 class MachineConfiguration extends \Google\Model
 {
   /**
+   * Optional. Baseline slots for BigQuery Reservations. Baseline slots are in
+   * increments of 50.
+   *
+   * @var string
+   */
+  public $baselineSlots;
+  /**
+   * The number of CPUs. Deprecated. Use vcpu_count instead. TODO(b/342344482)
+   * add proto validations again after bug fix.
+   *
+   * @deprecated
    * @var int
    */
   public $cpuCount;
   /**
+   * Optional. Max slots for BigQuery Reservations. Max slots are in increments
+   * of 50.
+   *
+   * @var string
+   */
+  public $maxReservationSlots;
+  /**
+   * Memory size in bytes. TODO(b/342344482) add proto validations again after
+   * bug fix.
+   *
    * @var string
    */
   public $memorySizeInBytes;
   /**
+   * Optional. Number of shards (if applicable).
+   *
    * @var int
    */
   public $shardCount;
+  /**
+   * Optional. The number of vCPUs. TODO(b/342344482) add proto validations
+   * again after bug fix.
+   *
+   * @var 
+   */
   public $vcpuCount;
 
   /**
-   * @param int
+   * Optional. Baseline slots for BigQuery Reservations. Baseline slots are in
+   * increments of 50.
+   *
+   * @param string $baselineSlots
+   */
+  public function setBaselineSlots($baselineSlots)
+  {
+    $this->baselineSlots = $baselineSlots;
+  }
+  /**
+   * @return string
+   */
+  public function getBaselineSlots()
+  {
+    return $this->baselineSlots;
+  }
+  /**
+   * The number of CPUs. Deprecated. Use vcpu_count instead. TODO(b/342344482)
+   * add proto validations again after bug fix.
+   *
+   * @deprecated
+   * @param int $cpuCount
    */
   public function setCpuCount($cpuCount)
   {
     $this->cpuCount = $cpuCount;
   }
   /**
+   * @deprecated
    * @return int
    */
   public function getCpuCount()
@@ -48,7 +99,27 @@ class MachineConfiguration extends \Google\Model
     return $this->cpuCount;
   }
   /**
-   * @param string
+   * Optional. Max slots for BigQuery Reservations. Max slots are in increments
+   * of 50.
+   *
+   * @param string $maxReservationSlots
+   */
+  public function setMaxReservationSlots($maxReservationSlots)
+  {
+    $this->maxReservationSlots = $maxReservationSlots;
+  }
+  /**
+   * @return string
+   */
+  public function getMaxReservationSlots()
+  {
+    return $this->maxReservationSlots;
+  }
+  /**
+   * Memory size in bytes. TODO(b/342344482) add proto validations again after
+   * bug fix.
+   *
+   * @param string $memorySizeInBytes
    */
   public function setMemorySizeInBytes($memorySizeInBytes)
   {
@@ -62,7 +133,9 @@ class MachineConfiguration extends \Google\Model
     return $this->memorySizeInBytes;
   }
   /**
-   * @param int
+   * Optional. Number of shards (if applicable).
+   *
+   * @param int $shardCount
    */
   public function setShardCount($shardCount)
   {

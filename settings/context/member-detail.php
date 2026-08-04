@@ -11,7 +11,7 @@ require_once("../../config.php");
 header('Content-Type: text/html; charset=utf-8');
 LTIX::session_start();
 
-if ( ! U::get($_SESSION,'id') ) {
+if ( ! isLoggedIn() ) {
     die('Must be admin');
 }
 
@@ -27,7 +27,7 @@ $row = $PDOX->rowDie("SELECT M.context_id
         OR C.user_id = :UID",
     array(
         ':MID' => $_REQUEST['membership_id'],
-        ':UID' => $_SESSION['id'])
+        ':UID' => loggedInUserId())
 );
 
 if ( $row === false || ! isset($row['context_id']) ) {
@@ -59,7 +59,7 @@ $OUTPUT->topNav();
 $OUTPUT->flashMessages();
 
 $title = "Membership";
-echo("<h1>$title</h1>\n<p>\n");
+echo("<h1>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</h1>\n<p>\n");
 $retval = CrudForm::updateForm($row, $fields, $current, $from_location, $allow_edit, $allow_delete);
 if ( is_string($retval) ) die($retval);
 echo("</p>\n");

@@ -29,7 +29,10 @@ class GoogleCloudAiplatformV1MigrateResourceRequest extends \Google\Model
   protected $migrateMlEngineModelVersionConfigDataType = '';
 
   /**
-   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlDatasetConfig
+   * Config for migrating Dataset in automl.googleapis.com to Vertex AI's
+   * Dataset.
+   *
+   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlDatasetConfig $migrateAutomlDatasetConfig
    */
   public function setMigrateAutomlDatasetConfig(GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlDatasetConfig $migrateAutomlDatasetConfig)
   {
@@ -43,7 +46,9 @@ class GoogleCloudAiplatformV1MigrateResourceRequest extends \Google\Model
     return $this->migrateAutomlDatasetConfig;
   }
   /**
-   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlModelConfig
+   * Config for migrating Model in automl.googleapis.com to Vertex AI's Model.
+   *
+   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlModelConfig $migrateAutomlModelConfig
    */
   public function setMigrateAutomlModelConfig(GoogleCloudAiplatformV1MigrateResourceRequestMigrateAutomlModelConfig $migrateAutomlModelConfig)
   {
@@ -57,13 +62,18 @@ class GoogleCloudAiplatformV1MigrateResourceRequest extends \Google\Model
     return $this->migrateAutomlModelConfig;
   }
   /**
-   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateDataLabelingDatasetConfig
+   * Deprecated: Data labeling service is shut down. Config for migrating
+   * Dataset in datalabeling.googleapis.com to Vertex AI's Dataset.
+   *
+   * @deprecated
+   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateDataLabelingDatasetConfig $migrateDataLabelingDatasetConfig
    */
   public function setMigrateDataLabelingDatasetConfig(GoogleCloudAiplatformV1MigrateResourceRequestMigrateDataLabelingDatasetConfig $migrateDataLabelingDatasetConfig)
   {
     $this->migrateDataLabelingDatasetConfig = $migrateDataLabelingDatasetConfig;
   }
   /**
+   * @deprecated
    * @return GoogleCloudAiplatformV1MigrateResourceRequestMigrateDataLabelingDatasetConfig
    */
   public function getMigrateDataLabelingDatasetConfig()
@@ -71,7 +81,9 @@ class GoogleCloudAiplatformV1MigrateResourceRequest extends \Google\Model
     return $this->migrateDataLabelingDatasetConfig;
   }
   /**
-   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateMlEngineModelVersionConfig
+   * Config for migrating Version in ml.googleapis.com to Vertex AI's Model.
+   *
+   * @param GoogleCloudAiplatformV1MigrateResourceRequestMigrateMlEngineModelVersionConfig $migrateMlEngineModelVersionConfig
    */
   public function setMigrateMlEngineModelVersionConfig(GoogleCloudAiplatformV1MigrateResourceRequestMigrateMlEngineModelVersionConfig $migrateMlEngineModelVersionConfig)
   {

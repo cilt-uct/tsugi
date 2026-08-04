@@ -7,6 +7,8 @@ if ( !isset($PDOX) ) {
     require $CFG->dirroot."/admin/migrate-setup.php";
 }
 
+if ( ! isset($CFG) ) exit;
+
 $DATABASE_UNINSTALL = array(
 "drop table if exists {$CFG->dbprefix}lti_result",
 "drop table if exists {$CFG->dbprefix}lti_service",
@@ -27,52 +29,13 @@ $DATABASE_UNINSTALL = array(
 "drop table if exists {$CFG->dbprefix}cal_key",
 "drop table if exists {$CFG->dbprefix}cal_context",
 "drop table if exists {$CFG->dbprefix}tsugi_string",
-"drop table if exists {$CFG->dbprefix}sessions",
-"drop table if exists {$CFG->dbprefix}profile"
+"drop table if exists {$CFG->dbprefix}sessions"
 );
 
 // Note that the TEXT xxx_key fields are UNIQUE but not
 // marked as UNIQUE because of MySQL key index length limitations.
 
 $DATABASE_INSTALL = array(
-array( "{$CFG->dbprefix}lti_issuer",
-"create table {$CFG->dbprefix}lti_issuer (
-    issuer_id           INTEGER NOT NULL AUTO_INCREMENT,
-    issuer_title        TEXT NULL,
-    issuer_sha256       CHAR(64) NULL,  -- Will become obsolete
-    issuer_guid         CHAR(36) NOT NULL,  -- Our local GUID
-
-    deleted             TINYINT(1) NOT NULL DEFAULT 0,
-
-    -- This is the owner of this issuer - it is not a foreign key
-    -- We might use this if we end up with self-service issuers
-    user_id             INTEGER NULL,
-
-    issuer_key          TEXT NOT NULL,  -- iss from the JWT
-    issuer_client       TEXT NOT NULL,  -- aud from the JWT
-    lti13_oidc_auth     TEXT NULL,
-    lti13_keyset_url    TEXT NULL,
-    lti13_token_url     TEXT NULL,
-    lti13_token_audience  TEXT NULL,
-
-    -- Cached values
-    lti13_keyset        TEXT NULL,
-    lti13_platform_pubkey TEXT NULL,
-    lti13_kid           TEXT NULL,
-
-    json                MEDIUMTEXT NULL,
-
-    created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP NULL,
-    deleted_at          TIMESTAMP NULL,
-    login_at            TIMESTAMP NULL,
-    login_count         BIGINT DEFAULT 0,
-    login_time          BIGINT DEFAULT 0,
-
-    CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_pk` PRIMARY KEY (issuer_id),
-    CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_guid` UNIQUE (issuer_guid)
- ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
-
 array( "{$CFG->dbprefix}lti_keyset",
 "create table {$CFG->dbprefix}lti_keyset (
     keyset_id           INTEGER NOT NULL AUTO_INCREMENT,
@@ -87,9 +50,6 @@ array( "{$CFG->dbprefix}lti_keyset",
     deleted_at          TIMESTAMP NULL,
     CONSTRAINT `{$CFG->dbprefix}lti_keyset_const_pk` PRIMARY KEY (keyset_id)
  ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
-
-// Removed in issuer refactor
-//    CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_1` UNIQUE(issuer_sha256),
 
 // https://stackoverflow.com/questions/28418360/jwt-json-web-token-audience-aud-versus-client-id-whats-the-difference
 
@@ -114,30 +74,14 @@ array( "{$CFG->dbprefix}lti_key",
     -- on purpose to avoid potential circular foreign keys
     user_id             INTEGER NULL,
 
-    -- When LTI 1.3 Security arrangements are auto-provisioned
-    -- and the issuer matches a pre-created issuer, we link to it.
-    -- Or if the key is being manually configured, we link to
-    -- a pre-created issuer.  If this is set, all the lms_
-    -- values below are in effect ignored.
-    issuer_id           INTEGER NULL,
-
-    -- Issuer / client_id / deployment_id defines a client (i.e. who -- pays the bill)
+    -- Issuer / client_id / deployment_id defines a client (i.e. who pays the bill)
 
     deploy_sha256       CHAR(64) NULL,
     deploy_key          TEXT NULL,     -- deployment_id renamed
 
-    -- But if the issuer is not pre-existing during dynamic configuration,
-    -- we leave issuer_id null -- and store the security arrangement data
-    -- here in the key.  The user never touches these LTI 1.3 fields in the
-    -- management UI These columns are explicitly *not* named the same as the
-    -- fields in the lti_issuers table so as to allow LEFT JOIN and COALESCE
-    -- to be easily used and to make sure we are doing the right things
-    -- to the right tables.
-
-    -- Issuer is not unique - especially in single instance cloud LMS systems
-    -- Issuer / client_id uniquely identifies a security arrangement
-    -- But because Tsugi forces oidc_login and oidc_launch to a URL that
-    -- includes key_id, we can just look up the proper row in this table by PK
+    -- Per-key LTI 1.3 platform configuration (dynamic registration or manual entry).
+    -- oidc_login uses key_id in the URL, so launch lookup is by primary key plus
+    -- lms_client and wildcard iss handling in LTIX::loadAllData().
 
     lms_issuer           TEXT NULL,  -- iss from the JWT
     lms_issuer_sha256    CHAR(64) NULL,
@@ -174,13 +118,9 @@ array( "{$CFG->dbprefix}lti_key",
     login_count         BIGINT DEFAULT 0,
     login_time          BIGINT DEFAULT 0,
 
-    CONSTRAINT `{$CFG->dbprefix}lti_key_ibfk_1`
-        FOREIGN KEY (`issuer_id`)
-        REFERENCES `{$CFG->dbprefix}lti_issuer` (`issuer_id`)
-        ON DELETE SET NULL ON UPDATE CASCADE,
-
+    -- deploy_sha256 participates in uniqueness; NULL deploy_sha256 (wildcard deploy_key)
+    -- allows multiple rows per key_sha256 in typical MySQL UNIQUE-with-NULL semantics.
     CONSTRAINT `{$CFG->dbprefix}lti_key_const_1` UNIQUE(key_sha256, deploy_sha256),
-    CONSTRAINT `{$CFG->dbprefix}lti_key_const_2` UNIQUE(issuer_id, deploy_sha256),
     CONSTRAINT `{$CFG->dbprefix}lti_key_const_pk` PRIMARY KEY (key_id)
  ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
@@ -288,6 +228,8 @@ array( "{$CFG->dbprefix}lti_context",
     login_count         BIGINT DEFAULT 0,
     login_time          BIGINT DEFAULT 0,
 
+    viewDueDates        TINYINT(1) NOT NULL DEFAULT 1,
+
     created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP NULL,
     deleted_at          TIMESTAMP NULL,
@@ -320,6 +262,8 @@ array( "{$CFG->dbprefix}lti_link",
 
     title               TEXT NULL,
     score_maximum       DOUBLE NULL,
+    start_datetime      TIMESTAMP NULL,
+    end_datetime        TIMESTAMP NULL,
 
     json                MEDIUMTEXT NULL,
     settings            MEDIUMTEXT NULL,
@@ -374,6 +318,8 @@ array( "{$CFG->dbprefix}lti_membership",
 
     role                SMALLINT NULL,
     role_override       SMALLINT NULL,
+
+    viewDueDates        TINYINT(1) NOT NULL DEFAULT 1,
 
     json                MEDIUMTEXT NULL,
 
@@ -470,8 +416,13 @@ array( "{$CFG->dbprefix}lti_result",
     note               MEDIUMTEXT NULL,
     attempts           INTEGER NULL,
     server_grade       FLOAT NULL,
-    grading_progress   TINYINT(1) NOT NULL DEFAULT 0,
-    activity_progress  TINYINT(1) NOT NULL DEFAULT 0,
+    grading_progress   VARCHAR(30) NOT NULL DEFAULT 'NotReady',
+    activity_progress  VARCHAR(30) NOT NULL DEFAULT 'Initialized',
+    result_maximum     DOUBLE NULL,
+    lti13_result_id    TEXT NULL,
+    scoring_user_id    INTEGER NULL,
+    score_timestamp   TIMESTAMP NULL,
+    submitted_at       TIMESTAMP NULL,
 
     json               MEDIUMTEXT NULL,
     entity_version     INTEGER NOT NULL DEFAULT 0,
@@ -496,10 +447,19 @@ array( "{$CFG->dbprefix}lti_result",
         REFERENCES `{$CFG->dbprefix}lti_service` (`service_id`)
         ON DELETE CASCADE ON UPDATE CASCADE,
 
+    CONSTRAINT `{$CFG->dbprefix}lti_result_ibfk_4`
+        FOREIGN KEY (`scoring_user_id`)
+        REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
     -- Note service_id is not part of the key on purpose
     -- It is data that can change and can be null in LTI 2.0
     CONSTRAINT `{$CFG->dbprefix}lti_result_const_1` UNIQUE(link_id, user_id),
-    CONSTRAINT `{$CFG->dbprefix}lti_result_const_pk`  PRIMARY KEY (result_id)
+    CONSTRAINT `{$CFG->dbprefix}lti_result_const_pk`  PRIMARY KEY (result_id),
+    
+    -- Indexes for performance optimization (grades queries)
+    KEY `{$CFG->dbprefix}lti_result_indx_link_deleted_grade` (link_id, deleted, grade),
+    KEY `{$CFG->dbprefix}lti_result_indx_link_user_grade` (link_id, user_id, grade, deleted)
 ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
 // Nonce is not connected using foreign key for performance
@@ -609,34 +569,6 @@ array( "{$CFG->dbprefix}sessions",
         updated_at          TIMESTAMP NULL
 ) COLLATE utf8_bin, ENGINE = InnoDB;"),
 
-// Profile is denormalized and not tightly connected to allow
-// for disconnecting and reconnecting various user_id values
-array( "{$CFG->dbprefix}profile",
-"create table {$CFG->dbprefix}profile (
-    profile_id          INTEGER NOT NULL AUTO_INCREMENT,
-    profile_sha256      CHAR(64) NOT NULL UNIQUE,
-    profile_key         TEXT NOT NULL,
-    deleted             TINYINT(1) NOT NULL DEFAULT 0,
-
-    key_id              INTEGER NOT NULL,
-
-    displayname         TEXT NULL,
-    email               TEXT NULL,
-    image               TEXT NULL,
-    locale              CHAR(63) NULL,
-    subscribe           SMALLINT NULL,
-    google_translate    TINYINT(1) NOT NULL DEFAULT 0,
-
-    json                MEDIUMTEXT NULL,
-    login_at            TIMESTAMP NULL,
-    entity_version      INTEGER NOT NULL DEFAULT 0,
-    created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP NULL,
-    deleted_at          TIMESTAMP NULL,
-
-    CONSTRAINT `{$CFG->dbprefix}profile_const_pk` PRIMARY KEY (profile_id)
-) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
-
 // Caliper tables - event oriented - no foreign keys to the lti_tables
 
 // "FIFO" buffer of events no explicit foreign key
@@ -698,13 +630,13 @@ array( "{$CFG->dbprefix}cal_context",
 
     CONSTRAINT `{$CFG->dbprefix}cal_context_const_1` UNIQUE(key_id, context_sha256),
     CONSTRAINT `{$CFG->dbprefix}cal_context_const_pk` PRIMARY KEY (context_id)
-) ENGINE = InnoDB DEFAULT CHARSET=utf8")
+) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
+
 );
 
 // Called after a table has been created...
 $DATABASE_POST_CREATE = function($table) {
     global $CFG, $PDOX;
-
 
     if ( $table == "{$CFG->dbprefix}lti_key") {
         $shaval = lti_sha256('12345');
@@ -756,17 +688,13 @@ $DATABASE_UPGRADE = function($oldversion) {
     // This is a place to make sure added fields are present
     // if you add a field to a table, put it in here and it will be auto-added
     $add_some_fields = array(
-        array('lti_issuer', 'issuer_title', 'TEXT NULL'),
         array('lti_key', 'key_title', 'TEXT NULL'),
-        array('profile', 'google_translate', 'TINYINT(1) NOT NULL DEFAULT 0'),
         array('lti_link', 'lti13_lineitem', 'TEXT NULL'),
         array('lti_context', 'lti13_lineitems', 'TEXT NULL'),
         array('lti_context', 'user_json', 'MEDIUMTEXT NULL'),
         array('lti_context', 'lti13_membership_url', 'TEXT NULL'),
         array('lti_key', 'deploy_key', 'TEXT NULL'),
-        array('lti_key', 'issuer_id', 'INTEGER NULL'),
         array('lti_key', 'user_json', 'MEDIUMTEXT NULL'),
-        array('lti_issuer', 'lti13_token_audience', 'TEXT NULL'),
         array('lti_key', 'xapi_url', 'TEXT NULL'),
         array('lti_key', 'xapi_user', 'TEXT NULL'),
         array('lti_key', 'xapi_password', 'TEXT NULL'),
@@ -787,9 +715,16 @@ $DATABASE_UPGRADE = function($oldversion) {
 
         array('lti_keyset', 'keyset_title', 'TEXT NULL'),
 
-        array('lti_result', 'grading_progress', 'TINYINT(1) NOT NULL DEFAULT 0'),
-        array('lti_result', 'activity_progress', 'TINYINT(1) NOT NULL DEFAULT 0'),
+        array('lti_result', 'grading_progress', 'VARCHAR(30) NOT NULL DEFAULT \'NotReady\''),
+        array('lti_result', 'activity_progress', 'VARCHAR(30) NOT NULL DEFAULT \'Initialized\''),
         array('lti_link', 'score_maximum', 'DOUBLE NULL'),
+
+        // 2025-03-10 AGS Phase 1: result schema for Assignments and Grades Service
+        array('lti_result', 'result_maximum', 'DOUBLE NULL'),
+        array('lti_result', 'lti13_result_id', 'TEXT NULL'),
+        array('lti_result', 'scoring_user_id', 'INTEGER NULL'),
+        array('lti_result', 'score_timestamp', 'TIMESTAMP NULL'),
+        array('lti_result', 'submitted_at', 'TIMESTAMP NULL'),
 
         // 2023-05-11
         array('lti_key', 'unlock_code', 'MEDIUMTEXT NULL'),
@@ -800,6 +735,14 @@ $DATABASE_UPGRADE = function($oldversion) {
         // 2024-09-17
         array('lti_result', 'attempts', 'INTEGER NULL'),
         array('lti_result', 'attempted_at', 'TIMESTAMP NULL'),
+
+        // 2025-03-11 AGS LineItem due dates (startDateTime/endDateTime)
+        array('lti_link', 'start_datetime', 'TIMESTAMP NULL'),
+        array('lti_link', 'end_datetime', 'TIMESTAMP NULL'),
+
+        // 2026-03-29 Per-context and per-membership visibility for due dates (existing rows default to on)
+        array('lti_context', 'viewDueDates', 'TINYINT(1) NOT NULL DEFAULT 1'),
+        array('lti_membership', 'viewDueDates', 'TINYINT(1) NOT NULL DEFAULT 1'),
     );
 
     foreach ( $add_some_fields as $add_field ) {
@@ -840,13 +783,6 @@ $DATABASE_UPGRADE = function($oldversion) {
         array('lti_key', 'tool_profile'),
         array('lti_key', 'new_tool_profile'),
         array('lti_key', 'ack'),
-
-        // Short-lived key rotation idea - replaced by lti_keyset
-        array('lti_issuer', 'lti13_pubkey_old',),
-        array('lti_issuer', 'lti13_pubkey_old_at'),
-        array('lti_issuer', 'lti13_pubkey_next'),
-        array('lti_issuer', 'lti13_pubkey_next_at'),
-        array('lti_issuer', 'lti13_privkey_next'),
 
         // TODO: Twists and turns - remove these after the branch has run for a bit
         array('lti_key', 'lms_issuer_key'),
@@ -898,15 +834,17 @@ $DATABASE_UPGRADE = function($oldversion) {
     // Make sure that lti_key has the correct unique indexes
     $needed_indexes = array(
         'lti_key_const_1' => 'ADD CONSTRAINT `lti_key_const_1` UNIQUE(key_sha256, deploy_sha256)',
-        'lti_key_const_2' => 'ADD CONSTRAINT `lti_key_const_2` UNIQUE(issuer_id, deploy_sha256)',
     );
 
     $indexes = $PDOX->indexes($CFG->dbprefix."lti_key");
 
     // DROP INDEX index_name ON tbl_name
+    $keep_issuer_index = $PDOX->columnExists('issuer_id', $CFG->dbprefix."lti_key");
     foreach($indexes as $index) {
         if ( strcasecmp($index, "PRIMARY") == 0 ) continue;
         if ( strcasecmp($index, "ibfk") == 0 ) continue;
+        // lti_key_const_2 backs issuer_id until lti_issuer phase 3 (2026-10-01 UTC)
+        if ( $keep_issuer_index && $index === $CFG->dbprefix."lti_key_const_2" ) continue;
         $command = isset($needed_indexes[$index]) ? $needed_indexes[$index] : null;
         if ( is_string($command) ) continue;
         $sql = "DROP INDEX ".$index." ON ".$CFG->dbprefix."lti_key";
@@ -1040,8 +978,7 @@ $DATABASE_UPGRADE = function($oldversion) {
     // Add the deleted_at column to columns if they are not there.
     // Double check created_at and updated_at
     $tables = array( 'lti_key', 'lti_context', 'lti_link', 'lti_user',
-        'lti_membership', 'lti_service', 'lti_result', 'lti_domain',
-         'profile');
+        'lti_membership', 'lti_service', 'lti_result', 'lti_domain');
     foreach($tables as $table) {
         if ( ! $PDOX->columnExists('deleted_at', "{$CFG->dbprefix}".$table) ) {
             $sql= "ALTER TABLE {$CFG->dbprefix}{$table} ADD deleted_at TIMESTAMP NULL";
@@ -1069,20 +1006,6 @@ $DATABASE_UPGRADE = function($oldversion) {
         echo("Upgrading: ".$sql."<br/>\n");
         error_log("Upgrading: ".$sql);
         $q = $PDOX->queryReturnError($sql);
-
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_key DROP KEY `{$CFG->dbprefix}lti_key_ibfk_1`";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
-
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_key ADD
-                CONSTRAINT `{$CFG->dbprefix}lti_key_ibfk_1`
-                FOREIGN KEY (`issuer_id`)
-                REFERENCES `{$CFG->dbprefix}lti_issuer` (`issuer_id`)
-                ON DELETE SET NULL ON UPDATE CASCADE";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
     }
 
     // Version 201905111039 improvements - Prepare for issuer refactor
@@ -1097,22 +1020,55 @@ $DATABASE_UPGRADE = function($oldversion) {
         $q = $PDOX->queryReturnError($sql);
     }
 
+    // Legacy lti_issuer column renames and issuer_guid (only while table still exists)
+    $issuer_table = "{$CFG->dbprefix}lti_issuer";
+    if ( $PDOX->metadata($issuer_table) !== false ) {
+
     // Note still have to edit the entry to get the sha256 properly set
-    if ( $PDOX->columnExists('issuer_issuer', "{$CFG->dbprefix}lti_issuer") &&
-         ! $PDOX->columnExists('issuer_key', "{$CFG->dbprefix}lti_issuer") ) {
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_issuer CHANGE issuer_issuer issuer_key TEXT NULL";
+    if ( $PDOX->columnExists('issuer_issuer', $issuer_table) &&
+         ! $PDOX->columnExists('issuer_key', $issuer_table) ) {
+        $sql= "ALTER TABLE {$issuer_table} CHANGE issuer_issuer issuer_key TEXT NULL";
         echo("Upgrading: ".$sql."<br/>\n");
         error_log("Upgrading: ".$sql);
         $q = $PDOX->queryReturnError($sql);
     }
 
-    if ( $PDOX->columnExists('issuer_client_id', "{$CFG->dbprefix}lti_issuer") &&
-         ! $PDOX->columnExists('issuer_client', "{$CFG->dbprefix}lti_issuer") ) {
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_issuer CHANGE issuer_client_id issuer_client TEXT NULL";
+    if ( $PDOX->columnExists('issuer_client_id', $issuer_table) &&
+         ! $PDOX->columnExists('issuer_client', $issuer_table) ) {
+        $sql= "ALTER TABLE {$issuer_table} CHANGE issuer_client_id issuer_client TEXT NULL";
         echo("Upgrading: ".$sql."<br/>\n");
         error_log("Upgrading: ".$sql);
         $q = $PDOX->queryReturnError($sql);
     }
+
+    // Add the issuer_guid field
+    if ( ! $PDOX->columnExists('issuer_guid', $issuer_table) ) {
+        $sql= "ALTER TABLE {$issuer_table} ADD issuer_guid CHAR(36) NULL DEFAULT '42'";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+
+        $sql= "UPDATE {$issuer_table} SET issuer_guid=(SELECT UUID()) WHERE issuer_guid='42'";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+
+        $sql= "ALTER TABLE {$issuer_table} ADD
+                   CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_guid`
+                   UNIQUE (`issuer_guid`)";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+
+        // CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_1` UNIQUE(issuer_sha256),
+        $sql= "ALTER TABLE {$issuer_table} DROP KEY `{$CFG->dbprefix}lti_issuer_const_1`";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+
+    }
+
+    } // end legacy lti_issuer column migrations
 
     if ( $PDOX->columnExists('user_subject', "{$CFG->dbprefix}lti_user") &&
          ! $PDOX->columnExists('subject_key', "{$CFG->dbprefix}lti_user") ) {
@@ -1162,56 +1118,285 @@ $DATABASE_UPGRADE = function($oldversion) {
         $q = $PDOX->queryReturnError($sql);
     }
 
-    // Add the issuer_guid field
-    if ( ! $PDOX->columnExists('issuer_guid', "{$CFG->dbprefix}lti_issuer") ) {
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_issuer ADD issuer_guid CHAR(36) NULL DEFAULT '42'";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
-
-        $sql= "UPDATE {$CFG->dbprefix}lti_issuer SET issuer_guid=(SELECT UUID()) WHERE issuer_guid='42'";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
-
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_issuer ADD
-                   CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_guid`
-                   UNIQUE (`issuer_guid`)";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
-
-        // CONSTRAINT `{$CFG->dbprefix}lti_issuer_const_1` UNIQUE(issuer_sha256),
-        $sql= "ALTER TABLE {$CFG->dbprefix}lti_issuer DROP KEY `{$CFG->dbprefix}lti_issuer_const_1`";
-        echo("Upgrading: ".$sql."<br/>\n");
-        error_log("Upgrading: ".$sql);
-        $q = $PDOX->queryReturnError($sql);
-
-    }
-
     // Auto populate and/or rotate the lti_keyset data
     echo("Checking lti_keyset<br/>\n");
     $success = \Tsugi\Core\Keyset::maintain();
     if ( is_string($success) ) {
-        error_log("Unable to generate public/private pair: ".$retval);
-        echo("Unable to generate public/private pair: ".$retval."<br/>\n");
+        error_log("Unable to generate public/private pair: ".$success);
+        echo("Unable to generate public/private pair: ".$success."<br/>\n");
     }
 
-    // It seems like some automatically created LTI1.1 keys between
-    // 2017-10-25 and 2019-07-04 ended up with the wrong key_sha256 for the
-    // key_key value - because of the way LTIX.php works it is as if these keys
-    // don't exist
-    /* Removed 2020-Sep-30 - I am sure the keys are cleaned up by now.
-    $sql = "UPDATE {$CFG->dbprefix}lti_key SET key_sha256=sha2(key_key, 256)
-        WHERE key_key IS NOT NULL AND key_sha256 != sha2(key_key, 256);";
-    echo("Upgrading: ".$sql."<br/>\n");
-    error_log("Upgrading: ".$sql);
-    $q = $PDOX->queryReturnError($sql);
-     */
+    // Add indexes that might not be there
+    $indexes_to_create = array(
+        "{$CFG->dbprefix}lti_result_indx_link_deleted_grade" => 
+            "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_deleted_grade` ON {$CFG->dbprefix}lti_result (link_id, deleted, grade)",
+        "{$CFG->dbprefix}lti_result_indx_link_user_grade" => 
+            "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_user_grade` ON {$CFG->dbprefix}lti_result (link_id, user_id, grade, deleted)"
+    );
+    
+    foreach($indexes_to_create as $index_name => $sql) {
+        if ( ! $PDOX->indexExists($index_name, "{$CFG->dbprefix}lti_result") ) {
+            echo("Upgrading: ".$sql."<br/>\n");
+            error_log("Upgrading: ".$sql);
+            $q = $PDOX->queryReturnError($sql);
+            if ( ! $q->success ) {
+                $message = "Non-Fatal error creating index: ".$q->errorImplode;
+                error_log($message);
+                echo($message."<br/>\n");
+            }
+        }
+    }
+
+    // 2025-03-10 AGS Phase 1: Replace unused TINYINT grading/activity_progress with VARCHAR(30)
+    // Two separate checks: if TINYINT drop it, if column missing add it. Columns were never read/written.
+    if ( $PDOX->isMySQL() ) {
+        if ( $PDOX->columnExists('grading_progress', "{$CFG->dbprefix}lti_result") ) {
+            $grading_col = $PDOX->describeColumn('grading_progress', "{$CFG->dbprefix}lti_result");
+            $grading_type = $grading_col ? strtolower(\Tsugi\Util\U::get($grading_col, "Type", "")) : "";
+            if ( strpos($grading_type, 'tinyint') !== false ) {
+                $sql = "ALTER TABLE {$CFG->dbprefix}lti_result DROP COLUMN grading_progress";
+                echo("Upgrading: ".$sql."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $PDOX->queryReturnError($sql);
+            }
+        }
+        if ( ! $PDOX->columnExists('grading_progress', "{$CFG->dbprefix}lti_result") ) {
+            $sql = "ALTER TABLE {$CFG->dbprefix}lti_result ADD COLUMN grading_progress VARCHAR(30) NOT NULL DEFAULT 'NotReady'";
+            echo("Upgrading: ".$sql."<br/>\n");
+            error_log("Upgrading: ".$sql);
+            $PDOX->queryReturnError($sql);
+        }
+        if ( $PDOX->columnExists('activity_progress', "{$CFG->dbprefix}lti_result") ) {
+            $activity_col = $PDOX->describeColumn('activity_progress', "{$CFG->dbprefix}lti_result");
+            $activity_type = $activity_col ? strtolower(\Tsugi\Util\U::get($activity_col, "Type", "")) : "";
+            if ( strpos($activity_type, 'tinyint') !== false ) {
+                $sql = "ALTER TABLE {$CFG->dbprefix}lti_result DROP COLUMN activity_progress";
+                echo("Upgrading: ".$sql."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $PDOX->queryReturnError($sql);
+            }
+        }
+        if ( ! $PDOX->columnExists('activity_progress', "{$CFG->dbprefix}lti_result") ) {
+            $sql = "ALTER TABLE {$CFG->dbprefix}lti_result ADD COLUMN activity_progress VARCHAR(30) NOT NULL DEFAULT 'Initialized'";
+            echo("Upgrading: ".$sql."<br/>\n");
+            error_log("Upgrading: ".$sql);
+            $PDOX->queryReturnError($sql);
+        }
+    }
+
+    // Add FK for scoring_user_id if column exists and FK does not
+    if ( $PDOX->columnExists('scoring_user_id', "{$CFG->dbprefix}lti_result") ) {
+        $indexes = $PDOX->indexes("{$CFG->dbprefix}lti_result");
+        $fk_name = "{$CFG->dbprefix}lti_result_ibfk_4";
+        if ( ! in_array($fk_name, $indexes) ) {
+            $sql = "ALTER TABLE {$CFG->dbprefix}lti_result ADD CONSTRAINT `{$fk_name}`
+                FOREIGN KEY (`scoring_user_id`) REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+                ON DELETE SET NULL ON UPDATE CASCADE";
+            echo("Upgrading: ".$sql."<br/>\n");
+            error_log("Upgrading: ".$sql);
+            $q = $PDOX->queryReturnError($sql);
+            if ( ! $q->success ) {
+                $message = "Non-Fatal adding scoring_user_id FK: ".$q->errorImplode;
+                error_log($message);
+                echo($message."<br/>\n");
+            }
+        }
+    }
+
+    // Issue #226 phase 1: copy lti_issuer data into lti_key for all linked keys (idempotent).
+    // Clears issuer_id, lms_issuer, and lms_issuer_sha256 on lti_key; copies other lms_*
+    // from issuer (issuer precedence, key fallback). Safe to run until phase 3 drops the table.
+    if ( $PDOX->metadata($issuer_table) !== false
+        && $PDOX->columnExists('lms_issuer', "{$CFG->dbprefix}lti_key") ) {
+        $lti_migration_coalesce = function($issuer_val, $key_val) {
+            if ( $issuer_val !== null && $issuer_val !== '' && strlen(trim((string) $issuer_val)) > 0 ) {
+                return $issuer_val;
+            }
+            if ( $key_val !== null && $key_val !== '' && strlen(trim((string) $key_val)) > 0 ) {
+                return $key_val;
+            }
+            return null;
+        };
+        $sql = "SELECT I.*, K.key_id,
+                K.lms_client AS key_lms_client, K.lms_oidc_auth AS key_lms_oidc_auth,
+                K.lms_keyset_url AS key_lms_keyset_url, K.lms_token_url AS key_lms_token_url,
+                K.lms_token_audience AS key_lms_token_audience,
+                C.keys_per_issuer
+            FROM {$issuer_table} AS I
+            INNER JOIN {$CFG->dbprefix}lti_key AS K ON I.issuer_id = K.issuer_id
+                AND (K.deleted IS NULL OR K.deleted = 0)
+            INNER JOIN (
+                SELECT I2.issuer_id, COUNT(K2.key_id) AS keys_per_issuer
+                FROM {$issuer_table} AS I2
+                LEFT JOIN {$CFG->dbprefix}lti_key AS K2 ON I2.issuer_id = K2.issuer_id
+                    AND (K2.deleted IS NULL OR K2.deleted = 0)
+                WHERE (I2.deleted IS NULL OR I2.deleted = 0)
+                GROUP BY I2.issuer_id
+            ) AS C ON C.issuer_id = I.issuer_id
+            WHERE (I.deleted IS NULL OR I.deleted = 0)
+                AND K.issuer_id IS NOT NULL AND K.issuer_id > 0
+            ORDER BY I.issuer_id ASC, K.key_id ASC";
+        $stmt = $PDOX->queryReturnError($sql, false, false);
+        $moved = 0;
+        if ( ! $stmt || ! $stmt->success ) {
+            $err = ($stmt && isset($stmt->errorImplode)) ? $stmt->errorImplode : 'unknown error';
+            echo("lti_issuer migration SELECT failed: ".htmlentities($err)."<br/>\n");
+            error_log('lti_issuer migration SELECT failed: '.$err);
+        } else {
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $row_count = is_array($rows) ? count($rows) : 0;
+            if ( is_array($rows) && $row_count > 0 ) {
+                $multi_issuers = array();
+                foreach ( $rows as $row ) {
+                    $keys_per_issuer = (int) $row['keys_per_issuer'];
+                    if ( $keys_per_issuer > 1 ) {
+                        $multi_issuers[$row['issuer_id']] = $keys_per_issuer;
+                    }
+                }
+                echo("lti_issuer migration: {$row_count} lti_key row(s) still linked to lti_issuer<br/>\n");
+                error_log("lti_issuer migration: {$row_count} lti_key row(s) still linked to lti_issuer");
+                if ( count($multi_issuers) > 0 ) {
+                    foreach ( $multi_issuers as $mid => $mcount ) {
+                        echo("lti_issuer migration WARNING: lti_issuer issuer_id={$mid}"
+                            ." has {$mcount} lti_key rows pointing to it (multi-key issuer)<br/>\n");
+                        error_log("lti_issuer migration WARNING: lti_issuer issuer_id={$mid}"
+                            ." has {$mcount} lti_key rows pointing to it (multi-key issuer)");
+                    }
+                }
+                $update_sql = "UPDATE {$CFG->dbprefix}lti_key SET
+                        issuer_id = NULL,
+                        lms_issuer = NULL,
+                        lms_issuer_sha256 = NULL,
+                        lms_client = :lms_client,
+                        lms_oidc_auth = :lms_oidc_auth,
+                        lms_keyset_url = :lms_keyset_url,
+                        lms_token_url = :lms_token_url,
+                        lms_token_audience = :lms_token_audience,
+                        updated_at = NOW()
+                    WHERE key_id = :ID AND issuer_id = :old_issuer_id";
+                foreach ( $rows as $row ) {
+                    $key_id = $row['key_id'];
+                    $old_issuer_id = $row['issuer_id'];
+                    $values = array(
+                        ':ID' => $key_id,
+                        ':old_issuer_id' => $old_issuer_id,
+                        ':lms_client' => $lti_migration_coalesce($row['issuer_client'], $row['key_lms_client']),
+                        ':lms_oidc_auth' => $lti_migration_coalesce($row['lti13_oidc_auth'], $row['key_lms_oidc_auth']),
+                        ':lms_keyset_url' => $lti_migration_coalesce($row['lti13_keyset_url'], $row['key_lms_keyset_url']),
+                        ':lms_token_url' => $lti_migration_coalesce($row['lti13_token_url'], $row['key_lms_token_url']),
+                        ':lms_token_audience' => $lti_migration_coalesce($row['lti13_token_audience'], $row['key_lms_token_audience']),
+                    );
+                    $q = $PDOX->queryReturnError($update_sql, $values);
+                    if ( ! $q->success ) {
+                        echo("lti_issuer migration UPDATE failed for lti_key key_id={$key_id}"
+                            ." (issuer_id was {$old_issuer_id}): "
+                            .htmlentities($q->errorImplode)."<br/>\n");
+                        error_log("lti_issuer migration UPDATE failed for lti_key key_id={$key_id}"
+                            ." (issuer_id was {$old_issuer_id}): ".$q->errorImplode);
+                    } else if ( $q->rowCount() > 0 ) {
+                        $moved++;
+                    }
+                }
+            }
+        }
+        if ( $moved > 0 ) {
+            $summary = 'lti_issuer migration complete: broke FK on '.$moved.' lti_key row(s)'
+                .' (issuer_id nulled, LMS endpoints copied from lti_issuer)';
+            echo($summary."<br/>\n");
+            error_log($summary);
+        }
+    }
+
+    // Issue #226 phase 3: drop lti_issuer table and issuer_id column (on or after 2026-10-01 UTC)
+    $issuer_drop_after = gmmktime(0, 0, 0, 10, 1, 2026);
+    if ( time() >= $issuer_drop_after ) {
+        $key_table = "{$CFG->dbprefix}lti_key";
+        $have_issuer_table = ($PDOX->metadata($issuer_table) !== false);
+        $have_issuer_id = $PDOX->columnExists('issuer_id', $key_table);
+
+        if ( $have_issuer_table || $have_issuer_id ) {
+            if ( $have_issuer_id ) {
+                $linked_stmt = $PDOX->queryReturnError(
+                    "SELECT COUNT(*) AS linked_key_count FROM {$key_table}
+                        WHERE issuer_id IS NOT NULL AND issuer_id > 0
+                        AND (deleted IS NULL OR deleted = 0)",
+                    false,
+                    false
+                );
+                if ( $linked_stmt && $linked_stmt->success ) {
+                    $linked_row = $linked_stmt->fetch(\PDO::FETCH_ASSOC);
+                    $linked_key_count = (int) \Tsugi\Util\U::get($linked_row, 'linked_key_count', 0);
+                    if ( $linked_key_count > 0 ) {
+                        $warn = "lti_issuer phase 3 WARNING: {$linked_key_count} lti_key row(s)"
+                            ." still have issuer_id set; dropping legacy schema anyway";
+                        echo(htmlentities($warn)."<br/>\n");
+                        error_log($warn);
+                    }
+                }
+            }
+
+            $key_indexes = $PDOX->indexes($key_table);
+            $fk_name = "{$CFG->dbprefix}lti_key_ibfk_1";
+            if ( in_array($fk_name, $key_indexes) ) {
+                $sql = "ALTER TABLE {$key_table} DROP FOREIGN KEY `{$fk_name}`";
+                echo("Upgrading: ".htmlentities($sql)."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $q = $PDOX->queryReturnError($sql);
+                if ( ! $q->success ) {
+                    $message = "lti_issuer phase 3 drop FK failed: ".$q->errorImplode;
+                    error_log($message);
+                    echo(htmlentities($message)."<br/>\n");
+                }
+                $key_indexes = $PDOX->indexes($key_table);
+            }
+
+            $const2_name = "{$CFG->dbprefix}lti_key_const_2";
+            if ( in_array($const2_name, $key_indexes) ) {
+                $sql = "ALTER TABLE {$key_table} DROP INDEX `{$const2_name}`";
+                echo("Upgrading: ".htmlentities($sql)."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $q = $PDOX->queryReturnError($sql);
+                if ( ! $q->success ) {
+                    $message = "lti_issuer phase 3 drop index failed: ".$q->errorImplode;
+                    error_log($message);
+                    echo(htmlentities($message)."<br/>\n");
+                }
+            }
+
+            if ( $have_issuer_id ) {
+                $sql = "ALTER TABLE {$key_table} DROP COLUMN issuer_id";
+                echo("Upgrading: ".htmlentities($sql)."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $q = $PDOX->queryReturnError($sql);
+                if ( ! $q->success ) {
+                    $message = "lti_issuer phase 3 drop issuer_id failed: ".$q->errorImplode;
+                    error_log($message);
+                    echo(htmlentities($message)."<br/>\n");
+                }
+            }
+
+            if ( $have_issuer_table ) {
+                $sql = "DROP TABLE IF EXISTS {$issuer_table}";
+                echo("Upgrading: ".htmlentities($sql)."<br/>\n");
+                error_log("Upgrading: ".$sql);
+                $q = $PDOX->queryReturnError($sql);
+                if ( ! $q->success ) {
+                    $message = "lti_issuer phase 3 drop table failed: ".$q->errorImplode;
+                    error_log($message);
+                    echo(htmlentities($message)."<br/>\n");
+                } else {
+                    $summary = 'lti_issuer phase 3 complete: dropped lti_issuer table'
+                        .($have_issuer_id ? ' and lti_key.issuer_id column' : '');
+                    echo(htmlentities($summary)."<br/>\n");
+                    error_log($summary);
+                }
+            }
+        }
+    }
 
     // When you increase this number in any database.php file,
     // make sure to update the global value in setup.php
-    return 202112011310;
+    return 202610010000;
 
 }; // Don't forget the semicolon on anonymous functions :)
 
@@ -1219,4 +1404,3 @@ $DATABASE_UPGRADE = function($oldversion) {
 if ( isset($CURRENT_FILE) ) {
     include $CFG->dirroot."/admin/migrate-run.php";
 }
-

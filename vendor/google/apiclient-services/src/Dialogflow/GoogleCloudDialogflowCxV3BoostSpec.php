@@ -24,7 +24,7 @@ class GoogleCloudDialogflowCxV3BoostSpec extends \Google\Collection
   protected $conditionBoostSpecsDataType = 'array';
 
   /**
-   * @param GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpec[]
+   * @param GoogleCloudDialogflowCxV3BoostSpecConditionBoostSpec[] $conditionBoostSpecs
    */
   public function setConditionBoostSpecs($conditionBoostSpecs)
   {

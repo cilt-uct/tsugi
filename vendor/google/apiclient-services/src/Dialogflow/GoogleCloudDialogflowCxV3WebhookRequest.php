@@ -68,7 +68,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
   public $triggerIntent;
 
   /**
-   * @param string
+   * @param string $detectIntentResponseId
    */
   public function setDetectIntentResponseId($detectIntentResponseId)
   {
@@ -82,7 +82,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->detectIntentResponseId;
   }
   /**
-   * @param string
+   * @param string $dtmfDigits
    */
   public function setDtmfDigits($dtmfDigits)
   {
@@ -96,7 +96,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->dtmfDigits;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3WebhookRequestFulfillmentInfo
+   * @param GoogleCloudDialogflowCxV3WebhookRequestFulfillmentInfo $fulfillmentInfo
    */
   public function setFulfillmentInfo(GoogleCloudDialogflowCxV3WebhookRequestFulfillmentInfo $fulfillmentInfo)
   {
@@ -110,7 +110,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->fulfillmentInfo;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3WebhookRequestIntentInfo
+   * @param GoogleCloudDialogflowCxV3WebhookRequestIntentInfo $intentInfo
    */
   public function setIntentInfo(GoogleCloudDialogflowCxV3WebhookRequestIntentInfo $intentInfo)
   {
@@ -124,7 +124,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->intentInfo;
   }
   /**
-   * @param string
+   * @param string $languageCode
    */
   public function setLanguageCode($languageCode)
   {
@@ -138,7 +138,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->languageCode;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3LanguageInfo
+   * @param GoogleCloudDialogflowCxV3LanguageInfo $languageInfo
    */
   public function setLanguageInfo(GoogleCloudDialogflowCxV3LanguageInfo $languageInfo)
   {
@@ -152,7 +152,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->languageInfo;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3ResponseMessage[]
+   * @param GoogleCloudDialogflowCxV3ResponseMessage[] $messages
    */
   public function setMessages($messages)
   {
@@ -166,7 +166,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->messages;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3PageInfo
+   * @param GoogleCloudDialogflowCxV3PageInfo $pageInfo
    */
   public function setPageInfo(GoogleCloudDialogflowCxV3PageInfo $pageInfo)
   {
@@ -180,7 +180,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->pageInfo;
   }
   /**
-   * @param array[]
+   * @param array[] $payload
    */
   public function setPayload($payload)
   {
@@ -194,7 +194,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->payload;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3WebhookRequestSentimentAnalysisResult
+   * @param GoogleCloudDialogflowCxV3WebhookRequestSentimentAnalysisResult $sentimentAnalysisResult
    */
   public function setSentimentAnalysisResult(GoogleCloudDialogflowCxV3WebhookRequestSentimentAnalysisResult $sentimentAnalysisResult)
   {
@@ -208,7 +208,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->sentimentAnalysisResult;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3SessionInfo
+   * @param GoogleCloudDialogflowCxV3SessionInfo $sessionInfo
    */
   public function setSessionInfo(GoogleCloudDialogflowCxV3SessionInfo $sessionInfo)
   {
@@ -222,7 +222,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->sessionInfo;
   }
   /**
-   * @param string
+   * @param string $text
    */
   public function setText($text)
   {
@@ -236,7 +236,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->text;
   }
   /**
-   * @param string
+   * @param string $transcript
    */
   public function setTranscript($transcript)
   {
@@ -250,7 +250,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->transcript;
   }
   /**
-   * @param string
+   * @param string $triggerEvent
    */
   public function setTriggerEvent($triggerEvent)
   {
@@ -264,7 +264,7 @@ class GoogleCloudDialogflowCxV3WebhookRequest extends \Google\Collection
     return $this->triggerEvent;
   }
   /**
-   * @param string
+   * @param string $triggerIntent
    */
   public function setTriggerIntent($triggerIntent)
   {

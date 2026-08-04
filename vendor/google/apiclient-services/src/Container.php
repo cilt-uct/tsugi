@@ -38,6 +38,12 @@ class Container extends \Google\Service
   /** See, edit, configure, and delete your Google Cloud data and see the email address for your Google Account.. */
   const CLOUD_PLATFORM =
       "https://www.googleapis.com/auth/cloud-platform";
+  /** See, edit, configure, and delete your Google Kubernetes Engine data and see the email address for your Google Account. */
+  const CONTAINER =
+      "https://www.googleapis.com/auth/container";
+  /** See your Google Kubernetes Engine data and the email address of your Google Account. */
+  const CONTAINER_READ_ONLY =
+      "https://www.googleapis.com/auth/container.read-only";
 
   public $projects_aggregated_usableSubnetworks;
   public $projects_locations;
@@ -182,6 +188,20 @@ class Container extends \Google\Service
                   'type' => 'string',
                 ],
                 'zone' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'fetchClusterUpgradeInfo' => [
+              'path' => 'v1/{+name}:fetchClusterUpgradeInfo',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'version' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],
@@ -408,6 +428,20 @@ class Container extends \Google\Service
                   'type' => 'string',
                 ],
                 'zone' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'fetchNodePoolUpgradeInfo' => [
+              'path' => 'v1/{+name}:fetchNodePoolUpgradeInfo',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'version' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],
@@ -704,6 +738,20 @@ class Container extends \Google\Service
                   'required' => true,
                 ],
                 'name' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'fetchClusterUpgradeInfo' => [
+              'path' => 'v1/{+name}:fetchClusterUpgradeInfo',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'version' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],
@@ -1051,6 +1099,20 @@ class Container extends \Google\Service
                   'required' => true,
                 ],
                 'name' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+              ],
+            ],'fetchNodePoolUpgradeInfo' => [
+              'path' => 'v1/{+name}:fetchNodePoolUpgradeInfo',
+              'httpMethod' => 'GET',
+              'parameters' => [
+                'name' => [
+                  'location' => 'path',
+                  'type' => 'string',
+                  'required' => true,
+                ],
+                'version' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],

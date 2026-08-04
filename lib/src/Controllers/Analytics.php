@@ -1,0 +1,57 @@
+<?php
+
+namespace Tsugi\Controllers;
+
+use Tsugi\Lumen\Controller;
+use Tsugi\Lumen\Application;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+
+use \Tsugi\Util\U;
+
+class Analytics extends Controller {
+
+    const ROUTE = '/analytics';
+
+    public static function routes(Application $app, $prefix=self::ROUTE) {
+        $app->router->get($prefix, function (Request $request) use ($app) {
+            return Analytics::getAnalytics($app);
+        });
+        $app->router->get($prefix.'/', function (Request $request) use ($app) {
+            return Analytics::getAnalytics($app);
+        });
+    }
+
+    public static function getAnalytics(Application $app)
+    {
+        global $CFG, $OUTPUT;
+        $tsugi = $app['tsugi'];
+        // echo("<pre>\n");var_dump($tsugi);
+        if ( !isset($tsugi->user) ) {
+            $app->tsugiFlashError(__('You are not logged in.'));
+            $redirect_path = isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot;
+            return new RedirectResponse($redirect_path);
+        }
+
+        $analytics_url = U::addSession($CFG->wwwroot."/api/analytics");
+
+        $menu = new \Tsugi\UI\MenuSet();
+        $menu->addLeft(__('Back'), 'index.php');
+        $OUTPUT->buffer = false;
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav($menu);
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <h1><?= __('Analytics') ?></h1>
+            <?= \Tsugi\UI\Analytics::graphBody() ?>
+        </main>
+        <?php
+        $OUTPUT->footerStart();
+        echo(\Tsugi\UI\Analytics::graphScript($analytics_url));
+        $OUTPUT->footerEnd();
+        return;
+    }
+
+}

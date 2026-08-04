@@ -20,20 +20,108 @@ namespace Google\Service\Apigee;
 class GoogleCloudApigeeV1SecurityAssessmentResultResource extends \Google\Model
 {
   /**
+   * Gateway type is not specified.
+   */
+  public const API_HUB_GATEWAY_TYPE_API_HUB_GATEWAY_TYPE_UNSPECIFIED = 'API_HUB_GATEWAY_TYPE_UNSPECIFIED';
+  /**
+   * Gateway is Apigee X for API Hub.
+   */
+  public const API_HUB_GATEWAY_TYPE_APIGEE_X = 'APIGEE_X';
+  /**
+   * Gateway is Apigee Hybrid for API Hub.
+   */
+  public const API_HUB_GATEWAY_TYPE_APIGEE_HYBRID = 'APIGEE_HYBRID';
+  /**
+   * Gateway is Apigee Edge for API Hub.
+   */
+  public const API_HUB_GATEWAY_TYPE_APIGEE_EDGE = 'APIGEE_EDGE';
+  /**
+   * Gateway is Apigee OPDK for API Hub.
+   */
+  public const API_HUB_GATEWAY_TYPE_APIGEE_OPDK = 'APIGEE_OPDK';
+  /**
+   * ResourceType not specified.
+   */
+  public const TYPE_RESOURCE_TYPE_UNSPECIFIED = 'RESOURCE_TYPE_UNSPECIFIED';
+  /**
+   * Resource is an Apigee Proxy.
+   */
+  public const TYPE_API_PROXY = 'API_PROXY';
+  /**
+   * Resource is an API Hub deployment.
+   */
+  public const TYPE_API_HUB_DEPLOYMENT = 'API_HUB_DEPLOYMENT';
+  protected $apiHubDeploymentDetailsType = GoogleCloudApigeeV1SecurityAssessmentResultResourceApiHubDeploymentDetails::class;
+  protected $apiHubDeploymentDetailsDataType = '';
+  /**
+   * Optional.
+   *
+   * @var string
+   */
+  public $apiHubGatewayType;
+  /**
+   * Required. Name of this resource. For an Apigee API Proxy, this should be
+   * the id of the API proxy. For an API Hub Deployment, this should be the id
+   * of the deployment.
+   *
    * @var string
    */
   public $name;
   /**
+   * The revision id for the resource. In case of Apigee, this is proxy revision
+   * id.
+   *
    * @var string
    */
   public $resourceRevisionId;
   /**
+   * Required. Type of this resource.
+   *
    * @var string
    */
   public $type;
 
   /**
-   * @param string
+   * Output only. Additional details for the API Hub deployment.
+   *
+   * @param GoogleCloudApigeeV1SecurityAssessmentResultResourceApiHubDeploymentDetails $apiHubDeploymentDetails
+   */
+  public function setApiHubDeploymentDetails(GoogleCloudApigeeV1SecurityAssessmentResultResourceApiHubDeploymentDetails $apiHubDeploymentDetails)
+  {
+    $this->apiHubDeploymentDetails = $apiHubDeploymentDetails;
+  }
+  /**
+   * @return GoogleCloudApigeeV1SecurityAssessmentResultResourceApiHubDeploymentDetails
+   */
+  public function getApiHubDeploymentDetails()
+  {
+    return $this->apiHubDeploymentDetails;
+  }
+  /**
+   * Optional.
+   *
+   * Accepted values: API_HUB_GATEWAY_TYPE_UNSPECIFIED, APIGEE_X, APIGEE_HYBRID,
+   * APIGEE_EDGE, APIGEE_OPDK
+   *
+   * @param self::API_HUB_GATEWAY_TYPE_* $apiHubGatewayType
+   */
+  public function setApiHubGatewayType($apiHubGatewayType)
+  {
+    $this->apiHubGatewayType = $apiHubGatewayType;
+  }
+  /**
+   * @return self::API_HUB_GATEWAY_TYPE_*
+   */
+  public function getApiHubGatewayType()
+  {
+    return $this->apiHubGatewayType;
+  }
+  /**
+   * Required. Name of this resource. For an Apigee API Proxy, this should be
+   * the id of the API proxy. For an API Hub Deployment, this should be the id
+   * of the deployment.
+   *
+   * @param string $name
    */
   public function setName($name)
   {
@@ -47,7 +135,10 @@ class GoogleCloudApigeeV1SecurityAssessmentResultResource extends \Google\Model
     return $this->name;
   }
   /**
-   * @param string
+   * The revision id for the resource. In case of Apigee, this is proxy revision
+   * id.
+   *
+   * @param string $resourceRevisionId
    */
   public function setResourceRevisionId($resourceRevisionId)
   {
@@ -61,14 +152,18 @@ class GoogleCloudApigeeV1SecurityAssessmentResultResource extends \Google\Model
     return $this->resourceRevisionId;
   }
   /**
-   * @param string
+   * Required. Type of this resource.
+   *
+   * Accepted values: RESOURCE_TYPE_UNSPECIFIED, API_PROXY, API_HUB_DEPLOYMENT
+   *
+   * @param self::TYPE_* $type
    */
   public function setType($type)
   {
     $this->type = $type;
   }
   /**
-   * @return string
+   * @return self::TYPE_*
    */
   public function getType()
   {

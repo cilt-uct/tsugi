@@ -20,14 +20,29 @@ namespace Google\Service\OnDemandScanning;
 class FileLocation extends \Google\Model
 {
   /**
+   * For jars that are contained inside .war files, this filepath can indicate
+   * the path to war file combined with the path to jar file.
+   *
    * @var string
    */
   public $filePath;
   protected $layerDetailsType = LayerDetails::class;
   protected $layerDetailsDataType = '';
+  /**
+   * Line number in the file where the package is found. Applies only to source
+   * repository scanning. Note: this field is marked as `optional` in other
+   * corresponding protos, but in edition 2023, the "optional" keyword is
+   * redundant.
+   *
+   * @var int
+   */
+  public $lineNumber;
 
   /**
-   * @param string
+   * For jars that are contained inside .war files, this filepath can indicate
+   * the path to war file combined with the path to jar file.
+   *
+   * @param string $filePath
    */
   public function setFilePath($filePath)
   {
@@ -41,7 +56,7 @@ class FileLocation extends \Google\Model
     return $this->filePath;
   }
   /**
-   * @param LayerDetails
+   * @param LayerDetails $layerDetails
    */
   public function setLayerDetails(LayerDetails $layerDetails)
   {
@@ -53,6 +68,25 @@ class FileLocation extends \Google\Model
   public function getLayerDetails()
   {
     return $this->layerDetails;
+  }
+  /**
+   * Line number in the file where the package is found. Applies only to source
+   * repository scanning. Note: this field is marked as `optional` in other
+   * corresponding protos, but in edition 2023, the "optional" keyword is
+   * redundant.
+   *
+   * @param int $lineNumber
+   */
+  public function setLineNumber($lineNumber)
+  {
+    $this->lineNumber = $lineNumber;
+  }
+  /**
+   * @return int
+   */
+  public function getLineNumber()
+  {
+    return $this->lineNumber;
   }
 }
 

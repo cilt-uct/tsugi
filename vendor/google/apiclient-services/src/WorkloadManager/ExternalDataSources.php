@@ -20,24 +20,52 @@ namespace Google\Service\WorkloadManager;
 class ExternalDataSources extends \Google\Model
 {
   /**
+   * Unknown type.
+   */
+  public const TYPE_TYPE_UNSPECIFIED = 'TYPE_UNSPECIFIED';
+  /**
+   * BigQuery table.
+   */
+  public const TYPE_BIG_QUERY_TABLE = 'BIG_QUERY_TABLE';
+  /**
+   * Required. The asset type of the external data source. This can be a
+   * supported Cloud Asset Inventory asset type (see
+   * https://cloud.google.com/asset-inventory/docs/supported-asset-types) to
+   * override the default asset type, or it can be a custom type defined by the
+   * user.
+   *
    * @var string
    */
   public $assetType;
   /**
+   * Optional. Name of external data source. The name will be used inside the
+   * rego/sql to refer the external data.
+   *
    * @var string
    */
   public $name;
   /**
+   * Required. Type of external data source.
+   *
    * @var string
    */
   public $type;
   /**
+   * Required. URI of external data source. example of bq table
+   * {project_ID}.{dataset_ID}.{table_ID}.
+   *
    * @var string
    */
   public $uri;
 
   /**
-   * @param string
+   * Required. The asset type of the external data source. This can be a
+   * supported Cloud Asset Inventory asset type (see
+   * https://cloud.google.com/asset-inventory/docs/supported-asset-types) to
+   * override the default asset type, or it can be a custom type defined by the
+   * user.
+   *
+   * @param string $assetType
    */
   public function setAssetType($assetType)
   {
@@ -51,7 +79,10 @@ class ExternalDataSources extends \Google\Model
     return $this->assetType;
   }
   /**
-   * @param string
+   * Optional. Name of external data source. The name will be used inside the
+   * rego/sql to refer the external data.
+   *
+   * @param string $name
    */
   public function setName($name)
   {
@@ -65,21 +96,28 @@ class ExternalDataSources extends \Google\Model
     return $this->name;
   }
   /**
-   * @param string
+   * Required. Type of external data source.
+   *
+   * Accepted values: TYPE_UNSPECIFIED, BIG_QUERY_TABLE
+   *
+   * @param self::TYPE_* $type
    */
   public function setType($type)
   {
     $this->type = $type;
   }
   /**
-   * @return string
+   * @return self::TYPE_*
    */
   public function getType()
   {
     return $this->type;
   }
   /**
-   * @param string
+   * Required. URI of external data source. example of bq table
+   * {project_ID}.{dataset_ID}.{table_ID}.
+   *
+   * @param string $uri
    */
   public function setUri($uri)
   {

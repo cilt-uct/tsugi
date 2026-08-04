@@ -30,7 +30,7 @@ class GoogleCloudDialogflowCxV3ImportIntentsResponseConflictingResources extends
   public $intentDisplayNames;
 
   /**
-   * @param string[]
+   * @param string[] $entityDisplayNames
    */
   public function setEntityDisplayNames($entityDisplayNames)
   {
@@ -44,7 +44,7 @@ class GoogleCloudDialogflowCxV3ImportIntentsResponseConflictingResources extends
     return $this->entityDisplayNames;
   }
   /**
-   * @param string[]
+   * @param string[] $intentDisplayNames
    */
   public function setIntentDisplayNames($intentDisplayNames)
   {

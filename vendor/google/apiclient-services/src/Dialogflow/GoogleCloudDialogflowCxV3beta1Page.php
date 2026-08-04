@@ -50,7 +50,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
   protected $transitionRoutesDataType = 'array';
 
   /**
-   * @param GoogleCloudDialogflowCxV3beta1AdvancedSettings
+   * @param GoogleCloudDialogflowCxV3beta1AdvancedSettings $advancedSettings
    */
   public function setAdvancedSettings(GoogleCloudDialogflowCxV3beta1AdvancedSettings $advancedSettings)
   {
@@ -64,7 +64,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->advancedSettings;
   }
   /**
-   * @param string
+   * @param string $description
    */
   public function setDescription($description)
   {
@@ -78,7 +78,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->description;
   }
   /**
-   * @param string
+   * @param string $displayName
    */
   public function setDisplayName($displayName)
   {
@@ -92,7 +92,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->displayName;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1Fulfillment
+   * @param GoogleCloudDialogflowCxV3beta1Fulfillment $entryFulfillment
    */
   public function setEntryFulfillment(GoogleCloudDialogflowCxV3beta1Fulfillment $entryFulfillment)
   {
@@ -106,7 +106,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->entryFulfillment;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1EventHandler[]
+   * @param GoogleCloudDialogflowCxV3beta1EventHandler[] $eventHandlers
    */
   public function setEventHandlers($eventHandlers)
   {
@@ -120,7 +120,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->eventHandlers;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1Form
+   * @param GoogleCloudDialogflowCxV3beta1Form $form
    */
   public function setForm(GoogleCloudDialogflowCxV3beta1Form $form)
   {
@@ -134,7 +134,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->form;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings
+   * @param GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings $knowledgeConnectorSettings
    */
   public function setKnowledgeConnectorSettings(GoogleCloudDialogflowCxV3beta1KnowledgeConnectorSettings $knowledgeConnectorSettings)
   {
@@ -148,7 +148,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->knowledgeConnectorSettings;
   }
   /**
-   * @param string
+   * @param string $name
    */
   public function setName($name)
   {
@@ -162,7 +162,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->name;
   }
   /**
-   * @param string[]
+   * @param string[] $transitionRouteGroups
    */
   public function setTransitionRouteGroups($transitionRouteGroups)
   {
@@ -176,7 +176,7 @@ class GoogleCloudDialogflowCxV3beta1Page extends \Google\Collection
     return $this->transitionRouteGroups;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3beta1TransitionRoute[]
+   * @param GoogleCloudDialogflowCxV3beta1TransitionRoute[] $transitionRoutes
    */
   public function setTransitionRoutes($transitionRoutes)
   {

@@ -35,9 +35,10 @@ $titles = array(
 
 if ( U::get($_POST,'endpoint') ) {
     if ( strlen(U::get($_POST,'pubkey')) < 1 && strlen(U::get($_POST,'privkey')) < 1 ) {
+        /** @var true|string $success */
         $success = LTI13::generatePKCS8Pair($publicKey, $privateKey);
-        if ( is_string($success) ) {
-            $_SESSION['error'] = "Could not create key pair:".$success;
+        if ( $success !== true ) {
+            U::flashError("Could not create key pair:".$success);
             header("Location: ".U::addsession($from_location));
             return;
         }
@@ -98,4 +99,3 @@ $('#json').val($('#sample_json').text());
 </script>
 <?php
 $OUTPUT->footerEnd();
-

@@ -42,7 +42,7 @@ class GoogleCloudDialogflowCxV3AgentGitIntegrationSettingsGithubSettings extends
   public $trackingBranch;
 
   /**
-   * @param string
+   * @param string $accessToken
    */
   public function setAccessToken($accessToken)
   {
@@ -56,7 +56,7 @@ class GoogleCloudDialogflowCxV3AgentGitIntegrationSettingsGithubSettings extends
     return $this->accessToken;
   }
   /**
-   * @param string[]
+   * @param string[] $branches
    */
   public function setBranches($branches)
   {
@@ -70,7 +70,7 @@ class GoogleCloudDialogflowCxV3AgentGitIntegrationSettingsGithubSettings extends
     return $this->branches;
   }
   /**
-   * @param string
+   * @param string $displayName
    */
   public function setDisplayName($displayName)
   {
@@ -84,7 +84,7 @@ class GoogleCloudDialogflowCxV3AgentGitIntegrationSettingsGithubSettings extends
     return $this->displayName;
   }
   /**
-   * @param string
+   * @param string $repositoryUri
    */
   public function setRepositoryUri($repositoryUri)
   {
@@ -98,7 +98,7 @@ class GoogleCloudDialogflowCxV3AgentGitIntegrationSettingsGithubSettings extends
     return $this->repositoryUri;
   }
   /**
-   * @param string
+   * @param string $trackingBranch
    */
   public function setTrackingBranch($trackingBranch)
   {

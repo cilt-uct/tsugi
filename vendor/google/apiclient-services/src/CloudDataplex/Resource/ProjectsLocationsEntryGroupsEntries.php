@@ -76,10 +76,7 @@ class ProjectsLocationsEntryGroupsEntries extends \Google\Service\Resource
     return $this->call('delete', [$params], GoogleCloudDataplexV1Entry::class);
   }
   /**
-   * Gets an Entry.Caution: The BigQuery metadata that is stored in Dataplex
-   * Catalog is changing. For more information, see Changes to BigQuery metadata
-   * stored in Dataplex Catalog (https://cloud.google.com/dataplex/docs/biqquery-
-   * metadata-changes). (entries.get)
+   * Gets an Entry. (entries.get)
    *
    * @param string $name Required. The resource name of the Entry: projects/{proje
    * ct}/locations/{location}/entryGroups/{entry_group}/entries/{entry}.
@@ -91,7 +88,9 @@ class ProjectsLocationsEntryGroupsEntries extends \Google\Service\Resource
    * associated with the provided paths within the Entry. It only works for CUSTOM
    * view.
    * @opt_param string view Optional. View to control which parts of an entry the
-   * service should return.
+   * service should return. Please check the limitations on returned aspects in
+   * the Entry view documentation. Amount of returned aspects depends on the
+   * selected Entry View.
    * @return GoogleCloudDataplexV1Entry
    * @throws \Google\Service\Exception
    */
@@ -111,15 +110,19 @@ class ProjectsLocationsEntryGroupsEntries extends \Google\Service\Resource
    *
    * @opt_param string filter Optional. A filter on the entries to return. Filters
    * are case-sensitive. You can filter the request by the following fields:
-   * entry_type entry_source.display_nameThe comparison operators are =, !=, <, >,
-   * <=, >=. The service compares strings according to lexical order.You can use
-   * the logical operators AND, OR, NOT in the filter.You can use Wildcard "*",
-   * but for entry_type you need to provide the full project id or number.Example
-   * filter expressions: "entry_source.display_name=AnExampleDisplayName"
+   * entry_type entry_source.display_name parent_entryThe comparison operators are
+   * =, !=, <, >, <=, >=. The service compares strings according to lexical
+   * order.You can use the logical operators AND, OR, NOT in the filter.You can
+   * use Wildcard "*", but for entry_type and parent_entry you need to provide the
+   * full project id or number.You cannot use parent_entry in conjunction with
+   * other fields.Example filter expressions:
+   * "entry_source.display_name=AnExampleDisplayName"
    * "entry_type=projects/example-project/locations/global/entryTypes/example-
    * entry_type" "entry_type=projects/example-project/locations/us/entryTypes/a*
    * OR entry_type=projects/another-project/locations" "NOT
    * entry_source.display_name=AnotherExampleDisplayName"
+   * "parent_entry=projects/example-project/locations/us/entryGroups/example-
+   * entry-group/entries/example-entry"
    * @opt_param int pageSize Optional. Number of items to return per page. If
    * there are remaining results, the service returns a next_page_token. If
    * unspecified, the service returns at most 10 Entries. The maximum value is

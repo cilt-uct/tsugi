@@ -20,9 +20,13 @@ namespace Google\Service\Document;
 class GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableBlock extends \Google\Collection
 {
   protected $collection_key = 'headerRows';
+  protected $annotationsType = GoogleCloudDocumentaiV1DocumentAnnotations::class;
+  protected $annotationsDataType = '';
   protected $bodyRowsType = GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableRow::class;
   protected $bodyRowsDataType = 'array';
   /**
+   * Table caption/title.
+   *
    * @var string
    */
   public $caption;
@@ -30,7 +34,25 @@ class GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTabl
   protected $headerRowsDataType = 'array';
 
   /**
-   * @param GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableRow[]
+   * Annotation of the table block.
+   *
+   * @param GoogleCloudDocumentaiV1DocumentAnnotations $annotations
+   */
+  public function setAnnotations(GoogleCloudDocumentaiV1DocumentAnnotations $annotations)
+  {
+    $this->annotations = $annotations;
+  }
+  /**
+   * @return GoogleCloudDocumentaiV1DocumentAnnotations
+   */
+  public function getAnnotations()
+  {
+    return $this->annotations;
+  }
+  /**
+   * Body rows containing main table content.
+   *
+   * @param GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableRow[] $bodyRows
    */
   public function setBodyRows($bodyRows)
   {
@@ -44,7 +66,9 @@ class GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTabl
     return $this->bodyRows;
   }
   /**
-   * @param string
+   * Table caption/title.
+   *
+   * @param string $caption
    */
   public function setCaption($caption)
   {
@@ -58,7 +82,9 @@ class GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTabl
     return $this->caption;
   }
   /**
-   * @param GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableRow[]
+   * Header rows at the top of the table.
+   *
+   * @param GoogleCloudDocumentaiV1DocumentDocumentLayoutDocumentLayoutBlockLayoutTableRow[] $headerRows
    */
   public function setHeaderRows($headerRows)
   {

@@ -31,7 +31,7 @@ class GoogleCloudDialogflowV2beta1SuggestKnowledgeAssistResponse extends \Google
   public $latestMessage;
 
   /**
-   * @param int
+   * @param int $contextSize
    */
   public function setContextSize($contextSize)
   {
@@ -45,7 +45,7 @@ class GoogleCloudDialogflowV2beta1SuggestKnowledgeAssistResponse extends \Google
     return $this->contextSize;
   }
   /**
-   * @param GoogleCloudDialogflowV2beta1KnowledgeAssistAnswer
+   * @param GoogleCloudDialogflowV2beta1KnowledgeAssistAnswer $knowledgeAssistAnswer
    */
   public function setKnowledgeAssistAnswer(GoogleCloudDialogflowV2beta1KnowledgeAssistAnswer $knowledgeAssistAnswer)
   {
@@ -59,7 +59,7 @@ class GoogleCloudDialogflowV2beta1SuggestKnowledgeAssistResponse extends \Google
     return $this->knowledgeAssistAnswer;
   }
   /**
-   * @param string
+   * @param string $latestMessage
    */
   public function setLatestMessage($latestMessage)
   {

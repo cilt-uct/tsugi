@@ -30,7 +30,7 @@ class GoogleCloudDialogflowCxV3FilterSpecs extends \Google\Collection
   public $filter;
 
   /**
-   * @param string[]
+   * @param string[] $dataStores
    */
   public function setDataStores($dataStores)
   {
@@ -44,7 +44,7 @@ class GoogleCloudDialogflowCxV3FilterSpecs extends \Google\Collection
     return $this->dataStores;
   }
   /**
-   * @param string
+   * @param string $filter
    */
   public function setFilter($filter)
   {

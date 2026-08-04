@@ -22,20 +22,31 @@ class CompilationError extends \Google\Model
   protected $actionTargetType = Target::class;
   protected $actionTargetDataType = '';
   /**
+   * Output only. The error's top level message.
+   *
    * @var string
    */
   public $message;
   /**
+   * Output only. The path of the file where this error occurred, if available,
+   * relative to the project root.
+   *
    * @var string
    */
   public $path;
   /**
+   * Output only. The error's full stack trace.
+   *
    * @var string
    */
   public $stack;
 
   /**
-   * @param Target
+   * Output only. The identifier of the action where this error occurred, if
+   * available. LINT.ThenChange(//depot/google3/google/cloud/dataform/v2main/dat
+   * a_pipelines.proto:CompilationError)
+   *
+   * @param Target $actionTarget
    */
   public function setActionTarget(Target $actionTarget)
   {
@@ -49,7 +60,9 @@ class CompilationError extends \Google\Model
     return $this->actionTarget;
   }
   /**
-   * @param string
+   * Output only. The error's top level message.
+   *
+   * @param string $message
    */
   public function setMessage($message)
   {
@@ -63,7 +76,10 @@ class CompilationError extends \Google\Model
     return $this->message;
   }
   /**
-   * @param string
+   * Output only. The path of the file where this error occurred, if available,
+   * relative to the project root.
+   *
+   * @param string $path
    */
   public function setPath($path)
   {
@@ -77,7 +93,9 @@ class CompilationError extends \Google\Model
     return $this->path;
   }
   /**
-   * @param string
+   * Output only. The error's full stack trace.
+   *
+   * @param string $stack
    */
   public function setStack($stack)
   {

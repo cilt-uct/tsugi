@@ -19,14 +19,22 @@ namespace Google\Service\CloudDeploy;
 
 class Postdeploy extends \Google\Collection
 {
-  protected $collection_key = 'actions';
+  protected $collection_key = 'tasks';
   /**
+   * Optional. A sequence of Skaffold custom actions to invoke during execution
+   * of the postdeploy job.
+   *
    * @var string[]
    */
   public $actions;
+  protected $tasksType = Task::class;
+  protected $tasksDataType = 'array';
 
   /**
-   * @param string[]
+   * Optional. A sequence of Skaffold custom actions to invoke during execution
+   * of the postdeploy job.
+   *
+   * @param string[] $actions
    */
   public function setActions($actions)
   {
@@ -38,6 +46,24 @@ class Postdeploy extends \Google\Collection
   public function getActions()
   {
     return $this->actions;
+  }
+  /**
+   * Optional. The tasks that will run as a part of the postdeploy job. The
+   * tasks are executed sequentially in the order specified. Only one of
+   * `actions` or `tasks` can be specified.
+   *
+   * @param Task[] $tasks
+   */
+  public function setTasks($tasks)
+  {
+    $this->tasks = $tasks;
+  }
+  /**
+   * @return Task[]
+   */
+  public function getTasks()
+  {
+    return $this->tasks;
   }
 }
 

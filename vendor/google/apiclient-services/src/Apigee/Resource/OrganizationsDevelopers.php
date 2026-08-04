@@ -86,9 +86,9 @@ class OrganizationsDevelopers extends \Google\Service\Resource
    * related artifacts. To avoid permanently deleting developers and their
    * artifacts, set the developer status to `inactive` using the
    * SetDeveloperStatus API. **Note**: The delete operation is asynchronous. The
-   * developer app is deleted immediately, but its associated resources, such as
-   * apps and API keys, may take anywhere from a few seconds to a few minutes to
-   * be deleted. (developers.delete)
+   * developer is deleted immediately, but its associated resources, such as apps
+   * and API keys, may take anywhere from a few seconds to a few minutes to be
+   * deleted. (developers.delete)
    *
    * @param string $name Required. Email address of the developer. Use the
    * following structure in your request:
@@ -231,7 +231,11 @@ class OrganizationsDevelopers extends \Google\Service\Resource
    * default). Any custom attributes associated with these entities are cached for
    * at least 180 seconds after the entity is accessed at runtime. Therefore, an
    * `ExpiresIn` element on the OAuthV2 policy won't be able to expire an access
-   * token in less than 180 seconds. (developers.update)
+   * token in less than 180 seconds. **Note:** We recommend that you avoid making
+   * concurrent update requests for the same resource. Near-simultaneous writes to
+   * the same entity can result in conflicts and unexpected behavior. Ensure
+   * operations are sequential when modifying a single resource.
+   * (developers.update)
    *
    * @param string $name Required. Email address of the developer. Use the
    * following structure in your request:

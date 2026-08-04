@@ -25,7 +25,7 @@ class GoogleCloudDialogflowCxV3beta1ToolCallResultError extends \Google\Model
   public $message;
 
   /**
-   * @param string
+   * @param string $message
    */
   public function setMessage($message)
   {

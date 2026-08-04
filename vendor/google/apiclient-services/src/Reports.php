@@ -29,17 +29,17 @@ use Google\Client;
  *
  * <p>
  * For more information about this service, see the API
- * <a href="https://developers.google.com/admin-sdk/" target="_blank">Documentation</a>
+ * <a href="https://developers.google.com/workspace/admin/" target="_blank">Documentation</a>
  * </p>
  *
  * @author Google, Inc.
  */
 class Reports extends \Google\Service
 {
-  /** View audit reports for your G Suite domain. */
+  /** View audit reports for your Google Workspace domain. */
   const ADMIN_REPORTS_AUDIT_READONLY =
       "https://www.googleapis.com/auth/admin.reports.audit.readonly";
-  /** View usage reports for your G Suite domain. */
+  /** View usage reports for your Google Workspace domain. */
   const ADMIN_REPORTS_USAGE_READONLY =
       "https://www.googleapis.com/auth/admin.reports.usage.readonly";
 
@@ -91,6 +91,10 @@ class Reports extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'applicationInfoFilter' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
                 'customerId' => [
                   'location' => 'query',
                   'type' => 'string',
@@ -111,9 +115,17 @@ class Reports extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'includeSensitiveData' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
+                ],
                 'maxResults' => [
                   'location' => 'query',
                   'type' => 'integer',
+                ],
+                'networkInfoFilter' => [
+                  'location' => 'query',
+                  'type' => 'string',
                 ],
                 'orgUnitID' => [
                   'location' => 'query',
@@ -123,7 +135,15 @@ class Reports extends \Google\Service
                   'location' => 'query',
                   'type' => 'string',
                 ],
+                'resourceDetailsFilter' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
                 'startTime' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                ],
+                'statusFilter' => [
                   'location' => 'query',
                   'type' => 'string',
                 ],

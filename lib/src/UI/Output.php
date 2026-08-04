@@ -1,0 +1,1561 @@
+<?php
+
+namespace Tsugi\UI;
+
+
+use \Tsugi\Util\U;
+use Tsugi\Util\LTI;
+use Tsugi\Core\LTIX;
+use Tsugi\Core\WebSocket;
+use Tsugi\UI\HandleBars;
+use Tsugi\UI\Theme;
+
+/**
+ * This is a class that captures the output conventions of Tusgi.
+ *
+ * In order to be consistent across Tsugi tools we capture the kinds of
+ * HTML conventions we want to use.   This allows us to change our UI
+ * in one place.
+ *
+ * This class is created automatially and placed in a global variable
+ * called $OUTPUT
+ *
+ * A typical Tsugi Tool can get a lot done with the rough outline:
+ *
+ *     use \Tsugi\Core\LTIX;
+ *     use \Tsugi\Util\U;
+ *
+ *     // Require CONTEXT, USER, and LINK
+ *     $LAUNCH = LTIX::requireData();
+ *
+ *     // Handle incoming POST data and redirect as necessary...
+ *     if ( ... ) {
+ *         header( 'Location: '.U::addSession('index.php') ) ;
+ *     }
+ *
+ *     // Done with POST
+ *     $OUTPUT->header();
+ *     $OUTPUT->bodyStart();
+ *     $OUTPUT->flashMessages();
+ *
+ *     // Output some HTML
+ *
+ *     $OUTPUT->footerStart();
+ *     ?>
+ *        // Stick some JavaScript here...
+ *     <?php
+ *     $OUTPUT->footerEnd();
+ *
+ * This class is likely to grow a bit to capture new needs as they arise.
+ * You can look at the various bits of sample code in the mod and other
+ * tool folders to see patterns of the use of this class.
+ */
+
+use \Tsugi\Core\Settings;
+
+class Output {
+
+    /**
+     * A reference to our containing launch
+     */
+    public $launch;
+
+    // Pull in all the session access functions
+    use \Tsugi\Core\SessionTrait;
+
+    public $buffer = false;
+
+    const SUPPRESS_SITE_NAV = 'TSUGI_OUTPUT_SUPPRESS_SITE_NAV';
+
+    /** Session key for error flash messages (must match U::FLASH_ERROR) */
+    const FLASH_ERROR = 'error';
+    /** Session key for success flash messages (must match U::FLASH_SUCCESS) */
+    const FLASH_SUCCESS = 'success';
+
+    /**
+     * Set the JSON header
+     */
+    public static function headerJson() {
+        header('Content-Type: application/json; charset=UTF-8');
+        self::noCacheHeader();
+    }
+
+    function flashMessages() {
+        ob_start();
+        echo '<div id="flashmessages">';
+        if ( ($_SESSION[self::FLASH_ERROR] ?? null) ) {
+            echo '<div class="alert alert-danger alert-banner" style="clear:both">
+                    <button type="button" class="close" data-dismiss="alert" aria-label="'.htmlentities(_m('Dismiss')).'">&times;</button>'.
+                ($_SESSION[self::FLASH_ERROR] ?? null)."</div>\n";
+            unset($_SESSION[self::FLASH_ERROR]);
+        } else if ( isset($_GET['lti_errormsg']) ) {
+            echo '<div class="alert alert-danger alert-banner" style="clear:both">
+                    <button type="button" class="close" data-dismiss="alert" aria-label="'.htmlentities(_m('Dismiss')).'">&times;</button>'.
+                htmlentities($_GET['lti_errormsg'])."</div>";
+
+            if ( isset($_GET['detail']) ) {
+                echo("\n<!--\n");
+                echo(str_replace("-->","--:>",$_GET['detail']));
+                echo("\n-->\n");
+            }
+        }
+
+        if ( ($_SESSION[self::FLASH_SUCCESS] ?? null) ) {
+            echo '<div class="alert alert-success alert-banner" style="clear:both">
+                    <button type="button" class="close" data-dismiss="alert" aria-label="'.htmlentities(_m('Dismiss')).'">&times;</button>'.
+                ($_SESSION[self::FLASH_SUCCESS] ?? null)."</div>\n";
+            unset($_SESSION[self::FLASH_SUCCESS]);
+        }
+
+        echo '</div>'; // End flash messages container
+        // tabindex=-1 so activating the skip link can move keyboard focus here
+        echo '<main id="main-content" tabindex="-1">'."\n";
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    /**
+     * Start the header material of a normal Tsugi Page
+     *
+     * This outputs everything but does not close the <head>
+     * tag so the tool can add its own head material before
+     * calling bodyStart().
+     *
+     * If this class is set to buffer, the output is returned
+     * in a string instead of being printed to the response.
+     */
+    function header() {
+        global $HEAD_CONTENT_SENT, $CFG, $RUNNING_IN_TOOL, $CONTEXT, $USER, $LINK;
+
+        if ( $HEAD_CONTENT_SENT === true ) return;
+        header('Content-Type: text/html; charset=utf-8');
+        ob_start();
+        echo(self::headerStart());
+        echo($this->headerData());
+        echo(self::headerCss());
+        if ( ($_SESSION['CSRF_TOKEN'] ?? null) ) {
+            echo('<script type="text/javascript">CSRF_TOKEN = "'.($_SESSION['CSRF_TOKEN'] ?? '').'";</script>'."\n");
+        } else {
+            echo('<script type="text/javascript">CSRF_TOKEN = "TODORemoveThis";</script>'."\n");
+        }
+
+        // Set the containing frame id if we have one
+        $element_id = LTIX::ltiRawParameter('ext_lti_element_id', false);
+        if ( $element_id ) {
+            echo('<script type="text/javascript">LTI_PARENT_IFRAME_ID = "'.$element_id.'";</script>'."\n");
+        }
+
+        if ( ($_SESSION['APP_HEADER'] ?? null) ) echo($_SESSION['APP_HEADER'] ?? '');
+
+        $HEAD_CONTENT_SENT = true;
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    /**
+     * Set the header variables for a Tsugi Page
+     *
+     * If this class is set to buffer, the output is returned
+     * in a string instead of being printed to the response.
+     */
+    function headerData() {
+        global $CFG, $CONTEXT, $USER, $LINK, $TSUGI_LAUNCH;
+
+        // https://security.stackexchange.com/questions/110101/proper-way-to-protect-against-xss-when-output-is-directly-into-js-not-html
+        $retval = "<script>\nvar _TSUGI = {\n";
+        if ( isset($CONTEXT->title) ) {
+            $retval .= '  context_title: '.self::json_encode_string_value($CONTEXT->title).",\n";
+        }
+        if ( isset($LINK->title) ) {
+            $retval .= '  link_title: '.self::json_encode_string_value($LINK->title).",\n";
+        }
+        if ( isset($USER->displayname) ) {
+            $retval .= '  user_displayname: '.self::json_encode_string_value($USER->displayname).",\n";
+        }
+        if ( isset($USER->locale) ) {
+            $retval .= '  user_locale: '.self::json_encode_string_value($USER->locale).",\n";
+        }
+        if ( U::strlen(session_id()) > 0 && ini_get('session.use_cookies') == '0' ) {
+            $retval .= '  ajax_session: "'.urlencode(session_name()).'='.urlencode(session_id()).'"'.",\n";
+        } else {
+            $retval .= '  ajax_session: false,'."\n";
+        }
+        $retval .= '  cookieless: '.(defined('COOKIE_SESSION') ? 'false' : 'true').",\n";
+        $browser_mark = LTIX::getBrowserMark();
+        $retval .= '  tsugi_browser_mark: '.($browser_mark ? self::json_encode_string_value($browser_mark) : 'false').",\n";
+
+        if ( isset($USER->instructor) && $USER->instructor ) {
+            $retval .= '  instructor: true,  // Use only for UI display'."\n";
+        }
+        $heartbeat = 10*60*1000; // 10 minutes
+        if ( isset($CFG->sessionlifetime) ) {
+            $heartbeat = ( $CFG->sessionlifetime * 1000) / 2;
+        }
+        if ( $heartbeat < 10*60*1000 ) $heartbeat = 10*60*1000;   // Minumum 10 minutes
+        // $heartbeat = 10000; // Debug 10 seconds
+        $heartbeat_url = self::getUtilUrl('/heartbeat.php');
+        $heartbeat_url = U::add_url_parm($heartbeat_url,'msec',$heartbeat);
+        $heartbeat_url = U::addSession($heartbeat_url);
+
+        $retval .= "  heartbeat: ".$heartbeat.",\n";
+        $retval .= "  heartbeat_url: \"".$heartbeat_url."\",\n";
+        $retval .= "  rest_path: ".json_encode(U::rest_path()).",\n";
+        $launch_return_url = (is_object($TSUGI_LAUNCH) && $TSUGI_LAUNCH->returnUrl()) ? $TSUGI_LAUNCH->returnUrl() : '';
+        $retval .= "  launch_presentation_return_url: " . ($launch_return_url ? self::json_encode_string_value($launch_return_url) : 'false') . ",\n";
+        $launch_error_return_url = (is_object($TSUGI_LAUNCH) && $TSUGI_LAUNCH->errorReturnUrl()) ? $TSUGI_LAUNCH->errorReturnUrl() : '';
+        $retval .= "  launch_presentation_error_return_url: " . ($launch_error_return_url ? self::json_encode_string_value($launch_error_return_url) : 'false') . ",\n";
+        $retval .= "  spinnerUrl: \"".self::getSpinnerUrl()."\",\n";
+        $retval .= "  staticroot: \"".$CFG->staticroot."\",\n";
+        if ( isset ($CFG->apphome) ) {
+            $retval .= "  apphome: \"".$CFG->apphome."\",\n";
+        } else {
+            $retval .= "  apphome: false,\n";
+        }
+        $retval .= "  wwwroot: \"".$CFG->wwwroot."\",\n";
+        if ( isset($CFG->youtube_playlist) && $CFG->youtube_playlist ) {
+            $retval .= "  youtube_playlist: ".self::json_encode_string_value($CFG->youtube_playlist).",\n";
+        }
+        $websocket_url = (WebSocket::enabled() && $LINK) ? '"'.$CFG->websocket_url.'"' : 'false';
+        $retval .= "  websocket_url: ".$websocket_url.",\n";
+        $websocket_token = (WebSocket::enabled() && $LINK) ? '"'.WebSocket::getToken($LINK->launch).'"' : 'false';
+        $retval .= "  websocket_token: ".$websocket_token.",\n";
+        $retval .= "  react_token: \"".session_id()."\",\n";
+        $retval .= "  window_close_message: \""._m('Application complete - You can close this tab.')."\",\n";
+        $retval .= "  session_expire_message: \""._m('Your session has expired')."\"\n";
+        $retval .= "}\n</script>\n";
+        return $retval;
+    }
+
+    /**
+     * Finish the head and start the body of a Tsugi HTML page.
+     *
+     * By default this demands that we are in a GET request.  It
+     * is a fatal error to call this code if we are responding
+     * to a POST request unless this behavior is overidden.
+     *
+     * @param $checkpost (optional, boolean)  This can be set to
+     * false to emit the body start even for a POST request.
+     */
+    function bodyStart($checkpost=true) {
+        global $CFG;
+        ob_start();
+        // If we are in an iframe use different margins
+?>
+</head>
+<body prefix="oer: http://oerschema.org">
+<a href="#main-content" class="skip-link"><?= _m('Skip to main content') ?></a>
+<div id="body_container">
+<script>
+if (window!=window.top) {
+    document.getElementById("body_container").className = "container-fluid";
+} else {
+    document.getElementById("body_container").className = "container";
+}
+</script>
+<?php
+        if ( $checkpost && count($_POST) > 0 ) {
+            $dump = self::safe_var_dump($_POST);
+            echo('<p style="color:red">Error - Unhandled POST request</p>');
+            echo("\n<pre>\n");
+            echo($dump);
+            if ( count($_FILES) > 0 ) {
+                $files = self::safe_var_dump($_FILES);
+                echo($files);
+            }
+            echo("\n</pre>\n");
+            error_log($dump);
+            die_with_error_log("Unhandled POST request");
+        }
+
+        // Complain if this is a test key
+        $key_key = $this->ltiParameter('key_key');
+        if ( $key_key == '12345' &&
+            strpos($CFG->wwwroot, '://localhost') === false ) {
+            echo('<div style="background-color: orange; position: absolute; bottom: 5px; left: 5px;">');
+            echo(_m('Test Key - Do not use for production'));
+            echo('</div>');
+        }
+
+        $HEAD_CONTENT_SENT = true;
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    /**
+    * Outputs a splash page used if the tool is not configured or instructor has never been there before.
+    *
+    * @param $title Title of the tool
+    * @param $msg Content of splash page messag
+    * @param bool $link Set to href if want user to be able to click button to go to home
+    * @return false|string
+    */
+    function splashPage($title, $msg, $link = false) {
+        ob_start();
+        self::header();
+        echo '<style>body{background: var(--primary)}</style>';
+        self::bodyStart();
+        echo '<section class="splash-container">
+                <article class="splash-content">
+                <header><h1 class="splash-header">'.$title.'</h1></header>
+                <p class="lead">'.$msg.'</p>';
+        if ($link) {
+            echo '<a href="'.$link.'" class="btn btn-success">Get Started</a>';
+        }
+
+        echo '</article></section>';
+        
+        self::footer();
+        
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    function pageTitle($title, $show_help = false, $show_settings = false) {
+        ob_start();
+        echo '<div id="toolTitle" class="h1">';
+        if ($show_help) {
+            self::helpButton();
+        }
+        if ($show_settings) {
+            SettingsForm::link(true);
+        }
+        echo '<span class="title-text-span">'.$title.'</span>';
+        echo '</div>';
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    function modalString($title, $msg, $id) {
+        $title_id = $id . '_title';
+        $modal = <<< EOF
+<div id="$id" class="modal fade" role="dialog" aria-modal="true" aria-labelledby="$title_id">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span class="fa fa-times" aria-hidden="true"></span></button>
+                <h4 class="modal-title" id="$title_id">$title</h4>
+            </div>
+            <div class="modal-body">$msg</div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+EOF;
+        return $modal;
+    }
+
+    function helpModal($help_title = "Help", $help_msg = '<em>No help for this page.</em>') {
+        $modal = $this->modalString($help_title, $help_msg, "helpModal");
+        if ( $this->buffer ) return $modal;
+        echo($modal);
+    }
+    
+    function helpButton() {
+        $button = '<button id="helpButton" type="button" class="btn btn-link pull-right" data-toggle="modal" data-target="#helpModal"><span class="fas fa-question-circle" aria-hidden="true"></span> Help</button>';
+        if ( $this->buffer ) return $button;
+        echo($button);
+    }
+
+    /**
+     * templateInclude - Include a handlebars template, dealing with i18n
+     *
+     * Deprecated - Moved to HandleBars
+     */
+    public static function templateInclude($name) {
+        HandleBars::templateInclude($name);
+    }
+
+    /**
+     * templateProcess - Process a handlebars template, dealing with i18n
+     *
+     * Deprecated - Moved to HandleBars
+     */
+    public static function templateProcess($template) {
+        return HandleBars::templateProcess($template);
+    }
+
+    /**
+     * Return script tags for jQuery, Bootstrap, jQuery UI, timeago, handlebars, tmpl, tsugiscripts.
+     * Used by footerStart() and htmlError().
+     */
+    public static function footerScriptLinks() {
+        global $CFG;
+        $s = $CFG->staticroot;
+        return '<script src="'.$s.'/js/jquery-1.11.3.js"></script>'."\n"
+            .'<script src="'.$s.'/bootstrap-3.4.1/js/bootstrap.min.js"></script>'."\n"
+            .'<script src="'.$s.'/js/jquery-ui-1.11.4/jquery-ui.min.js"></script>'."\n"
+            .'<script src="'.$s.'/js/jquery.timeago-1.6.3.js"></script>'."\n"
+            .'<script src="'.$s.'/js/handlebars-v4.0.2.js"></script>'."\n"
+            .'<script src="'.$s.'/tmpljs-3.8.0/tmpl.min.js"></script>'."\n"
+            .'<script src="'.$s.'/js/tsugiscripts.js"></script>'."\n";
+    }
+
+    function footerStart() {
+        global $CFG;
+        ob_start();
+        echo(self::footerScriptLinks());
+
+?>
+<script type="text/javascript">
+    HEARTBEAT_TIMEOUT = setTimeout(doHeartBeat, _TSUGI.heartbeat);
+    tsugiEmbedMenu();
+    $(document).ready(function() { jQuery("time.timeago").timeago(); });
+</script>
+<?php
+
+        if ( U::allow_track() && $CFG->google_translate ) {
+?>
+<div id="google_translate_element" style="position: fixed; right: 1em; bottom: 0.25em;"></div><script type="text/javascript">
+function googleTranslateElementInit() {
+  new google.translate.TranslateElement({pageLanguage: "en", layout: google.translate.TranslateElement.InlineLayout.SIMPLE
+    }, "google_translate_element");
+}
+</script><script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+<?php
+
+        }
+
+        // Load notifications web component
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Notifications/tsugi-notifications.js') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Calendar/tsugi-calendar-due.js') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Discussions/tsugi-discussions.js') . '"></script>' . "\n");
+
+        // Register service worker for push notifications and offline support (if enabled)
+        $service_worker_enabled = isset($CFG->service_worker) && $CFG->service_worker;
+        if ($service_worker_enabled) {
+            $swTemplatePath = __DIR__ . '/../Controllers/static/ServiceWorker/service-worker-register.php';
+            if (file_exists($swTemplatePath)) {
+                include $swTemplatePath;
+            }
+        }
+
+        if ( ($_SESSION['APP_FOOTER'] ?? null) ) echo($_SESSION['APP_FOOTER'] ?? '');
+
+        // This was originallly supposed to be Fixed in 7.1.9 - but this seems to regress
+        // periodically in PHP so - we will just keep doing it
+
+        // https://bugs.php.net/bug.php?id=74892
+        // Worked in PHP 5.5
+        // Failed in 7.0.0 - 7.1.8
+        // Fixed in 7.1.9
+        // https://www.php.net/ChangeLog-7.php#7.1.9
+        // https://stackoverflow.com/questions/44980654/how-can-i-make-trans-sid-cookie-less-sessions-work-in-php-7-1
+
+    if ( ini_get('session.use_cookies') == '0' ) {
+?>
+<script>
+$('a').each(function (x) {
+    var href = $(this).attr('href');
+    var sess_name = '<?= session_name() ?>';
+    var sess_id = '<?= session_id() ?>';
+    if ( ! href ) return;
+    if ( href.startsWith('#') ) return;
+    if ( href.indexOf(sess_name) > 0 ) return;
+    if ( href.startsWith('javascript:') ) return;
+
+    var withinTopNav = $(this).closest('#tsugi_main_nav_bar').length > 0;
+
+    var localurl = true;
+    if ( href.startsWith('http://') ) localurl = false;
+    if ( href.startsWith('https://') ) localurl = false;
+    if ( href.startsWith('//') ) localurl = false;
+
+    if ( href.startsWith(_TSUGI.wwwroot) ) localurl = true;
+    if ( _TSUGI.apphome && href.startsWith(_TSUGI.apphome) ) localurl = true;
+    if ( withinTopNav ) localurl = false;
+
+    // console.log(href,localurl);
+ 
+    if ( ! localurl ) return;
+    if ( href.indexOf('?') > 0 ) {
+        href = href + '&';
+    } else {
+        href = href + '?';
+    }
+    href = href + sess_name + '=' + sess_id;
+    // console.dir('Patching missing session href='+href);
+    $(this).attr('href', href);
+});
+</script>
+<?php } ?>
+
+<?php
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    /**
+     * getUtilUrl - Get a URL in the utility script space - does not add session
+     *
+     * @param $path - The path of the file - should start with a slash.
+     */
+    public static function getUtilUrl($path)
+    {
+        global $CFG;
+
+        // From wwwroot
+        $path = str_replace('.php','',$path);
+        $retval = $CFG->wwwroot . '/util' . $path;
+        return $retval;
+    }
+
+    /**
+     * Handle the heartbeat calls. This is UI code basically.
+     *
+     * Make sure when you call this, you have handled whether
+     * the session is cookie based or not and included config.php
+     * appropriately
+     *
+     *    if ( isset($_GET[session_name()]) ) {
+     *        $cookie = false;
+     *    } else {
+     *        define('COOKIE_SESSION', true);
+     *        $cookie = true;
+     *    }
+     *
+     *    require_once "../config.php";
+     *
+     *    \Tsugi\UI\Output::handleHeartBeat($cookie);
+     *
+     */
+    public static function handleHeartBeat($cookie)
+    {
+        global $CFG;
+
+        self::headerJson();
+
+        session_start();
+
+        $session_id = U::get($_GET, session_name());
+        if ( $session_id && $session_id != session_id() ) {
+            error_log("Heartbeat session_id=".$session_id." session_start=".session_id());
+        }
+
+        if ( $session_id && ! U::get($_SESSION, TSUGI_SESSION_LTI) ) {
+            error_log("Heartbeat session_id=".$session_id." missing lti value");
+        }
+
+        $now = time();
+        $seconds = $now - ($_SESSION['LAST_ACTIVITY'] ?? $now);
+        $_SESSION['LAST_ACTIVITY'] = $now;
+
+        $count = ($_SESSION['HEARTBEAT_COUNT'] ?? 0) + 1;
+        $_SESSION['HEARTBEAT_COUNT'] = $count;
+
+        if ( $count > 10 && ( $count % 100 ) == 0 ) {
+            error_log("Heartbeat.php ".session_id().' '.$count);
+        }
+
+        $retval = array("success" => true, "seconds" => $seconds,
+                "now" => $now, "count" => $count, "cookie" => $cookie,
+                "id" => session_id());
+        $lti = $_SESSION[TSUGI_SESSION_LTI] ?? null;
+        $retval['lti'] = is_array($lti) && U::get($lti, 'key_id');
+        $retval['sessionlifetime'] = $CFG->sessionlifetime;
+        return $retval;
+    }
+
+    function footerEnd() {
+        ob_start();
+
+        if ( ($_SESSION['lti.gradeChangeNotify'] ?? null) ) {
+?>
+<script>
+            if ( typeof lti_gradeChangeNotify === 'function' ) {
+                console.debug('Tsugi sending lti.gradeChangeNotify');
+                lti_gradeChangeNotify();
+            }
+</script>
+<?php
+            unset($_SESSION['lti.gradeChangeNotify']);
+        }
+
+        echo("\n</main>\n</div></body>\n</html>\n");
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $this->buffer ) return $ob_output;
+        echo($ob_output);
+    }
+
+    function footer() {
+        global $CFG;
+        if ( $this->buffer ) {
+            return $this->footerStart() .  $this->footerEnd();
+        } else {
+            $this->footerStart();
+            $this->footerEnd();
+        }
+    }
+
+
+    /**
+      * Welcome the user to the course
+      */
+    function welcomeUserCourse() {
+        global $USER, $CONTEXT;
+        if ( isset($USER->displayname) ) {
+            if ( isset($CONTEXT->title) ) {
+                printf(_m("<p>Welcome %s from %s"), htmlent_utf8($USER->displayname), htmlent_utf8($CONTEXT->title));
+            } else {
+                printf(_m("<p>Welcome %s"), htmlent_utf8($USER->displayname));
+            }
+        } else {
+            if ( isset($CONTEXT->title) ) {
+                printf(_m("<p>Welcome from %s"), htmlent_utf8($CONTEXT->title));
+            } else {
+                printf(_m("<p>Welcome "));
+            }
+        }
+
+        if ( $USER->admin ) {
+            echo(" "._m("(Instructor+Administrator)"));
+        } else if ( $USER->instructor ) {
+            echo(" "._m("(Instructor)"));
+        }
+        echo("</p>\n");
+    }
+
+    /**
+      * Emit a properly styled done button for use in the launched frame/window
+      *
+      * This is a bit tricky because custom settings can control the "Done"
+      * behavior.  These settings can come from one of three places: (1)
+      * in the link settings, (2) from a custom parameter named 'done', or
+      * (3) from a GET parameter done=
+      *
+      * The value for this is a URL, "_close", or "_return".
+      *
+      * TODO: Implement _return
+      */
+    function exitButton($text=false) {
+        if ( $text === false ) $text = _m("Exit");
+        $url = Settings::linkGet('done');
+        if ( $url == false ) {
+            $lti_post = $_SESSION[TSUGI_SESSION_LTI_POST] ?? null;
+            if ( $lti_post && isset($lti_post['custom_done']) ) {
+                $url = $lti_post['custom_done'];
+            } else if ( isset($_GET["done"]) ) {
+                $url = $_GET['done'];
+            }
+        }
+        // If we have no where to go and nothing to do,
+        if ( empty($url) ) return;
+
+        $button = "btn-success";
+        if ( $text == "Cancel" || $text == _m("Cancel") ) $button = "btn-warning";
+
+        if ( $url == "_close" ) {
+            echo("<button type=\"button\" onclick=\"window_close();\" class=\"btn ".$button."\">".$text."</button>\n");
+        } else {
+            echo("<a href=\"$url\" class=\"btn ".$button."\">".$text."</a>\n");
+        }
+    }
+
+    /**
+      * Emit a properly styled close button for use in own popup
+      */
+    function closeButton($text=false) {
+        if ( $text === false ) $text = _m("Exit");
+        $button = "btn-success";
+        if ( $text == "Cancel" || $text == _m("Cancel") ) $button = "btn-warning";
+        echo("<button type=\"button\" onclick=\"window_close();\" class=\"btn ".$button."\">".$text."</button>\n");
+    }
+
+    function togglePre($title, $html) {
+        global $div_id;
+        $div_id = $div_id + 1;
+        $text = _m('Show/Hide');
+        $detail = _m('characters retrieved');
+        echo('<strong>'.htmlpre_utf8($title));
+        echo(' (<button type="button" class="btn btn-link" style="padding:0;vertical-align:baseline;" onclick="dataToggle('."'".$div_id."'".');return false;">'.$text.'</button></strong>'."\n");
+        echo(' '.strlen($html).' '.$detail.')'."\n");
+        echo('<pre id="'.$div_id.'" style="display:none; border: solid 1px">'."\n");
+        echo(htmlpre_utf8($html));
+        echo("</pre><br/>\n");
+    }
+
+    function togglePreScript() {
+    return '<script language="javascript">
+    function dataToggle(divName) {
+        var ele = document.getElementById(divName);
+        if(ele.style.display == "block") {
+            ele.style.display = "none";
+        }
+        else {
+            ele.style.display = "block";
+        }
+    }
+    </script>';
+    }
+
+    function returnMenuSet($return_url) {
+        global $CFG;
+        $R = $CFG->wwwroot . '/';
+        $set = new \Tsugi\UI\MenuSet();
+        $set->setHome(_m('Done'), 'javascript:window.location.href=\''.urlencode($return_url).'\';');
+        return $set;
+    }
+
+    function closeMenuSet() {
+        global $CFG;
+        $R = $CFG->wwwroot . '/';
+        $set = new \Tsugi\UI\MenuSet();
+        $set->setHome(_m('Done'), 'javascript:window_close();');
+        return $set;
+    }
+
+    function defaultMenuSet() {
+        global $CFG;
+        if ( $CFG->defaultmenu instanceof \Tsugi\UI\MenuSet ) {
+            return $CFG->defaultmenu;
+        }
+
+        $R = $CFG->wwwroot . '/';
+        $set = new \Tsugi\UI\MenuSet();
+        if ( is_string($CFG->apphome) ) {
+            $set->setHome($CFG->servicename, $CFG->apphome);
+        } else {
+            $set->setHome($CFG->servicename, $R);
+        }
+        $set->addLeft(_m('Tools'), $R.'store');
+        if ( U::isLoggedIn() ) {
+                $set->addLeft(_m('Settings'), $R . 'settings');
+        }
+
+        if ( U::isLoggedIn() ) {
+            $submenu = new \Tsugi\UI\Menu();
+            $submenu->addLink(_m('Profile'), $R.'profile');
+            if ( $CFG->DEVELOPER || U::get($_COOKIE, 'adminmenu') ) {
+                $submenu->addLink(_m('Admin'), $R.'admin');
+            }
+
+            $submenu->addLink(_m('Logout'), $R.'logout');
+            $set->addRight(htmlentities($_SESSION['displayname'] ?? ''), $submenu);
+        } else {
+            if ( $CFG->DEVELOPER || U::get($_COOKIE, 'adminmenu') ) {
+                $set->addLeft(_m('Admin'), $R.'admin');
+            }
+            if ( $CFG->google_client_id ) {
+                $set->addRight(_m('Login'), $R.'login');
+            }
+        }
+
+        $submenu = new \Tsugi\UI\Menu();
+        $submenu->addLink('1EdTech', 'https://www.1edtech.org/')
+            ->addLink('LTI Advantage', 'http://www.imsglobal.org/lti-advantage-overview')
+            ->addLink('Tsugi Project Site', 'https://www.tsugi.org/');
+        if ( $CFG->DEVELOPER) $set->addRight(_m('Links'), $submenu);
+
+        return $set;
+    }
+
+    /**
+     * Set header Content for any Tsugi-generated pages.
+     */
+    function setAppHeader($head) {
+        if ( ($_SESSION['APP_HEADER'] ?? null) !== $head) {
+            $_SESSION['APP_HEADER'] = $head;
+        }
+    }
+
+    /**
+     * Set footer Content for any Tsugi-generated pages.
+     */
+    function setAppFooter($foot) {
+        if ( ($_SESSION['APP_FOOTER'] ?? null) !== $foot) {
+            $_SESSION['APP_FOOTER'] = $foot;
+        }
+    }
+
+    /**
+     * Store the top navigation in the session
+     */
+    function topNavSession($menuset) {
+        global $CFG;
+        $export = $menuset->export();
+        $sess_key = 'tsugi_top_nav_'.$CFG->wwwroot;
+        if ( ($_SESSION[$sess_key] ?? null) !== $export) {
+            $_SESSION[$sess_key] = $export;
+        }
+    }
+
+    /**
+     * Drop cached top-nav exports (e.g. after login/logout).
+     */
+    public static function clearTopNavSession() {
+        if ( ! isset($_SESSION) || ! is_array($_SESSION) ) {
+            return;
+        }
+        foreach ( array_keys($_SESSION) as $key ) {
+            if ( strpos($key, 'tsugi_top_nav_') === 0 ) {
+                unset($_SESSION[$key]);
+            }
+        }
+    }
+
+    function suppressSiteNav() {
+        $_SESSION[self::SUPPRESS_SITE_NAV] = true;
+    }
+
+    function enableSiteNav() {
+        unset($_SESSION[self::SUPPRESS_SITE_NAV]);
+    }
+
+    /**
+     * Emit the top navigation block and optionally the tool navigation
+     *
+     * Priority order on cookie-session pages (admin, login, site):
+     * (1) $CFG->top_menu_callback when set (site-owned menu builder)
+     * (2) $CFG->defaultmenu when set
+     * (3) Navigation stored via $OUTPUT->topNavSession() (legacy site nav.php pattern)
+     * (4) defaultMenuSet()
+     *
+     * On LTI tool pages:
+     * (1) Navigation cached in the session (LTI / tool continuity)
+     * (2) LTI launch-specific fallbacks
+     */
+    function topNav($tool_menu=false) {
+        global $CFG, $TSUGI_LAUNCH;
+
+        $menu_set = false;
+        if ( defined('COOKIE_SESSION') ) {
+            // Cookie-session pages are never an LTI tool launch for nav purposes.
+            // Stale lti_post, JWT, or cached tool nav must not produce "Done".
+            if ( isset($CFG->top_menu_callback) && is_callable($CFG->top_menu_callback) ) {
+                $refreshed = call_user_func($CFG->top_menu_callback);
+                if ( $refreshed instanceof \Tsugi\UI\MenuSet ) {
+                    $CFG->defaultmenu = $refreshed;
+                }
+            }
+            if ( $CFG->defaultmenu instanceof \Tsugi\UI\MenuSet ) {
+                $menu_set = $CFG->defaultmenu;
+            } else {
+                $sess_key = 'tsugi_top_nav_'.$CFG->wwwroot;
+                if ( $_SESSION[$sess_key] ?? null ) {
+                    $menu_set = \Tsugi\UI\MenuSet::import($_SESSION[$sess_key]);
+                } else {
+                    $menu_set = self::defaultMenuSet();
+                }
+            }
+        } else {
+            $sess_key = 'tsugi_top_nav_'.$CFG->wwwroot;
+
+            // $launch_target = LTIX::ltiRawParameter('launch_presentation_document_target', false);
+            // $launch_return_url = LTIX::ltiRawParameter('launch_presentation_return_url', false);
+            $launch_target = null;
+            $launch_return_url = null;
+            if ( is_object($TSUGI_LAUNCH) ) {
+                $launch_target = $TSUGI_LAUNCH->documentTarget();
+                $launch_return_url = $TSUGI_LAUNCH->returnUrl();
+            }
+
+            // Ways to know if this was a launch or are we stand alone
+            $user_id = LTIX::ltiRawParameter('user_id', false);
+            $oauth_nonce = LTIX::ltiRawParameter('oauth_nonce', false);
+
+            $same_host = false;
+            if ( $CFG->apphome && startsWith($launch_return_url, $CFG->apphome) ) $same_host = true;
+            if ( $CFG->wwwroot && startsWith($launch_return_url, $CFG->wwwroot) ) $same_host = true;
+
+            if ( $menu_set === false && ($_SESSION[$sess_key] ?? null) ) {
+                $menu_set = \Tsugi\UI\MenuSet::import($_SESSION[$sess_key] ?? null);
+            } else if ( $menu_set === true ) {
+                $menu_set = self::defaultMenuSet();
+            } else if ( $same_host && $launch_return_url ) {
+                // If we are in an iframe we will be hidden
+                $menu_set = self::returnMenuSet($launch_return_url);
+            } else if ( is_string($launch_target) && strtolower($launch_target) == 'window' ) {
+                $menu_set = self::closeMenuSet();
+            // Since Sakai sets returnUrl but really does nothing with it except tell the user
+            // to close the tab
+            } else if ( is_object($TSUGI_LAUNCH) && $TSUGI_LAUNCH->isSakai() ) {
+                $menu_set = self::closeMenuSet();
+            // Since Coursera sets precious little
+            } else if ( is_object($TSUGI_LAUNCH) && $TSUGI_LAUNCH->isCoursera() ) {
+                $menu_set = self::closeMenuSet();
+            // Since Canvas does not set launch_target properly
+            } else if ( is_string($launch_target) && is_object($TSUGI_LAUNCH) && ( $TSUGI_LAUNCH->isCanvas() || $TSUGI_LAUNCH->isCoursera() ) ) {
+                $menu_set = self::closeMenuSet();
+            } else if ( is_string($launch_return_url) && U::strlen($launch_return_url) > 0 ) {
+                $menu_set = self::returnMenuSet($launch_return_url);
+            // We are running stand alone (i.e. not from a real LTI Launch)
+            } else if ( $user_id === false ) {
+                $menu_set = self::defaultMenuSet();
+            } else {
+                $menu_set = self::closeMenuSet();
+            }
+
+            if ( $menu_set === false ) {
+                $menu_set = self::closeMenuSet();
+            }
+        }
+
+        $suppressSiteNav = $_SESSION[self::SUPPRESS_SITE_NAV] ?? false;
+        if (  $suppressSiteNav ) {
+          $menu_txt = "";
+        } else {
+          $menu_txt = self::menuNav($menu_set);
+        }
+        if ( $tool_menu ) $menu_txt .= self::menuNav($tool_menu, true);
+
+        // Show / hide / adjust the navigation
+        $menu_txt .= "<script>\n";
+        $menu_txt .= "if ( ! inIframe() ) {\n";
+        $menu_txt .= "  document.getElementById('tsugi_main_nav_bar').style.display = 'block';\n";
+        $menu_txt .= "  document.getElementsByTagName('body')[0].style.paddingTop = '5.93rem';\n";
+        $menu_txt .= "} else {\n";
+        if ( $tool_menu ) {
+            $menu_txt .= "  document.getElementById('tsugi_tool_nav_bar').classList.add(\"navbar-fixed-top\");\n";
+            $menu_txt .= "  document.getElementsByTagName('body')[0].style.paddingTop = '5.93rem';\n";
+        } else {
+            $menu_txt .= "  document.getElementsByTagName('body')[0].style.paddingTop = '1.0rem';\n";
+        }
+        $menu_txt .= "}\n";
+        $menu_txt .= "</script>\n";
+
+        // Send it back
+        if ( $this->buffer ) return $menu_txt;
+        echo($menu_txt);
+    }
+
+    /**
+     * Pull data-tsugi-li-class="a b" off the anchor attribute string (not rendered on &lt;a&gt;)
+     * and return a sanitized class list for the parent &lt;li&gt;.
+     */
+    private function extractLiClassesFromNavAttr(&$attr_str) {
+        $li_classes = '';
+        if ( ! is_string($attr_str) || $attr_str === '' ) {
+            return $li_classes;
+        }
+        if ( preg_match('/\bdata-tsugi-li-class\s*=\s*"([^"]*)"/i', $attr_str, $m) ) {
+            $parts = preg_split('/\s+/', trim($m[1]));
+            $safe = array();
+            foreach ( $parts as $p ) {
+                if ( $p !== '' && preg_match('/^[a-zA-Z][a-zA-Z0-9_-]*$/', $p) ) {
+                    $safe[] = $p;
+                }
+            }
+            $li_classes = implode(' ', $safe);
+            $attr_str = trim(preg_replace('/\s*\bdata-tsugi-li-class\s*=\s*"[^"]*"\s*/i', ' ', $attr_str));
+            $attr_str = trim(preg_replace('/\s+/', ' ', $attr_str));
+        }
+        return $li_classes;
+    }
+
+    private function recurseNav($entry, $depth, $is_tool_nav = false) {
+        global $CFG;
+        $current_url = $is_tool_nav ? basename($_SERVER['PHP_SELF']) : $CFG->getCurrentUrl();
+        $retval = '';
+        $pad = str_repeat('    ',$depth);
+        if ( $depth > 10 ) return $retval;
+        if ( !is_array($entry->href) ) {
+            $target = '';
+            $url = $entry->href;
+            $attr = $entry->attr;
+            if ( $url === false ) {
+                $li_class = 'navbar-text';
+                if ( $attr !== false && is_string($attr) && $attr !== '' ) {
+                    $li_class .= ' '.htmlspecialchars($attr, ENT_QUOTES, 'UTF-8');
+                }
+                $retval .= $pad.'<li class="'.$li_class.'">'.$entry->link.'</li>'."\n";
+                return $retval;
+            }
+            // Convert attr to string first to check if it contains target=
+            $attr_str = ($attr !== false && is_string($attr)) ? $attr : '';
+            $li_extra_class = $this->extractLiClassesFromNavAttr($attr_str);
+            $attr_has_target = ($attr_str !== '' && stripos($attr_str, 'target=') !== false);
+            
+            // Only add default target="_blank" if attr doesn't already specify a target
+            if ( ! $attr_has_target && 
+                 (strpos($url,'http:') === 0 || strpos($url,'https:') === 0 ) &&
+                 ( ! is_string($CFG->apphome) || strpos($url, $CFG->apphome) === false ) &&
+                 ( ! is_string($CFG->wwwroot) || strpos($url, $CFG->wwwroot) === false ) ) {
+                $target = ' target="_blank" rel="noopener noreferrer"';
+            }
+            $li_class_parts = array();
+            if ( $current_url == $url ) {
+                $li_class_parts[] = 'active';
+            }
+            if ( $li_extra_class !== '' ) {
+                $li_class_parts[] = $li_extra_class;
+            }
+            $li_class_attr = '';
+            if ( count($li_class_parts) > 0 ) {
+                $li_class_attr = ' class="'.htmlspecialchars(implode(' ', $li_class_parts), ENT_QUOTES, 'UTF-8').'"';
+            }
+            $retval .= $pad.'<li'.$li_class_attr.'><a href="'.$url.'"'.$target.' '.$attr_str.'>'.$entry->link.'</a></li>'."\n";
+            return $retval;
+        }
+        $retval .= $pad.'<li class="dropdown">'."\n";
+        $dropdown_link_class = 'dropdown-toggle';
+        if (strpos($entry->link, '<img') !== false) {
+            // Drop down link contains an image so add class to style
+            $dropdown_link_class .= ' dropdown-img';
+        }
+        $retval .= $pad.'  <a href="#" class="'.$dropdown_link_class.'" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.$entry->link.' <span class="fa fa-caret-down" aria-hidden="true"></span></a>'."\n";
+        $retval .= $pad.'  <ul class="dropdown-menu">'."\n";
+        foreach($entry->href as $child) {
+           $retval .= $this->recurseNav($child, $depth+1);
+        }
+        $retval .= $pad."  </ul>\n";
+        $retval .= $pad."</li>\n";
+        return $retval;
+    }
+
+    function menuNav($set, $is_tool_menu = false) {
+        global $CFG, $TSUGI_LAUNCH;
+
+        if ( $is_tool_menu ) {
+            $retval = '<nav class="navbar navbar-default" role="navigation" id="tsugi_tool_nav_bar">';
+        } else {
+           $retval = '<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation" id="tsugi_main_nav_bar" style="display:none">';
+        }
+
+        $collapse_id = $is_tool_menu ? 'tsugi_tool_nav_collapse' : 'tsugi_main_nav_collapse';
+$retval .= <<< EOF
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#$collapse_id" aria-controls="$collapse_id" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+
+EOF;
+
+        if ( $set->home ) {
+            $retval .= '      <a class="navbar-brand" href="'.$set->home->href.'">'.$set->home->link.'</a>'."\n";
+        }
+        $retval .= "    </div>\n";
+        $retval .= '    <div id="'.$collapse_id.'" class="navbar-collapse collapse">'."\n";
+
+        if ( $set->left && count($set->left->menu) > 0 ) {
+            $retval .= '      <ul class="nav navbar-nav navbar-main">'."\n";
+            foreach($set->left->menu as $entry) {
+                $retval .= $this->recurseNav($entry, 2, $is_tool_menu);
+            }
+            $retval .= "      </ul>\n";
+        }
+
+        if ( $set->right && count($set->right->menu) > 0 ) {
+            $retval .= '      <ul class="nav navbar-nav navbar-right">'."\n";
+            foreach($set->right->menu as $entry) {
+                $retval .= $this->recurseNav($entry, 2, $is_tool_menu);
+            }
+            $retval .= "      </ul>\n";
+        }
+
+        $retval .= "    </div> <!--/.nav-collapse -->\n";
+        $retval .= "  </div> <!--container -->\n";
+        $retval .= "</nav>\n";
+
+        return $retval;
+    }
+
+
+    /**
+     * Dump a debug array with messages and optional detail
+     *
+     * This kind of debug array comes back from some of the
+     * grade calls.  We loop through printing the messages and
+     * put the detail into a togglable pre tag is present.
+     */
+    function dumpDebugArray($debug_log) {
+        if ( ! is_array($debug_log) ) return;
+
+        foreach ( $debug_log as $k => $v ) {
+            if ( is_array($v) && count($v) > 1 && isset($v[0]) ) {
+                $this->togglePre($v[0], $v[1]);
+            } else if ( is_array($v) && isset($v[0]) && is_string($v[0]) ) {
+                echo("<pre>\n");echo(htmlentities($v[0]));echo("\n</pre>\n");
+            } else if ( is_string($v) ) {
+                echo("<pre>\n");echo(htmlentities($v));echo("\n</pre>\n");
+            } else {
+                echo("<pre>\n");
+                echo(htmlentities(print_r($v)));
+                echo("\n</pre>\n");
+            }
+        }
+    }
+
+    /**
+      * Get a fully-qualified URL for the spinner.
+      */
+    function getSpinnerUrl() {
+        global $CFG;
+        return $CFG->staticroot . '/img/spinner.gif';
+    }
+
+    /**
+      * Get a fully-qualified URL for the default icon image.
+      */
+    function getDefaultIcon() {
+        global $CFG;
+        return $CFG->staticroot . '/img/default-icon.png';
+    }
+
+    /**
+     * Return the text for a full-screen loader
+     *
+     *     echo($OUTPUT->getScreenOverlay(false));
+     *         ...
+     *     <script>
+     *     showOverlay();
+     *     setTimeout(function() { hideOverlay();} , 5000);
+     *     </script>
+     */
+    function getScreenOverlay($show=true) {
+        global $CFG;
+        return
+            '<div class="tsugi_overlay" id="tsugi_overlay" role="status" aria-live="polite" aria-busy="true" style="position: fixed, display:'.
+            ($show ? 'block' : 'none'). '">' . "\n" .
+            '<i style="color: blue;" class="fa fa-spinner fa-spin fa-5x fa-fw" aria-hidden="true"></i>' . "\n" .
+            // '<img src="'.$CFG->staticroot.'/img/logos/apereo-logo-blue-spin.svg" id="tsugi_overlay_spinner" width="100px" height="100px">' . "\n" .
+            '</div>' . "\n" ;
+    }
+
+    /**
+     * Embed a YouTube video using the standard pattern
+     */
+    function embedYouTube($id, $title) {
+        echo('<div class="youtube-player" data-id="'.$id.'"></div>');
+/*
+        echo('<iframe src="https://www.youtube.com/embed/'.
+            $video->youtube.'" frameborder="0" webkitAllowFullScreen mozallowfullscreen allowfullscreen '.
+            ' alt="'.htmlentities($video->title).'"></iframe>'."\n");
+*/
+    }
+
+    /**
+     * Redirect to a local URL, adding session if necessary
+     *
+     * Note that this is only needed for AJAX and header() calls
+     * as &lt;form> and &lt;a href tags are properly handled already
+     * by the PHP built-in "don't use cookies for session" support.
+     */
+    public static function doRedirect($location) {
+        if ( headers_sent() ) {
+            echo('<a href="'.$location.'">Continue</a>'."\n");
+        } else {
+            if ( ini_get('session.use_cookies') == 0 ) {
+                $location = U::addSession($location);
+            }
+            header("Location: $location");
+        }
+    }
+
+    /**
+     * Gets an absolute static path to the specified file
+     */
+    public static function getLocalStatic() {
+        return U::get_rest_parent();
+    }
+
+    // http://stackoverflow.com/questions/49547/making-sure-a-web-page-is-not-cached-across-all-browsers
+    // http://www.php.net/manual/en/public static function.header.php
+    public static function noCacheHeader() {
+        header('Cache-Control: no-cache, no-store, must-revalidate'); // HTTP 1.1.
+        header('Pragma: no-cache'); // HTTP 1.0.
+        header("Expires: Sat, 26 Jul 1997 05:00:00 GMT"); // Date in the past - proxies
+    }
+
+    public static function maxCacheHeader($max_age=604800) {
+        header('Cache-Control: max-age='.$max_age);  // A Week...
+    }
+
+    public static function displaySize($size) {
+        return U::displaySize($size);
+    }
+
+    // Clean out the array of 'secret' keys
+    public static function safe_var_cleanup(&$x, $depth) {
+        if ( $depth >= 5 ) return;
+        if ( is_array($x) || is_object($x) ) {
+            foreach($x as $k => $v ) {
+                if (  is_string($v) && U::strlen($v) > 0 && strpos($k, 'secret') !== false || strpos($k, 'priv') !== false ) {
+                    if ( is_array($x) ) {
+                        $x[$k] = 'Hidden as MD5: '.MD5($v);
+                    } else {
+                        $x->{$k} = 'Hidden as MD5: '.MD5($v);
+                    }
+                }
+                if ( is_array($v) || is_object($v) ) self::safe_var_cleanup($v,$depth+1);
+            }
+        }
+    }
+
+    public static function safe_var_dump($x) {
+        ob_start();
+        self::safe_var_cleanup($x, 0);
+        var_dump($x);
+        $result = ob_get_clean();
+        return htmlent_utf8($result);
+    }
+
+    public static function safe_print_r($x) {
+        ob_start();
+        self::safe_var_cleanup($x, 0);
+        print_r($x);
+        $result = ob_get_clean();
+        return htmlent_utf8($result);
+    }
+
+    /**
+     * Display an HTML error dialog. Redirect destination is determined client-side from
+     * TSUGI_browser_session() (TSUGI_SESSION_DATA) when available:
+     * (a) launch_presentation_error_return_url, (b) launch_presentation_return_url,
+     * (c) $CFG->launcherror if configured. No return URL: dialog with no button.
+     *
+     * @param string $message Dialog title
+     * @param string $msg Error message (displayed as "Detail: ...", used in URL params)
+     * @param string|false $extra Optional extra detail for URL params (trimmed, max 200 chars)
+     */
+    public static function htmlError($message, $msg, $extra=false) {
+        global $CFG;
+        if ( ! headers_sent() ) header('HTTP/1.1 400 '.$message);
+
+        $msg = is_string($msg) ? trim($msg) : '';
+        $detail = 'Detail: ' . $msg;
+        $detail_extra = ( $extra !== false && is_string($extra) && strlen(trim($extra)) < 200 ) ? trim($extra) : '';
+        $launcherror_url = isset($CFG->launcherror) && $CFG->launcherror ? $CFG->launcherror : '';
+
+        echo(self::headerStart());
+        echo(self::headerCss());
+?>
+   </head>
+<body>
+<div id="dialog-confirm" style="display:none;" title="<?= htmlentities($message) ?>">
+<p><span class="ui-icon ui-icon-alert" style="float:left; margin:12px 12px 20px 0;"></span><?= $detail ?></p>
+</div>
+<?= self::footerScriptLinks() ?>
+<script>
+
+$( function() {
+  var errMsg = <?= json_encode($msg) ?>;
+  var errDetail = <?= json_encode($detail_extra) ?>;
+  var launcherror = <?= json_encode($launcherror_url) ?>;
+  var sess = typeof TSUGI_browser_session === 'function' ? TSUGI_browser_session() : null;
+  var ltiErrorReturn = sess && sess.launch_presentation_error_return_url ? sess.launch_presentation_error_return_url : null;
+  var ltiReturn = sess && sess.launch_presentation_return_url ? sess.launch_presentation_return_url : null;
+  var ltiUrl = (ltiErrorReturn && ltiErrorReturn.length > 0) ? ltiErrorReturn : ltiReturn;
+  var redirectUrl = null;
+  var btnLabel = <?= json_encode(_m('Continue')) ?>;
+  if ( ltiUrl && ltiUrl.length > 0 ) {
+    redirectUrl = ltiUrl + (ltiUrl.indexOf('?')>=0?'&':'?') + 'lti_errormsg=' + encodeURIComponent(errMsg);
+    if ( errDetail && errDetail.length < 200 ) redirectUrl += '&detail=' + encodeURIComponent(errDetail);
+    btnLabel = <?= json_encode(_m('Return to Learning System')) ?>;
+  } else if ( launcherror && launcherror.length > 0 ) {
+    redirectUrl = launcherror + (launcherror.indexOf('?')>=0?'&':'?') + 'detail=' + encodeURIComponent(errMsg);
+    btnLabel = <?= json_encode(_m('Continue')) ?>;
+  }
+  var btns = {};
+  if ( redirectUrl ) {
+    btns[btnLabel] = function() {
+      $(this).dialog("option", "buttons", {});
+      window.location.href = redirectUrl;
+    };
+  }
+  $( "#dialog-confirm" ).dialog({
+    resizable: false,
+    height: "auto",
+    width: 400,
+    modal: true,
+    buttons: btns
+  });
+});
+</script>
+</body>
+<?php
+}
+
+
+    public static function jsonError($message,$detail="") {
+        header('HTTP/1.1 400 '.$message);
+        header('Content-Type: application/json; charset=utf-8');
+        echo(json_encode(array("error" => $message, "detail" => $detail)));
+    }
+
+    public static function jsonAuthError($message,$detail="") {
+        header('HTTP/1.1 403 '.$message);
+        header('Content-Type: application/json; charset=utf-8');
+        echo(json_encode(array("error" => $message, "detail" => $detail)));
+    }
+
+    public static function jsonOutput($json_data) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo(json_encode($json_data));
+    }
+
+    // https://security.stackexchange.com/questions/110101/proper-way-to-protect-against-xss-when-output-is-directly-into-js-not-html
+    public static function json_encode_string_value($json_string) {
+        return json_encode($json_string, JSON_HEX_QUOT|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS);
+    }
+
+    public static function xmlError($message,$detail="",$code=400) {
+        header('HTTP/1.1 '.$code.' '.$message);
+        header('Content-Type: text/xml; charset=utf-8');
+        echo('<?xml version="1.0" encoding="UTF-8" standalone="yes"?'.">\n");
+        echo("<failure>\n  <message>\n    ");
+        echo(htmlentities($error));
+        echo("  </message>\n");
+        if ( U::strlen($detail) > 0 ) {
+            echo("  <detail>\n    ");
+            echo(htmlentities($detail));
+            echo("  </detail>\n");
+        }
+        echo("</failure>\n");
+    }
+
+    public static function xmlAuthError($message,$detail="") {
+        self::xmlError($message,$detail,403);
+    }
+
+    public static function xmlOutput($xml_data) {
+        header('Content-Type: text/xml; charset=utf-8');
+        echo($xml_data);
+    }
+
+    // No Buffering
+    public static function noBuffer() {
+        ini_set('output_buffering', 'off');
+        ini_set('zlib.output_compression', false);
+    }
+
+    /** Retrieves or generates a theme based on optional specs (base color, dark mode flag).
+     *  $TSUGI_LAUNCH theme data is provided, it will override the $CFG data.
+     *  Otherwise, $CFG theme data will be used (either a theme_base or legacy theme data)
+     *  If $CFG and $TSUGI_LAUNCH theme data aren't provided, regular defaults will be used.
+     */
+    public static function get_theme() {
+        global $CFG, $TSUGI_LAUNCH;
+        if ( U::isNotEmpty($CFG->pdo) ) {
+            $PDOX = LTIX::getConnection(); // Not globally accessible in tool details
+        } else {
+            $PDOX = null;
+        }
+
+        // TODO: Enable this
+        if ( false && is_object($TSUGI_LAUNCH) ) {
+            $theme = $_SESSION['tsugi_theme'] ?? null;
+            if ( is_array($theme) ) return $theme;
+        }
+
+        /** Theme generation from a base color */
+
+        // Check if we are to construct a theme
+        $theme_base = isset($CFG->theme_base) ? $CFG->theme_base : null;
+        $dark_mode = isset($CFG->theme_dark_mode) && Theme::isActive($CFG->theme_dark_mode) ? $CFG->theme_dark_mode : null;
+
+        // Override config values with launch values, if they exist
+        if (is_object($TSUGI_LAUNCH)) {
+            $launched_theme_base = null;
+            $launched_dark_mode = null;
+            if (isset($_SESSION) && isset($_SESSION[TSUGI_SESSION_LTI_POST]) && isset($_SESSION[TSUGI_SESSION_LTI_POST]['theme_base'])) {
+                $launched_theme_base = $_SESSION[TSUGI_SESSION_LTI_POST]['theme_base'];
+            }
+            if (isset($_SESSION) && isset($_SESSION[TSUGI_SESSION_LTI_POST]) && isset($_SESSION[TSUGI_SESSION_LTI_POST]['theme_dark_mode'])) {
+                $launched_dark_mode = $_SESSION[TSUGI_SESSION_LTI_POST]['theme_dark_mode'];
+            }
+            if (isset($launched_theme_base)) {
+                $theme_base = U::isValidCSSColor($launched_theme_base) ? $launched_theme_base : $theme_base;
+            }
+            if (isset($launched_dark_mode)) {
+                $dark_mode = Theme::isActive($launched_dark_mode);
+            }
+        }
+
+        // Override the config AND launch values if the user's preference is set in the $_SESSION
+        if ( is_object($PDOX) && isset($_SESSION) && isset($_SESSION['profile_id']) ) {
+            $profile_table = "{$CFG->dbprefix}profile";
+            if ( $PDOX->metadata($profile_table) !== false ) {
+                $stmt = $PDOX->queryReturnError(
+                    "SELECT json FROM {$profile_table} WHERE profile_id = :PID",
+                    array(':PID' => $_SESSION['profile_id']),
+                    false
+                );
+                if ( $stmt->success ) {
+                    $profile_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                    $stmt->closeCursor();
+                    if ( ! empty($profile_row) && ! is_null($profile_row['json']) ) {
+                        $profile = json_decode($profile_row['json']);
+                        if ( isset($profile->theme_override) ) {
+                            if ( $profile->theme_override == 'dark' ) {
+                                $dark_mode = true;
+                            } else if ( $profile->theme_override == 'light' ) {
+                                $dark_mode = null;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Set dark mode configuration on the theme so apps can check
+        // Example: conditional rendering of a twitter embed attribute
+        Theme::$dark_mode = $dark_mode;
+        Theme::$theme_base = $theme_base;
+
+        // Generate the theme
+        if (isset($theme_base) && U::isValidCSSColor($theme_base)) {
+            $theme = Theme::getLegacyTheme($theme_base, $dark_mode);
+            // Default any remaining values that weren't already configured
+            $theme = Theme::defaults($theme);
+            if (is_object($TSUGI_LAUNCH)) $_SESSION['tsugi_theme'] = $theme;
+            return $theme;
+        }
+
+        /** Legacy theming */
+
+        $theme = array();
+        if ($dark_mode && isset($CFG->theme_dark) && is_array($CFG->theme_dark)) {
+            // If we are at this point and dark mode was requested but a provided or generated theme wasn't used, may use config
+            $theme = $CFG->theme_dark;
+        } else if (isset($CFG->theme) && is_array($CFG->theme)) {
+            // Otherwise use the non-dark theme configuration
+            $theme = $CFG->theme;
+        }
+
+        $theme = Theme::defaults($theme);
+
+        // Check for individual overides from link, context, key, or launch
+        foreach($theme as $name => $value ) {
+            if ( is_object($TSUGI_LAUNCH) ) {
+                $check = $TSUGI_LAUNCH->settingsCascade($name, $value);
+                if (isset($check) && U::isValidCSSColor($check) ) $theme[$name] = $check;
+            }
+        }
+
+        if ( is_object($TSUGI_LAUNCH) ) {
+            $_SESSION['tsugi_theme'] = $theme;
+        }
+
+        return $theme;
+    }
+
+    /**
+     * Adjust the theme from various places based on the following low-to-high precedence
+     *
+     * (4) From a Key Setting
+     * (3) From a Context Setting
+     * (2) From a Link Setting
+     * (1) From a custom launch variable prefixed by "tsugi_theme_"
+     */
+    public static function adjust_theme(&$theme) {
+        global $TSUGI_LAUNCH, $TSUGI_KEY, $LINK, $CONTEXT;
+
+        $copy = $theme;
+
+    }
+
+    /**
+     * Return doctype, html, head opening, meta, title, tsugiscripts_head.
+     * Callers add headerData (if applicable), headerCss, then close head. Used by header() and htmlError().
+     */
+    public static function headerStart() {
+        global $CFG;
+        $lang = isset($CFG->lang) && $CFG->lang ? $CFG->lang : 'en';
+        $title = $CFG->servicename;
+        if ( isset($CFG->context_title) && $CFG->context_title ) {
+            $title .= ' - '.$CFG->context_title;
+        }
+        $s = $CFG->staticroot;
+        return '<!DOCTYPE html>
+<html lang="'.htmlspecialchars($lang).'">
+  <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" >
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>'.htmlspecialchars($title).'</title>
+        <!-- Tiny bit of JS -->
+        <script src="'.$s.'/js/tsugiscripts_head.js"></script>
+';
+    }
+
+    /**
+     * Return all shared stylesheet links and inline CSS for the page header.
+     * Used by header() and htmlError().
+     */
+    public static function headerCss() {
+        global $CFG;
+        $s = $CFG->staticroot;
+        $ret = '        <!-- Le styles -->
+<link href="'.$s.'/bootstrap-3.4.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="'.$s.'/bootstrap-3.4.1/patch/accessibility-patch.css" rel="stylesheet">
+<link href="'.$s.'/js/jquery-ui-1.11.4/jquery-ui.min.css" rel="stylesheet">
+';
+        $ret .= self::getFontAwesomeLinks();
+        $theme = self::get_theme();
+        if (isset($theme["font-url"])) {
+            $ret .= '<link href="'.htmlspecialchars($theme["font-url"]).'" rel="stylesheet">'."\n";
+        }
+        $ret .= self::getThemeCss($theme);
+        $ret .= '<link href="'.$s.'/css/tsugi2.css" rel="stylesheet">'."\n";
+        if ( isset($CFG->extra_css) ) {
+            $ret .= '<style>'."\n".$CFG->extra_css."\n</style>\n";
+        }
+        if ( isset($CFG->google_translate) && $CFG->google_translate ) {
+            $ret .= '
+<style>
+a[target="_blank"]:after {
+    font-family: \'Font Awesome 5 Free\';
+    font-weight: 600;
+    content: " \f35d";
+}
+.goog-te-banner-frame.skiptranslate {
+    display: none !important;
+    }
+body {
+    top: 0px !important;
+    }
+</style>
+';
+        }
+        return $ret;
+    }
+
+    /**
+     * Return FontAwesome stylesheet link(s). FontAwesome 5 uses all.css + v4-shims;
+     * older versions use font-awesome.min.css.
+     */
+    public static function getFontAwesomeLinks() {
+        global $CFG;
+        if ( empty($CFG->fontawesome) ) return '';
+        if ( strpos($CFG->fontawesome, 'free-5.') > 0 ) {
+            return '<link href="'.$CFG->fontawesome.'/css/all.css" rel="stylesheet">'."\n"
+                .'<link href="'.$CFG->fontawesome.'/css/v4-shims.css" rel="stylesheet">'."\n";
+        }
+        return '<link href="'.$CFG->fontawesome.'/css/font-awesome.min.css" rel="stylesheet">'."\n";
+    }
+
+    public static function output_theme_css($theme) {
+        echo(self::getThemeCss($theme));
+    }
+
+    public static function getThemeCss($theme) {
+        $style = '<style>:root {';
+        foreach($theme as $name => $value ) {
+            $style .= '--'.$name.':'.$value.";\n";
+        }
+        $style .= '}</style>'."\n";
+        return $style;
+    }
+
+}

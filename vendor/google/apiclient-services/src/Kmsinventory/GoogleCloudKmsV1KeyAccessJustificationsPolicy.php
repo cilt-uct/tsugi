@@ -21,12 +21,22 @@ class GoogleCloudKmsV1KeyAccessJustificationsPolicy extends \Google\Collection
 {
   protected $collection_key = 'allowedAccessReasons';
   /**
+   * The list of allowed reasons for access to a CryptoKey. Note that empty
+   * allowed_access_reasons has a different meaning depending on where this
+   * message appears. If this is under KeyAccessJustificationsPolicyConfig, it
+   * means allow-all. If this is under CryptoKey, it means deny-all.
+   *
    * @var string[]
    */
   public $allowedAccessReasons;
 
   /**
-   * @param string[]
+   * The list of allowed reasons for access to a CryptoKey. Note that empty
+   * allowed_access_reasons has a different meaning depending on where this
+   * message appears. If this is under KeyAccessJustificationsPolicyConfig, it
+   * means allow-all. If this is under CryptoKey, it means deny-all.
+   *
+   * @param string[] $allowedAccessReasons
    */
   public function setAllowedAccessReasons($allowedAccessReasons)
   {

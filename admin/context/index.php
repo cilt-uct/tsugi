@@ -13,8 +13,8 @@ header('Content-Type: text/html; charset=utf-8');
 session_start();
 
 if ( ! isAdmin() ) {
-    $_SESSION['login_return'] = LTIX::curPageUrlFolder();
-    header('Location: '.$CFG->wwwroot.'/login.php');
+    \Tsugi\Controllers\Login::setReturnUrl(LTIX::curPageUrlFolder());
+    header('Location: '.\Tsugi\Controllers\Login::loginUrl());
     return;
 }
 

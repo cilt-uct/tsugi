@@ -55,6 +55,10 @@ class Activities extends \Google\Service\Resource
    * example, the IP address can be the user's proxy server's address or a virtual
    * private network (VPN) address. This parameter supports both IPv4 and IPv6
    * address versions.
+   * @opt_param string applicationInfoFilter Optional. Used to filter on the
+   * `oAuthClientId` field present in [`ApplicationInfo`](#applicationinfo)
+   * message. **Usage** ``` GET...&applicationInfoFilter=oAuthClientId="clientId"
+   * GET...&applicationInfoFilter=oAuthClientId=%22clientId%22 ```
    * @opt_param string customerId The unique ID of the customer to retrieve data
    * for.
    * @opt_param string endTime Sets the end of the range of time shown in the
@@ -70,7 +74,8 @@ class Activities extends \Google\Service\Resource
    * itself can be requested in August. If the `endTime` is not specified, the
    * report returns all activities from the `startTime` until the current time or
    * the most recent 180 days if the `startTime` is more than 180 days in the
-   * past.
+   * past. For Gmail requests, `startTime` and `endTime` must be provided and the
+   * difference must not be greater than 30 days.
    * @opt_param string eventName The name of the event being queried by the API.
    * Each `eventName` is related to a specific Google Workspace service or feature
    * which the API organizes into types of events. An example is the Google
@@ -113,12 +118,24 @@ class Activities extends \Google\Service\Resource
    * @opt_param string groupIdFilter Comma separated group ids (obfuscated) on
    * which user activities are filtered, i.e. the response will contain activities
    * for only those users that are a part of at least one of the group ids
-   * mentioned here. Format: "id:abc123,id:xyz456"
+   * mentioned here. Format: "id:abc123,id:xyz456" *Important:* To filter by
+   * groups, you must explicitly add the groups to your filtering groups
+   * allowlist. For more information about adding groups to filtering groups
+   * allowlist, see [Filter results by Google
+   * Group](https://support.google.com/a/answer/11482175)
+   * @opt_param bool includeSensitiveData Optional. When set to `true`, this field
+   * allows sensitive user-generated content to be included in the returned audit
+   * logs. This parameter is supported only for Rules (DLP) and Chat applications;
+   * using it with any other application will result in a permission error.
    * @opt_param int maxResults Determines how many activity records are shown on
    * each response page. For example, if the request sets `maxResults=1` and the
    * report has two activities, the report has two pages. The response's
    * `nextPageToken` property has the token to the second page. The `maxResults`
    * query string is optional in the request. The default value is 1000.
+   * @opt_param string networkInfoFilter Optional. Used to filter on the
+   * `regionCode` field present in [`NetworkInfo`](#networkinfo) message.
+   * **Usage** ``` GET...&networkInfoFilter=regionCode="IN"
+   * GET...&networkInfoFilter=regionCode=%22IN%22 ```
    * @opt_param string orgUnitID ID of the organizational unit to report on.
    * Activity records will be shown only for users who belong to the specified
    * organizational unit. Data before Dec 17, 2018 doesn't appear in the filtered
@@ -127,11 +144,58 @@ class Activities extends \Google\Service\Resource
    * multiple pages has a `nextPageToken` property in the response. In your
    * follow-on request getting the next page of the report, enter the
    * `nextPageToken` value in the `pageToken` query string.
+   * @opt_param string resourceDetailsFilter Optional. The `resourceDetailsFilter`
+   * query string is an AND separated list composed of [Resource
+   * Details](#resourcedetails) fields manipulated by relational operators.
+   * Resource Details Filters are in the form `{resourceDetails.field1}{relational
+   * operator}{field1 value} AND {resourceDetails.field2}{relational
+   * operator}{field2 value}...` All the inner fields are traversed using the `.`
+   * operator, as shown in the following example: ``` resourceDetails.id =
+   * "resourceId" AND resourceDetails.appliedLabels.id = "appliedLabelId" AND
+   * resourceDetails.appliedLabels.fieldValue.id = "fieldValueId" ```
+   * `resourceDetailsFilter` query supports these relational operators: *
+   * `=`—'equal to'. * `!=`—'not equal to'. * `:`—'exists'. This is used for
+   * filtering on repeated fields. [`FieldValue`](#fieldvalue) types that are
+   * repeated in nature uses `exists` operator for filtering. The following
+   * [`FieldValue`](#fieldvalue) types are repeated: *
+   * [`TextListValue`](#textlistvalue) *
+   * [`SelectionListValue`](#selectionlistvalue) *
+   * [`UserListValue`](#userlistvalue) For example, in the following filter,
+   * [`SelectionListValue`](#selectionlistvalue), is a repeated field. The filter
+   * checks whether [`SelectionListValue`](#selectionlistvalue) contains
+   * `selection_id`: ``` resourceDetails.id = "resourceId" AND
+   * resourceDetails.appliedLabels.id = "appliedLabelId" AND
+   * resourceDetails.appliedLabels.fieldValue.id = "fieldValueId" AND
+   * resourceDetails.appliedLabels.fieldValue.type = "SELECTION_LIST_VALUE" AND
+   * resourceDetails.appliedLabels.fieldValue.selectionListValue.id: "id" ```
+   * **Usage** ``` GET...&resourceDetailsFilter=resourceDetails.id = "resourceId"
+   * AND resourceDetails.appliedLabels.id = "appliedLabelId" GET...&resourceDetail
+   * sFilter=resourceDetails.id=%22resourceId%22%20AND%20resourceDetails.appliedLa
+   * bels.id=%22appliedLabelId%22 ``` **Note the following**: * You must URL
+   * encode the query string before sending the request. * The API supports a
+   * maximum of 5 fields separated by the AND operator. - When filtering on deeper
+   * levels (e.g., [`AppliedLabel`](#appliedlabel), [`FieldValue`](#fieldvalue)),
+   * the IDs of all preceding levels in the hierarchy must be included in the
+   * filter. For example: Filtering on [`FieldValue`](#fieldvalue) requires
+   * [`AppliedLabel`](#appliedlabel) ID and resourceDetails ID to be present.
+   * *Sample Query*: ``` resourceDetails.id = "resourceId" AND
+   * resourceDetails.appliedLabels.id = "appliedLabelId" AND
+   * resourceDetails.appliedLabels.fieldValue.id = "fieldValueId" ``` * Filtering
+   * on inner [`FieldValue`](#fieldvalue) types like `longTextValue` and
+   * `textValue` requires `resourceDetails.appliedLabels.fieldValue.type` to be
+   * present. * Only Filtering on a single [`AppliedLabel`](#appliedlabel) id and
+   * [`FieldValue`](#fieldvalue) id is supported.
    * @opt_param string startTime Sets the beginning of the range of time shown in
    * the report. The date is in the RFC 3339 format, for example
    * 2010-10-28T10:26:35.000Z. The report returns all activities from `startTime`
    * until `endTime`. The `startTime` must be before the `endTime` (if specified)
    * and the current time when the request is made, or the API returns an error.
+   * For Gmail requests, `startTime` and `endTime` must be provided and the
+   * difference must not be greater than 30 days.
+   * @opt_param string statusFilter Optional. Used to filter on the `statusCode`
+   * field present in [`Status`](#status) message. **Usage** ```
+   * GET...&statusFilter=statusCode="200" GET...&statusFilter=statusCode=%22200%22
+   * ```
    * @return ActivitiesModel
    * @throws \Google\Service\Exception
    */
@@ -218,10 +282,14 @@ class Activities extends \Google\Service\Resource
    * ignores that parameter and returns the response corresponding to the
    * remaining valid parameters. If no parameters are requested, all parameters
    * are returned.
-   * @opt_param string groupIdFilter Comma separated group ids (obfuscated) on
-   * which user activities are filtered, i.e. the response will contain activities
-   * for only those users that are a part of at least one of the group ids
-   * mentioned here. Format: "id:abc123,id:xyz456"
+   * @opt_param string groupIdFilter `Deprecated`. This field is deprecated and is
+   * no longer supported. Comma separated group ids (obfuscated) on which user
+   * activities are filtered, i.e. the response will contain activities for only
+   * those users that are a part of at least one of the group ids mentioned here.
+   * Format: "id:abc123,id:xyz456" *Important:* To filter by groups, you must
+   * explicitly add the groups to your filtering groups allowlist. For more
+   * information about adding groups to filtering groups allowlist, see [Filter
+   * results by Google Group](https://support.google.com/a/answer/11482175)
    * @opt_param int maxResults Determines how many activity records are shown on
    * each response page. For example, if the request sets `maxResults=1` and the
    * report has two activities, the report has two pages. The response's

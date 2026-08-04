@@ -33,7 +33,7 @@ class GoogleCloudDialogflowCxV3ExportAgentResponse extends \Google\Model
   public $commitSha;
 
   /**
-   * @param string
+   * @param string $agentContent
    */
   public function setAgentContent($agentContent)
   {
@@ -47,7 +47,7 @@ class GoogleCloudDialogflowCxV3ExportAgentResponse extends \Google\Model
     return $this->agentContent;
   }
   /**
-   * @param string
+   * @param string $agentUri
    */
   public function setAgentUri($agentUri)
   {
@@ -61,7 +61,7 @@ class GoogleCloudDialogflowCxV3ExportAgentResponse extends \Google\Model
     return $this->agentUri;
   }
   /**
-   * @param string
+   * @param string $commitSha
    */
   public function setCommitSha($commitSha)
   {

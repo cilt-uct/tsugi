@@ -19,18 +19,132 @@ namespace Google\Service\DiscoveryEngine;
 
 class GoogleCloudDiscoveryengineV1betaEngineSearchEngineConfig extends \Google\Collection
 {
+  /**
+   * Default value.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_UNSPECIFIED = 'SUBSCRIPTION_TIER_UNSPECIFIED';
+  /**
+   * Search tier. Search tier can access Vertex AI Search features and
+   * NotebookLM features.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_SEARCH = 'SUBSCRIPTION_TIER_SEARCH';
+  /**
+   * Gemini Enterprise Plus tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT = 'SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT';
+  /**
+   * NotebookLM tier. NotebookLM is a subscription tier can only access
+   * NotebookLM features.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_NOTEBOOK_LM = 'SUBSCRIPTION_TIER_NOTEBOOK_LM';
+  /**
+   * Gemini Frontline worker tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_FRONTLINE_WORKER = 'SUBSCRIPTION_TIER_FRONTLINE_WORKER';
+  /**
+   * Gemini Business Starter tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_AGENTSPACE_STARTER = 'SUBSCRIPTION_TIER_AGENTSPACE_STARTER';
+  /**
+   * Gemini Business tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_AGENTSPACE_BUSINESS = 'SUBSCRIPTION_TIER_AGENTSPACE_BUSINESS';
+  /**
+   * Gemini Enterprise Standard tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_ENTERPRISE = 'SUBSCRIPTION_TIER_ENTERPRISE';
+  /**
+   * Gemini Enterprise Standard tier for emerging markets.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_ENTERPRISE_EMERGING = 'SUBSCRIPTION_TIER_ENTERPRISE_EMERGING';
+  /**
+   * Gemini Enterprise EDU tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_EDU = 'SUBSCRIPTION_TIER_EDU';
+  /**
+   * Gemini Enterprise EDU Pro tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_EDU_PRO = 'SUBSCRIPTION_TIER_EDU_PRO';
+  /**
+   * Gemini Enterprise EDU tier for emerging market only.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_EDU_EMERGING = 'SUBSCRIPTION_TIER_EDU_EMERGING';
+  /**
+   * Gemini Enterprise EDU Pro tier for emerging market.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_EDU_PRO_EMERGING = 'SUBSCRIPTION_TIER_EDU_PRO_EMERGING';
+  /**
+   * Gemini Frontline Starter tier.
+   */
+  public const REQUIRED_SUBSCRIPTION_TIER_SUBSCRIPTION_TIER_FRONTLINE_STARTER = 'SUBSCRIPTION_TIER_FRONTLINE_STARTER';
+  /**
+   * Default value when the enum is unspecified. This is invalid to use.
+   */
+  public const SEARCH_TIER_SEARCH_TIER_UNSPECIFIED = 'SEARCH_TIER_UNSPECIFIED';
+  /**
+   * Standard tier.
+   */
+  public const SEARCH_TIER_SEARCH_TIER_STANDARD = 'SEARCH_TIER_STANDARD';
+  /**
+   * Enterprise tier.
+   */
+  public const SEARCH_TIER_SEARCH_TIER_ENTERPRISE = 'SEARCH_TIER_ENTERPRISE';
   protected $collection_key = 'searchAddOns';
   /**
+   * Optional. The required subscription tier of this engine. They cannot be
+   * modified after engine creation. If the required subscription tier is
+   * search, user with higher license tier like assist can still access the
+   * standalone app associated with this engine.
+   *
+   * @var string
+   */
+  public $requiredSubscriptionTier;
+  /**
+   * The add-on that this search engine enables.
+   *
    * @var string[]
    */
   public $searchAddOns;
   /**
+   * The search feature tier of this engine. Different tiers might have
+   * different pricing. To learn more, check the pricing documentation. Defaults
+   * to SearchTier.SEARCH_TIER_STANDARD if not specified.
+   *
    * @var string
    */
   public $searchTier;
 
   /**
-   * @param string[]
+   * Optional. The required subscription tier of this engine. They cannot be
+   * modified after engine creation. If the required subscription tier is
+   * search, user with higher license tier like assist can still access the
+   * standalone app associated with this engine.
+   *
+   * Accepted values: SUBSCRIPTION_TIER_UNSPECIFIED, SUBSCRIPTION_TIER_SEARCH,
+   * SUBSCRIPTION_TIER_SEARCH_AND_ASSISTANT, SUBSCRIPTION_TIER_NOTEBOOK_LM,
+   * SUBSCRIPTION_TIER_FRONTLINE_WORKER, SUBSCRIPTION_TIER_AGENTSPACE_STARTER,
+   * SUBSCRIPTION_TIER_AGENTSPACE_BUSINESS, SUBSCRIPTION_TIER_ENTERPRISE,
+   * SUBSCRIPTION_TIER_ENTERPRISE_EMERGING, SUBSCRIPTION_TIER_EDU,
+   * SUBSCRIPTION_TIER_EDU_PRO, SUBSCRIPTION_TIER_EDU_EMERGING,
+   * SUBSCRIPTION_TIER_EDU_PRO_EMERGING, SUBSCRIPTION_TIER_FRONTLINE_STARTER
+   *
+   * @param self::REQUIRED_SUBSCRIPTION_TIER_* $requiredSubscriptionTier
+   */
+  public function setRequiredSubscriptionTier($requiredSubscriptionTier)
+  {
+    $this->requiredSubscriptionTier = $requiredSubscriptionTier;
+  }
+  /**
+   * @return self::REQUIRED_SUBSCRIPTION_TIER_*
+   */
+  public function getRequiredSubscriptionTier()
+  {
+    return $this->requiredSubscriptionTier;
+  }
+  /**
+   * The add-on that this search engine enables.
+   *
+   * @param string[] $searchAddOns
    */
   public function setSearchAddOns($searchAddOns)
   {
@@ -44,14 +158,21 @@ class GoogleCloudDiscoveryengineV1betaEngineSearchEngineConfig extends \Google\C
     return $this->searchAddOns;
   }
   /**
-   * @param string
+   * The search feature tier of this engine. Different tiers might have
+   * different pricing. To learn more, check the pricing documentation. Defaults
+   * to SearchTier.SEARCH_TIER_STANDARD if not specified.
+   *
+   * Accepted values: SEARCH_TIER_UNSPECIFIED, SEARCH_TIER_STANDARD,
+   * SEARCH_TIER_ENTERPRISE
+   *
+   * @param self::SEARCH_TIER_* $searchTier
    */
   public function setSearchTier($searchTier)
   {
     $this->searchTier = $searchTier;
   }
   /**
-   * @return string
+   * @return self::SEARCH_TIER_*
    */
   public function getSearchTier()
   {

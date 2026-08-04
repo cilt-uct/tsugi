@@ -6,6 +6,7 @@ use \Tsugi\Core\Settings;
 use \Tsugi\Core\LTIX;
 use \Tsugi\Core\ContentItem;
 use \Tsugi\Core\DeepLinkResponse;
+use \Tsugi\Util\SakaiCustom;
 use \Tsugi\Util\U;
 use \Tsugi\Util\LTI;
 use \Tsugi\Util\LTI13;
@@ -344,20 +345,56 @@ if ( isset($_GET['install']) ) {
     foreach ( $extraParmList as $parm ) {
         $value = U::get($_GET, $parm);
         if ( ! $value ) continue;
+        // HTML5 type="date" yields YYYY-MM-DD; LTI DL expects xs:dateTime (e.g. ...Z).
+        if ( preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $value) ) {
+            if ( $parm === 'availableEnd' || $parm === 'submissionEnd' ) {
+                $value = $value . 'T23:59:59Z';
+            } else {
+                $value = $value . 'T00:00:00Z';
+            }
+        }
         $additionalParams[$parm] = $value;
     }
+
+    $registerParmList = array(
+        "thumbnail_url", "thumbnail_height", "thumbnail_width"
+    );
+
+    foreach ( $registerParmList as $parm ) {
+        $value = U::get($tool, $parm);
+        if ( ! $value ) continue;
+        $additionalParams[$parm] = $value;
+    }
+
     if ( is_array($submissionReview) ) $additionalParams['submissionReview'] = $submissionReview;
 
-    $custom = array(
-        'availablestart' => '$ResourceLink.available.startDateTime',
-        'availableend' => '$ResourceLink.available.endDateTime',
-        'submissionstart' => '$ResourceLink.submission.startDateTime',
-        'submissionend' => '$ResourceLink.submission.endDateTime',
-        'resourcelink_id_history' => '$ResourceLink.id.history',
-        'context_id_history' => '$Context.id.history',
-        'canvas_caliper_url' => '$Caliper.url',
-        'coursegroup_id' => '$CourseGroup.id',
-    );
+    $custom = SakaiCustom::deepLinkCustom(true, true);
+
+    // Optional per-tool custom choices from register.php ($tool['custom']).
+    // Install modal posts custom_<key>=<value>; only allowlisted values are accepted.
+    // Selected values always become LTI custom. When an entry sets add_to_get,
+    // key=value is also appended to the launch URL (some LMSs handle custom poorly).
+    // Flat: "exercise" => array("HelloWorld" => "Hello World")
+    // Or:   "exercise" => array("add_to_get" => true, "options" => array(...))
+    $toolCustom = U::get($tool, 'custom');
+    if ( is_array($toolCustom) ) {
+        foreach ( $toolCustom as $customKey => $customValues ) {
+            if ( ! is_string($customKey) || $customKey === '' || ! is_array($customValues) ) continue;
+            $addToGet = false;
+            if ( isset($customValues['options']) && is_array($customValues['options']) ) {
+                $addToGet = !empty($customValues['add_to_get']);
+                $customValues = $customValues['options'];
+            }
+            $selected = U::get($_GET, 'custom_'.$customKey);
+            if ( $selected === null || $selected === false || $selected === '' ) continue;
+            $selected = (string) $selected;
+            if ( ! array_key_exists($selected, $customValues) ) continue;
+            $custom[$customKey] = $selected;
+            if ( $addToGet ) {
+                $path = U::add_url_parm($path, $customKey, $selected);
+            }
+        }
+    }
 
     $retval->addLtiLinkItem($path, $title, $text, $icon, $fa_icon, $custom, $scoreMaximum, $resourceId, $additionalParams);
 
@@ -377,7 +414,7 @@ if ( $l && isset($_GET['assignment']) ) {
     }
 
     $title = $lti->title;
-    $path = $lti->launch;
+    $path = Lessons::expandLink($lti->launch);
     $path .= strpos($path,'?') === false ? '?' : '&';
     // Sigh - some LMSs don't handle custom - sigh
     $path .= 'inherit=' . urlencode($_GET['assignment']);
@@ -385,8 +422,7 @@ if ( $l && isset($_GET['assignment']) ) {
     $icon = $CFG->fontawesome.'/png/'.str_replace('fa-','',$fa_icon).'.png';
 
     // Compute the custom values
-    $custom = array();
-    $custom['canvas_caliper_url'] = '$Caliper.url';
+    $custom = SakaiCustom::deepLinkCustom();
     if ( isset($lti->custom) ) {
         foreach($lti->custom as $entry) {
             if ( !isset($entry->key) ) continue;
@@ -441,7 +477,6 @@ if ($l && count($content_items) > 0 ) {
     $count = 0;
     foreach($content_items as $ci) {
         $pieces = explode('::', $ci);
-        var_dump($pieces);
         if ( count($pieces) == 2 && is_numeric($pieces[1]) ) {
             $anchor = $pieces[0];
             $index = $pieces[1]+0;
@@ -451,7 +486,8 @@ if ($l && count($content_items) > 0 ) {
             if ( ! $resources ) continue;
             if ( ! isset($resources[$index]) ) continue;
             $r = $resources[$index];
-            $retval->addContentItem($r->url, $r->title, $r->title, $r->thumbnail, $r->icon);
+            $res_url = is_array($r->url) ? $r->url[0] : $r->url;
+            $retval->addContentItem(Lessons::expandLink($res_url), $r->title, $r->title, $r->thumbnail, $r->icon);
             if ( $count == 0 ) {
                 echo("<p>Selected items:</p>\n");
                 echo("<ul>\n");
@@ -472,7 +508,7 @@ if ($l && count($content_items) > 0 ) {
             $lti = $resources[$index];
 
             $title = $lti->title;
-            $path = $lti->launch;
+            $path = Lessons::expandLink($lti->launch);
             $path .= strpos($path,'?') === false ? '?' : '&';
             // Sigh - some LMSs don't handle custom - sigh
             $path .= 'inherit=' . urlencode($lti->resource_link_id);
@@ -480,8 +516,7 @@ if ($l && count($content_items) > 0 ) {
             $icon = $CFG->fontawesome.'/png/'.str_replace('fa-','',$fa_icon).'.png';
 
             // Compute the custom values
-            $custom = array();
-            $custom['canvas_caliper_url'] = '$Caliper.url';
+            $custom = SakaiCustom::deepLinkCustom();
             if ( isset($lti->custom) ) {
                 foreach($lti->custom as $entry) {
                     if ( !isset($entry->key) ) continue;
@@ -673,46 +708,11 @@ if ( $registrations && $allow_lti ) {
                                 <label>Height (pixels)</label>
                                 <input type="number" class="form-control" name="placementHeight">
                             </div>
-                            <!-- https://www.imsglobal.org/spec/lti-dl/v2p0 -->
-<?php if ( $grade_launch && $accept_lineitem ) { ?>
-                            <div class="form-group">
-                                <label for="lineitem_<?= $count ?>">Configure LineItem</label> (Not all LMS placements support all features)
-                                <select name="lineitem" id="lineitem_<?= $count ?>" onchange="toggleLineItem(this, <?= $count ?>);">
-                                    <option value="none">No LineItem</option>
-                                    <option value="send">Send LineItem</option>
-                                </select>
-                            </div>
-<div class="lineitem-fields" id="lineitem-fields_<?= $count ?>" style="display:none;">
-                            <div class="form-group">
-                                <label for="scoreMaximum_<?= $count ?>">Maximum possible score for an activity.</label>
-                                <input type="number" class="form-control" id="scoreMaximum_<?= $count ?>" name="scoreMaximum">
-                            </div>
-                            <div class="form-group" for="resourceId_<?= $count ?>">
-                                <label>Tool provided ID for the resource. (optional) This is opaque to the LMS.</label>
-                                <input type="text" class="form-control" id="resourceId_<?= $count ?>" name="resourceId">
-                            </div>
-                            <div class="form-group">
-                                <label for="tag_<?= $count ?>">A tag used to mark this item. (optional) This is opaque to the LMS</label>
-                                <input type="text" class="form-control" id="tag_<?= $count ?>" name="tag">
-                            </div>
-<?php if ( $accept_available ) { ?>
-                            <div class="form-group">
-                                <label for="availableStart_<?= $count ?>">Available dates:</label>
-                                <input type="date" id="availableStart_<?= $count ?>" name="availableStart"> - 
-                                <input type="date" id="availableEnd_<?= $count ?>" name="availableEnd">
-                                <p>Please check this date in the LMS to make sure the time zone is correct.</p>
-                            </div>
-<?php } ?>
-<?php if ( $accept_submission ) { ?>
-                            <div class="form-group">
-                                <label for="submissionStart_<?= $count ?>">Submission dates:</label>
-                                <input type="date" id="submissionStart_<?= $count ?>" name="submissionStart"> - 
-                                <input type="date" id="submissionEnd_<?= $count ?>" name="submissionEnd">
-                                <p>Please check this date in the LMS to make sure the time zone is correct.</p>
-                            </div>
-<?php } ?>
-</div>
-<?php } ?>
+<?php
+                            // Shared deep-link/line-item fields to keep modal behavior in sync with details.php.
+                            $id_suffix = $count;
+                            include __DIR__ . '/install_extra_fields.php';
+?>
                             <div class="debug-claims" style="display:none;">
                             <div class="form-group">
                                 <label>Msg claim</label>
@@ -832,14 +832,32 @@ if ( $l && $allow_lti ) {
     $active = '';
     $count = 0;
     foreach($l->lessons->modules as $module) {
-        if ( isset($module->lti) ) {
-            foreach($module->lti as $lti) {
-                if ( $count == 0 ) {
-                    echo("<ul>\n");
+        // Items array takes precedence - process items first
+        if ( isset($module->items) ) {
+            foreach($module->items as $item) {
+                if ( isset($item->type) && $item->type == 'lti' && isset($item->resource_link_id) ) {
+                    if ( $count == 0 ) {
+                        echo("<ul>\n");
+                    }
+                    $count++;
+                    $item_title = isset($item->title) ? $item->title : (isset($item->text) ? $item->text : 'Assignment');
+                    echo('<li><a href="index.php?assignment='.$item->resource_link_id.'">'.htmlentities($item_title).'</a>');
+                    echo("</li>\n");
                 }
-                $count++;
-                echo('<li><a href="index.php?assignment='.$lti->resource_link_id.'">'.htmlentities($lti->title).'</a>');
-                echo("</li>\n");
+            }
+        } else {
+            // Process legacy lti array only if items is not present
+            if ( isset($module->lti) ) {
+                $ltis = $module->lti;
+                if ( ! is_array($ltis) ) $ltis = array($ltis);
+                foreach($ltis as $lti) {
+                    if ( $count == 0 ) {
+                        echo("<ul>\n");
+                    }
+                    $count++;
+                    echo('<li><a href="index.php?assignment='.$lti->resource_link_id.'">'.htmlentities($lti->title).'</a>');
+                    echo("</li>\n");
+                }
             }
         }
     }
@@ -858,11 +876,29 @@ if ( $l ) foreach($l->lessons->modules as $module) {
     $resources = Lessons::getUrlResources($module);
     if ( ! $resources ) continue;
     $resource_count = $resource_count + count($resources);
-    if ( isset($module->lti) ) {
-        $assignment_count = $assignment_count + count($module->lti);
-    }
-    if ( isset($module->discussions) ) {
-        $discussion_count = $discussion_count + count($module->discussions);
+    // Items array takes precedence - count items first
+    if ( isset($module->items) ) {
+        foreach($module->items as $item) {
+            if ( isset($item->type) ) {
+                if ( $item->type == 'lti' && isset($item->resource_link_id) ) {
+                    $assignment_count++;
+                } else if ( $item->type == 'discussion' && isset($item->resource_link_id) ) {
+                    $discussion_count++;
+                }
+            }
+        }
+    } else {
+        // Count legacy arrays only if items is not present
+        if ( isset($module->lti) ) {
+            $ltis = $module->lti;
+            if ( ! is_array($ltis) ) $ltis = array($ltis);
+            $assignment_count = $assignment_count + count($ltis);
+        }
+        if ( isset($module->discussions) ) {
+            $discussions = $module->discussions;
+            if ( ! is_array($discussions) ) $discussions = array($discussions);
+            $discussion_count = $discussion_count + count($discussions);
+        }
     }
 }
 
@@ -1017,7 +1053,7 @@ function renderAppPanel($name, $tool, $featured = false, $canInstall = true) {
     }
     echo(htmlent_utf8($title)."</h3>");
     if ( $fa_icon ) {
-        echo('<div><span class="tool-icon fa '.$fa_icon.'"></span></div>');
+        echo('<div><span class="tool-icon fa '.$fa_icon.'" aria-hidden="true"></span></div>');
     }
     echo('</div>'); // end heading container
     echo('</a>');
@@ -1036,7 +1072,7 @@ function renderAppPanel($name, $tool, $featured = false, $canInstall = true) {
         echo('<button type="button" class="btn btn-primary action-button" role="button" data-toggle="modal" data-target="#'.urlencode($name).'_modal"><span class="fa fa-plus" aria-hidden="true"></span> Install</button>');
         echo('</div>');
     } else {
-        echo('<div stlye="display: flex;">');
+        echo('<div style="display: flex;">');
         echo('<a href="details/'.urlencode($name).'" class="btn btn-primary action-button" role="button">Details</a> ');
         echo('</div>');
     }
@@ -1088,14 +1124,42 @@ function toggleLineItem(item, count) {
        $('#lineitem-fields_'+count).show();
     } else {
        $('#lineitem-fields_'+count).hide();
-      $('#scoreMaximum_'+$count).val('');
+      $('#scoreMaximum_'+count).val('');
     }
+}
+
+function normalizeLocalDateTimes(form) {
+    var localFields = form.querySelectorAll('input[data-utc-target]');
+    localFields.forEach(function(field) {
+        var targetName = field.getAttribute('data-utc-target');
+        if (!targetName) return;
+        var hidden = form.querySelector('input[type="hidden"][name="' + targetName + '"]');
+        if (!hidden) return;
+        if (!field.value) {
+            hidden.value = '';
+            return;
+        }
+
+        var dateValue = field.value;
+        if (field.type === 'date') {
+            var defaultTime = field.getAttribute('data-default-time') || '00:00';
+            dateValue = field.value + 'T' + defaultTime;
+        }
+
+        var localDate = new Date(dateValue);
+        if (isNaN(localDate.getTime())) {
+            hidden.value = '';
+            return;
+        }
+        hidden.value = localDate.toISOString().replace('.000Z', 'Z');
+    });
 }
 
 </script>
 
     <script type="text/javascript" src="<?= $CFG->staticroot ?>/js/ftellipsis.js"></script>
     <script src="<?= $CFG->staticroot ?>/plugins/jquery.bxslider/jquery.bxslider.js"></script>
+    <script src="modal_scroll_top.js"></script>
     <script type="text/javascript">
         var filter = filter || {};
 
@@ -1143,6 +1207,18 @@ function toggleLineItem(item, count) {
             }
         });
 
+        $(document).on('change', 'input[data-lineitem-target]', function() {
+            if (!this.value) return;
+            var lineitemId = this.getAttribute('data-lineitem-target');
+            if (!lineitemId) return;
+            var selector = document.getElementById(lineitemId);
+            if (!selector) return;
+            selector.value = 'send';
+            if (typeof selector.dispatchEvent === 'function') {
+                selector.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
         $(document).ready(function() {
             filter.setUpListener();
 
@@ -1158,6 +1234,12 @@ function toggleLineItem(item, count) {
                 speed: 750,
                 pause: 5000,
             });
+
+            $('form').on('submit', function() {
+                normalizeLocalDateTimes(this);
+            });
+
+            bindInstallModalScrollToTop();
         });
 
         // https://stackoverflow.com/questions/4471401/getting-value-of-html-checkbox-from-onclick-onchange-events

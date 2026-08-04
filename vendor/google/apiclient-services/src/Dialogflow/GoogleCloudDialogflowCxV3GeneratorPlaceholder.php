@@ -29,7 +29,7 @@ class GoogleCloudDialogflowCxV3GeneratorPlaceholder extends \Google\Model
   public $name;
 
   /**
-   * @param string
+   * @param string $id
    */
   public function setId($id)
   {
@@ -43,7 +43,7 @@ class GoogleCloudDialogflowCxV3GeneratorPlaceholder extends \Google\Model
     return $this->id;
   }
   /**
-   * @param string
+   * @param string $name
    */
   public function setName($name)
   {

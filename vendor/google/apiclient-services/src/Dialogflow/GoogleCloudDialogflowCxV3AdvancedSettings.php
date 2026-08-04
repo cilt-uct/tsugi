@@ -29,7 +29,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettings extends \Google\Model
   protected $speechSettingsDataType = '';
 
   /**
-   * @param GoogleCloudDialogflowCxV3GcsDestination
+   * @param GoogleCloudDialogflowCxV3GcsDestination $audioExportGcsDestination
    */
   public function setAudioExportGcsDestination(GoogleCloudDialogflowCxV3GcsDestination $audioExportGcsDestination)
   {
@@ -43,7 +43,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettings extends \Google\Model
     return $this->audioExportGcsDestination;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings
+   * @param GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings $dtmfSettings
    */
   public function setDtmfSettings(GoogleCloudDialogflowCxV3AdvancedSettingsDtmfSettings $dtmfSettings)
   {
@@ -57,7 +57,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettings extends \Google\Model
     return $this->dtmfSettings;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3AdvancedSettingsLoggingSettings
+   * @param GoogleCloudDialogflowCxV3AdvancedSettingsLoggingSettings $loggingSettings
    */
   public function setLoggingSettings(GoogleCloudDialogflowCxV3AdvancedSettingsLoggingSettings $loggingSettings)
   {
@@ -71,7 +71,7 @@ class GoogleCloudDialogflowCxV3AdvancedSettings extends \Google\Model
     return $this->loggingSettings;
   }
   /**
-   * @param GoogleCloudDialogflowCxV3AdvancedSettingsSpeechSettings
+   * @param GoogleCloudDialogflowCxV3AdvancedSettingsSpeechSettings $speechSettings
    */
   public function setSpeechSettings(GoogleCloudDialogflowCxV3AdvancedSettingsSpeechSettings $speechSettings)
   {

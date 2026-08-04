@@ -19,6 +19,8 @@ namespace Google\Service\Docs;
 
 class Response extends \Google\Model
 {
+  protected $addDocumentTabType = AddDocumentTabResponse::class;
+  protected $addDocumentTabDataType = '';
   protected $createFooterType = CreateFooterResponse::class;
   protected $createFooterDataType = '';
   protected $createFootnoteType = CreateFootnoteResponse::class;
@@ -35,7 +37,25 @@ class Response extends \Google\Model
   protected $replaceAllTextDataType = '';
 
   /**
-   * @param CreateFooterResponse
+   * The result of adding a document tab.
+   *
+   * @param AddDocumentTabResponse $addDocumentTab
+   */
+  public function setAddDocumentTab(AddDocumentTabResponse $addDocumentTab)
+  {
+    $this->addDocumentTab = $addDocumentTab;
+  }
+  /**
+   * @return AddDocumentTabResponse
+   */
+  public function getAddDocumentTab()
+  {
+    return $this->addDocumentTab;
+  }
+  /**
+   * The result of creating a footer.
+   *
+   * @param CreateFooterResponse $createFooter
    */
   public function setCreateFooter(CreateFooterResponse $createFooter)
   {
@@ -49,7 +69,9 @@ class Response extends \Google\Model
     return $this->createFooter;
   }
   /**
-   * @param CreateFootnoteResponse
+   * The result of creating a footnote.
+   *
+   * @param CreateFootnoteResponse $createFootnote
    */
   public function setCreateFootnote(CreateFootnoteResponse $createFootnote)
   {
@@ -63,7 +85,9 @@ class Response extends \Google\Model
     return $this->createFootnote;
   }
   /**
-   * @param CreateHeaderResponse
+   * The result of creating a header.
+   *
+   * @param CreateHeaderResponse $createHeader
    */
   public function setCreateHeader(CreateHeaderResponse $createHeader)
   {
@@ -77,7 +101,9 @@ class Response extends \Google\Model
     return $this->createHeader;
   }
   /**
-   * @param CreateNamedRangeResponse
+   * The result of creating a named range.
+   *
+   * @param CreateNamedRangeResponse $createNamedRange
    */
   public function setCreateNamedRange(CreateNamedRangeResponse $createNamedRange)
   {
@@ -91,7 +117,9 @@ class Response extends \Google\Model
     return $this->createNamedRange;
   }
   /**
-   * @param InsertInlineImageResponse
+   * The result of inserting an inline image.
+   *
+   * @param InsertInlineImageResponse $insertInlineImage
    */
   public function setInsertInlineImage(InsertInlineImageResponse $insertInlineImage)
   {
@@ -105,7 +133,9 @@ class Response extends \Google\Model
     return $this->insertInlineImage;
   }
   /**
-   * @param InsertInlineSheetsChartResponse
+   * The result of inserting an inline Google Sheets chart.
+   *
+   * @param InsertInlineSheetsChartResponse $insertInlineSheetsChart
    */
   public function setInsertInlineSheetsChart(InsertInlineSheetsChartResponse $insertInlineSheetsChart)
   {
@@ -119,7 +149,9 @@ class Response extends \Google\Model
     return $this->insertInlineSheetsChart;
   }
   /**
-   * @param ReplaceAllTextResponse
+   * The result of replacing text.
+   *
+   * @param ReplaceAllTextResponse $replaceAllText
    */
   public function setReplaceAllText(ReplaceAllTextResponse $replaceAllText)
   {

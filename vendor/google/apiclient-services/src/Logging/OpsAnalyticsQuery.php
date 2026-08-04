@@ -19,13 +19,41 @@ namespace Google\Service\Logging;
 
 class OpsAnalyticsQuery extends \Google\Model
 {
+  protected $queryBuilderType = QueryBuilderConfig::class;
+  protected $queryBuilderDataType = '';
   /**
+   * Optional. A Log Analytics SQL query in text format.If both sql_query_text
+   * and query_builder fields are set, then the sql_query_text will be used, if
+   * its non-empty. At least one of the two fields must be set.
+   *
    * @var string
    */
   public $sqlQueryText;
 
   /**
-   * @param string
+   * Optional. A query builder configuration used in Log Analytics.If both
+   * query_builder and sql_query_text fields are set, then the sql_query_text
+   * will be used, if its non-empty. At least one of the two fields must be set.
+   *
+   * @param QueryBuilderConfig $queryBuilder
+   */
+  public function setQueryBuilder(QueryBuilderConfig $queryBuilder)
+  {
+    $this->queryBuilder = $queryBuilder;
+  }
+  /**
+   * @return QueryBuilderConfig
+   */
+  public function getQueryBuilder()
+  {
+    return $this->queryBuilder;
+  }
+  /**
+   * Optional. A Log Analytics SQL query in text format.If both sql_query_text
+   * and query_builder fields are set, then the sql_query_text will be used, if
+   * its non-empty. At least one of the two fields must be set.
+   *
+   * @param string $sqlQueryText
    */
   public function setSqlQueryText($sqlQueryText)
   {

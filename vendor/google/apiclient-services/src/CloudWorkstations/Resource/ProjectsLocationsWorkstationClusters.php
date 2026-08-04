@@ -39,7 +39,7 @@ class ProjectsLocationsWorkstationClusters extends \Google\Service\Resource
    * @param array $optParams Optional parameters.
    *
    * @opt_param bool validateOnly Optional. If set, validate the request and
-   * preview the review, but do not actually apply it.
+   * preview the result, but do not actually apply it.
    * @opt_param string workstationClusterId Required. ID to use for the
    * workstation cluster.
    * @return Operation
@@ -65,7 +65,7 @@ class ProjectsLocationsWorkstationClusters extends \Google\Service\Resource
    * request only works if the workstation cluster has no configurations or
    * workstations.
    * @opt_param bool validateOnly Optional. If set, validate the request and
-   * preview the review, but do not apply it.
+   * preview the result, but do not apply it.
    * @return Operation
    * @throws \Google\Service\Exception
    */
@@ -96,6 +96,8 @@ class ProjectsLocationsWorkstationClusters extends \Google\Service\Resource
    * @param string $parent Required. Parent resource name.
    * @param array $optParams Optional parameters.
    *
+   * @opt_param string filter Optional. Filter the WorkstationClusters to be
+   * listed. Possible filters are described in https://google.aip.dev/160.
    * @opt_param int pageSize Optional. Maximum number of items to return.
    * @opt_param string pageToken Optional. next_page_token value returned from a
    * previous List request, if any.
@@ -121,7 +123,7 @@ class ProjectsLocationsWorkstationClusters extends \Google\Service\Resource
    * @opt_param string updateMask Required. Mask that specifies which fields in
    * the workstation cluster should be updated.
    * @opt_param bool validateOnly Optional. If set, validate the request and
-   * preview the review, but do not actually apply it.
+   * preview the result, but do not actually apply it.
    * @return Operation
    * @throws \Google\Service\Exception
    */

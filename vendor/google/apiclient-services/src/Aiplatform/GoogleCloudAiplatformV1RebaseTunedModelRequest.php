@@ -22,6 +22,12 @@ class GoogleCloudAiplatformV1RebaseTunedModelRequest extends \Google\Model
   protected $artifactDestinationType = GoogleCloudAiplatformV1GcsDestination::class;
   protected $artifactDestinationDataType = '';
   /**
+   * Optional. By default, rebasing a model creates a new endpoint for the new
+   * model. If this flag is set to true, the new model will be deployed to the
+   * same endpoint as the original model. WARNING: If you deploy to the same
+   * endpoint, the original model will be un-deployed and replaced by the new
+   * model.
+   *
    * @var bool
    */
   public $deployToSameEndpoint;
@@ -31,7 +37,9 @@ class GoogleCloudAiplatformV1RebaseTunedModelRequest extends \Google\Model
   protected $tuningJobDataType = '';
 
   /**
-   * @param GoogleCloudAiplatformV1GcsDestination
+   * Optional. The Google Cloud Storage location to write the artifacts to.
+   *
+   * @param GoogleCloudAiplatformV1GcsDestination $artifactDestination
    */
   public function setArtifactDestination(GoogleCloudAiplatformV1GcsDestination $artifactDestination)
   {
@@ -45,7 +53,13 @@ class GoogleCloudAiplatformV1RebaseTunedModelRequest extends \Google\Model
     return $this->artifactDestination;
   }
   /**
-   * @param bool
+   * Optional. By default, rebasing a model creates a new endpoint for the new
+   * model. If this flag is set to true, the new model will be deployed to the
+   * same endpoint as the original model. WARNING: If you deploy to the same
+   * endpoint, the original model will be un-deployed and replaced by the new
+   * model.
+   *
+   * @param bool $deployToSameEndpoint
    */
   public function setDeployToSameEndpoint($deployToSameEndpoint)
   {
@@ -59,7 +73,9 @@ class GoogleCloudAiplatformV1RebaseTunedModelRequest extends \Google\Model
     return $this->deployToSameEndpoint;
   }
   /**
-   * @param GoogleCloudAiplatformV1TunedModelRef
+   * Required. A reference to the tuned model to rebase.
+   *
+   * @param GoogleCloudAiplatformV1TunedModelRef $tunedModelRef
    */
   public function setTunedModelRef(GoogleCloudAiplatformV1TunedModelRef $tunedModelRef)
   {
@@ -73,7 +89,10 @@ class GoogleCloudAiplatformV1RebaseTunedModelRequest extends \Google\Model
     return $this->tunedModelRef;
   }
   /**
-   * @param GoogleCloudAiplatformV1TuningJob
+   * Optional. The tuning job to be updated. Users can use this field to
+   * overwrite tuning configs.
+   *
+   * @param GoogleCloudAiplatformV1TuningJob $tuningJob
    */
   public function setTuningJob(GoogleCloudAiplatformV1TuningJob $tuningJob)
   {

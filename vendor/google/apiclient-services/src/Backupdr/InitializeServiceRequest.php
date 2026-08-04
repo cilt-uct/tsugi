@@ -20,16 +20,101 @@ namespace Google\Service\Backupdr;
 class InitializeServiceRequest extends \Google\Model
 {
   /**
+   * Optional. The location where the BackupPlan will be created. This field is
+   * required for multi-region BackupVaults and is optional for regional
+   * BackupVaults. It is useful when creating a Backup Vault in a multi-region,
+   * allowing the BackupPlan to reside in a specific region within that multi-
+   * region. If this field is not provided, the BackupPlan will be created in
+   * the same location as specified in the `name` field.
+   *
+   * @var string
+   */
+  public $backupPlanLocation;
+  protected $cloudSqlInstanceInitializationConfigType = CloudSqlInstanceInitializationConfig::class;
+  protected $cloudSqlInstanceInitializationConfigDataType = '';
+  /**
+   * Optional. An optional request ID to identify requests. Specify a unique
+   * request ID so that if you must retry your request, the server will know to
+   * ignore the request if it has already been completed. The server will
+   * guarantee that for at least 60 minutes since the first request. For
+   * example, consider a situation where you make an initial request and the
+   * request times out. If you make the request again with the same request ID,
+   * the server can check if original operation with the same request ID was
+   * received, and if so, will ignore the second request. This prevents clients
+   * from accidentally creating duplicate commitments. The request ID must be a
+   * valid UUID with the exception that zero UUID is not supported
+   * (00000000-0000-0000-0000-000000000000).
+   *
    * @var string
    */
   public $requestId;
   /**
+   * Required. The resource type to which the default service config will be
+   * applied. Examples include, "compute.googleapis.com/Instance" and
+   * "storage.googleapis.com/Bucket".
+   *
    * @var string
    */
   public $resourceType;
+  /**
+   * Optional. If set, validates the request and returns the result, but does
+   * not actually run it.
+   *
+   * @var bool
+   */
+  public $validateOnly;
 
   /**
-   * @param string
+   * Optional. The location where the BackupPlan will be created. This field is
+   * required for multi-region BackupVaults and is optional for regional
+   * BackupVaults. It is useful when creating a Backup Vault in a multi-region,
+   * allowing the BackupPlan to reside in a specific region within that multi-
+   * region. If this field is not provided, the BackupPlan will be created in
+   * the same location as specified in the `name` field.
+   *
+   * @param string $backupPlanLocation
+   */
+  public function setBackupPlanLocation($backupPlanLocation)
+  {
+    $this->backupPlanLocation = $backupPlanLocation;
+  }
+  /**
+   * @return string
+   */
+  public function getBackupPlanLocation()
+  {
+    return $this->backupPlanLocation;
+  }
+  /**
+   * Optional. The configuration for initializing a Cloud SQL instance.
+   *
+   * @param CloudSqlInstanceInitializationConfig $cloudSqlInstanceInitializationConfig
+   */
+  public function setCloudSqlInstanceInitializationConfig(CloudSqlInstanceInitializationConfig $cloudSqlInstanceInitializationConfig)
+  {
+    $this->cloudSqlInstanceInitializationConfig = $cloudSqlInstanceInitializationConfig;
+  }
+  /**
+   * @return CloudSqlInstanceInitializationConfig
+   */
+  public function getCloudSqlInstanceInitializationConfig()
+  {
+    return $this->cloudSqlInstanceInitializationConfig;
+  }
+  /**
+   * Optional. An optional request ID to identify requests. Specify a unique
+   * request ID so that if you must retry your request, the server will know to
+   * ignore the request if it has already been completed. The server will
+   * guarantee that for at least 60 minutes since the first request. For
+   * example, consider a situation where you make an initial request and the
+   * request times out. If you make the request again with the same request ID,
+   * the server can check if original operation with the same request ID was
+   * received, and if so, will ignore the second request. This prevents clients
+   * from accidentally creating duplicate commitments. The request ID must be a
+   * valid UUID with the exception that zero UUID is not supported
+   * (00000000-0000-0000-0000-000000000000).
+   *
+   * @param string $requestId
    */
   public function setRequestId($requestId)
   {
@@ -43,7 +128,11 @@ class InitializeServiceRequest extends \Google\Model
     return $this->requestId;
   }
   /**
-   * @param string
+   * Required. The resource type to which the default service config will be
+   * applied. Examples include, "compute.googleapis.com/Instance" and
+   * "storage.googleapis.com/Bucket".
+   *
+   * @param string $resourceType
    */
   public function setResourceType($resourceType)
   {
@@ -55,6 +144,23 @@ class InitializeServiceRequest extends \Google\Model
   public function getResourceType()
   {
     return $this->resourceType;
+  }
+  /**
+   * Optional. If set, validates the request and returns the result, but does
+   * not actually run it.
+   *
+   * @param bool $validateOnly
+   */
+  public function setValidateOnly($validateOnly)
+  {
+    $this->validateOnly = $validateOnly;
+  }
+  /**
+   * @return bool
+   */
+  public function getValidateOnly()
+  {
+    return $this->validateOnly;
   }
 }
 

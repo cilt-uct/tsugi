@@ -27,7 +27,7 @@ use Google\Client;
  *
  * <p>
  * For more information about this service, see the API
- * <a href="https://cloud.google.com/certificate-manager" target="_blank">Documentation</a>
+ * <a href="https://docs.cloud.google.com/certificate-manager/docs/overview" target="_blank">Documentation</a>
  * </p>
  *
  * @author Google, Inc.
@@ -89,6 +89,11 @@ class CertificateManager extends \Google\Service
                   'location' => 'path',
                   'type' => 'string',
                   'required' => true,
+                ],
+                'extraLocationTypes' => [
+                  'location' => 'query',
+                  'type' => 'string',
+                  'repeated' => true,
                 ],
                 'filter' => [
                   'location' => 'query',
@@ -583,6 +588,10 @@ class CertificateManager extends \Google\Service
                 'pageToken' => [
                   'location' => 'query',
                   'type' => 'string',
+                ],
+                'returnPartialSuccess' => [
+                  'location' => 'query',
+                  'type' => 'boolean',
                 ],
               ],
             ],

@@ -40,9 +40,6 @@ class DataPortability extends \Google\Service
   /** Move a copy of the Google Alerts subscriptions you created. */
   const DATAPORTABILITY_ALERTS_SUBSCRIPTIONS =
       "https://www.googleapis.com/auth/dataportability.alerts.subscriptions";
-  /** Move a copy of messages between you and the businesses you have conversations with across Google services. */
-  const DATAPORTABILITY_BUSINESSMESSAGING_CONVERSATIONS =
-      "https://www.googleapis.com/auth/dataportability.businessmessaging.conversations";
   /** Move a copy of the information you entered into online forms in Chrome. */
   const DATAPORTABILITY_CHROME_AUTOFILL =
       "https://www.googleapis.com/auth/dataportability.chrome.autofill";
@@ -103,6 +100,9 @@ class DataPortability extends \Google\Service
   /** Move a copy of your Starred places list on Maps. */
   const DATAPORTABILITY_MAPS_STARRED_PLACES =
       "https://www.googleapis.com/auth/dataportability.maps.starred_places";
+  /** Move a copy of your vehicle profile on Maps. */
+  const DATAPORTABILITY_MAPS_VEHICLE_PROFILE =
+      "https://www.googleapis.com/auth/dataportability.maps.vehicle_profile";
   /** Move a copy of your Maps activity. */
   const DATAPORTABILITY_MYACTIVITY_MAPS =
       "https://www.googleapis.com/auth/dataportability.myactivity.maps";
@@ -124,6 +124,21 @@ class DataPortability extends \Google\Service
   /** Move a copy of the maps you created in My Maps. */
   const DATAPORTABILITY_MYMAPS_MAPS =
       "https://www.googleapis.com/auth/dataportability.mymaps.maps";
+  /** Copy Nest camera event data. */
+  const DATAPORTABILITY_NEST_CAMERA_EVENT =
+      "https://www.googleapis.com/auth/dataportability.nest.camera_event";
+  /** Copy Nest camera feature data. */
+  const DATAPORTABILITY_NEST_CAMERA_FEATURE =
+      "https://www.googleapis.com/auth/dataportability.nest.camera_feature";
+  /** Copy Nest camera footage. */
+  const DATAPORTABILITY_NEST_CAMERA_VIDEO =
+      "https://www.googleapis.com/auth/dataportability.nest.camera_video";
+  /** Copy your Nest Store and Nest Renew billing and payment information. */
+  const DATAPORTABILITY_NEST_STORE =
+      "https://www.googleapis.com/auth/dataportability.nest.store";
+  /** Copy your Nest user information. */
+  const DATAPORTABILITY_NEST_USER =
+      "https://www.googleapis.com/auth/dataportability.nest.user";
   /** Move a copy of your food purchase and reservation activity. */
   const DATAPORTABILITY_ORDER_RESERVE_PURCHASES_RESERVATIONS =
       "https://www.googleapis.com/auth/dataportability.order_reserve.purchases_reservations";
@@ -199,6 +214,9 @@ class DataPortability extends \Google\Service
   /** Move a copy of your YouTube comments. */
   const DATAPORTABILITY_YOUTUBE_COMMENTS =
       "https://www.googleapis.com/auth/dataportability.youtube.comments";
+  /** Move a copy of all your YouTube messages. */
+  const DATAPORTABILITY_YOUTUBE_CONVERSATIONS =
+      "https://www.googleapis.com/auth/dataportability.youtube.conversations";
   /** Move a copy of your YouTube messages in live chat. */
   const DATAPORTABILITY_YOUTUBE_LIVE_CHAT =
       "https://www.googleapis.com/auth/dataportability.youtube.live_chat";
@@ -236,6 +254,7 @@ class DataPortability extends \Google\Service
   const DATAPORTABILITY_YOUTUBE_UNLISTED_VIDEOS =
       "https://www.googleapis.com/auth/dataportability.youtube.unlisted_videos";
 
+  public $accessType;
   public $archiveJobs;
   public $authorization;
   public $portabilityArchive;
@@ -258,6 +277,20 @@ class DataPortability extends \Google\Service
     $this->version = 'v1';
     $this->serviceName = 'dataportability';
 
+    $this->accessType = new DataPortability\Resource\AccessType(
+        $this,
+        $this->serviceName,
+        'accessType',
+        [
+          'methods' => [
+            'check' => [
+              'path' => 'v1/accessType:check',
+              'httpMethod' => 'POST',
+              'parameters' => [],
+            ],
+          ]
+        ]
+    );
     $this->archiveJobs = new DataPortability\Resource\ArchiveJobs(
         $this,
         $this->serviceName,

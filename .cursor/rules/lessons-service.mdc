@@ -1,0 +1,22 @@
+---
+description: Lessons document and export live in Tsugi\Services\Lessons. UI is widgets. Controllers own page HTML.
+globs: lib/src/Services/Lessons/**,lib/src/Controllers/Lessons.php,cc/export.php,cc/index.php
+alwaysApply: false
+---
+
+# Lessons service
+
+The lessons document and export helpers are `Tsugi\Services\Lessons`, one class per file:
+
+- `LessonsService` — loaded document (lookup, progress math, URL expansion)
+- `LessonsNormalize` — item shape
+- `LessonsCartridge` — Settings cartridge zip (not `Services\Cartridge` import)
+- `LessonsLegacyFiles` / `LessonsLegacyGift` — file-based `/cc` export only
+
+Do not merge those classes. Do not move them back under `Tsugi\UI`. Do not put page HTML in this namespace.
+
+`Tsugi\UI\Lessons` is an empty subclass of `LessonsService` so tools outside this repo can keep `new \Tsugi\UI\Lessons($CFG->lessons)`. Leave that file in place.
+
+Page HTML stays in the controllers: `Controllers\Lessons` (shell, `renderItem`, progress badges), assignments, badges, labs, and `Controllers\Discussions::renderDiscussions`. `cc/index.php` and `cc/export.php` keep their forms. The shared select and preview markup is `cc/legacy_form.php`.
+
+`Tsugi\Services\Cartridge` is Settings import. `GiftImporter` / `Qti12Exporter` / `Quiz1Repository` stay in `Tsugi\Services\Quiz1`. File-based `$CFG->lessons` stays classic.

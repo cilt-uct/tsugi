@@ -7,17 +7,23 @@ use \Tsugi\Util\U;
 require_once __DIR__ . '/../UI/CKEditor.php';
 
 use Tsugi\Core\LTIX;
+use Tsugi\Core\Manifest;
+require_once __DIR__ . '/../Services/Pages/PageRepository.php';
+use Tsugi\Services\Pages\PageRepository;
+use Tsugi\Services\Lessons\LessonsNormalize;
 
 // Ensure CKEditor helper is loaded (fallback if autoload misses it)
 require_once __DIR__ . '/../UI/CKEditor.php';
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
+use Tsugi\Core\ReqScope;
+
 class Pages extends Tool {
 
-    const ROUTE = '/pages';
+    const ROUTE = PageRepository::HREF_PREFIX;
     const NAME = 'Pages';
     const REDIRECT = 'tsugi_controllers_pages';
 
@@ -42,108 +48,54 @@ class Pages extends Tool {
     }
 
     /**
-     * Generate a logical key from a title
-     * 
-     * Converts title to lowercase, removes punctuation, 
-     * replaces sequences of spaces with single dash,
-     * and limits to 99 characters
-     * 
-     * @param string $title The page title
-     * @return string The logical key
+     * Expand canonical FILEBASE URLs for the editor or browser.
+     *
+     * @param string $html
+     * @return string
      */
-    private function generateLogicalKey($title) {
-        // Convert to lowercase
-        $key = strtolower($title);
-        
-        // Remove all punctuation (keep alphanumeric and spaces)
-        $key = preg_replace('/[^a-z0-9\s]/', '', $key);
-        
-        // Reduce sequences of whitespace to a single space
-        $key = preg_replace('/\s+/', ' ', $key);
-        
-        // Convert spaces to dashes
-        $key = str_replace(' ', '-', $key);
-        
-        // Remove leading/trailing dashes
-        $key = trim($key, '-');
-        
-        // Limit to 99 characters
-        if ( strlen($key) > 99 ) {
-            $key = substr($key, 0, 99);
-            // Remove trailing dash if we cut in the middle
-            $key = rtrim($key, '-');
-        }
-        
-        // Ensure we have something
-        if ( empty($key) ) {
-            $key = 'page-' . time();
-        }
-        
-        return $key;
+    private function expandPageHtml($html) {
+        return PageRepository::expandHtml($html, $this->courseFileBaseUrl(self::ROUTE), self::courseLocalPrefixes());
+    }
+
+    /**
+     * Convert current-course URLs to $IMS-CC-FILEBASE$ before storing HTML.
+     *
+     * @param string $html
+     * @return string
+     */
+    private function canonicalizePageHtml($html) {
+        return PageRepository::canonicalizeHtml(
+            $html,
+            $this->courseFileBaseUrl(self::ROUTE),
+            self::courseLocalPrefixes(),
+            ReqScope::currentContextId()
+        );
     }
 
     public function index(Request $request, $logical_key = null)
     {
-        global $CFG, $OUTPUT, $PDOX;
-        
+        global $CFG, $OUTPUT;
+
         $this->requireAuth();
-        
+
         LTIX::getConnection();
-        
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
-        
-        // Check if user is instructor/admin for this context
+
+        $context_id = ReqScope::currentContextId();
+
         $is_instructor = $this->isInstructor();
-        
-        // Get logical_key from URL parameter or route parameter
+
         if (!$logical_key && isset($_GET['logical_key']) && U::strlen($_GET['logical_key']) > 0) {
             $logical_key = $_GET['logical_key'];
         }
-        
-        // Determine which page to show
+
         $page = null;
+        $published_only = !$is_instructor;
         if ($logical_key) {
-            // Show specific page by logical_key
-            $sql = "SELECT page_id, title, body, published, is_main 
-                    FROM {$CFG->dbprefix}pages 
-                    WHERE context_id = :CID AND logical_key = :KEY";
-            $params = array(':CID' => $context_id, ':KEY' => $logical_key);
-            
-            // Non-instructors can only see published pages
-            if (!$is_instructor) {
-                $sql .= " AND published = 1";
-            }
-            
-            $page = $PDOX->rowDie($sql, $params);
+            $page = PageRepository::loadByLogicalKey($context_id, $logical_key, $published_only);
         } else {
-            // No logical_key - show main page
-            // First, check if there's a page marked as main
-            $sql = "SELECT page_id, title, body, published, is_main 
-                    FROM {$CFG->dbprefix}pages 
-                    WHERE context_id = :CID AND is_main = 1";
-            $params = array(':CID' => $context_id);
-            
-            // Non-instructors can only see published pages
-            if (!$is_instructor) {
-                $sql .= " AND published = 1";
-            }
-            
-            $page = $PDOX->rowDie($sql, $params);
-            
-            // If no main page, check if there's only one page (auto-main)
+            $page = PageRepository::loadMain($context_id, $published_only);
             if (!$page) {
-                $sql = "SELECT page_id, title, body, published, is_main 
-                        FROM {$CFG->dbprefix}pages 
-                        WHERE context_id = :CID";
-                $params = array(':CID' => $context_id);
-                
-                // Non-instructors can only see published pages
-                if (!$is_instructor) {
-                    $sql .= " AND published = 1";
-                }
-                
-                $all_pages = $PDOX->allRowsDie($sql, $params);
+                $all_pages = PageRepository::listForView($context_id, $published_only);
                 if (count($all_pages) == 1) {
                     $page = $all_pages[0];
                 }
@@ -188,7 +140,7 @@ class Pages extends Tool {
                     </span>
                 </h1>
                 <div class="page-content">
-                    <?= $page['body'] ?>
+                    <?= $this->expandPageHtml($page['body']) ?>
                 </div>
             <?php else: ?>
                 <h1 style="display: flex; justify-content: space-between; align-items: center;">
@@ -223,28 +175,13 @@ class Pages extends Tool {
 
     public function json(Request $request)
     {
-        global $CFG, $PDOX;
-        
         $this->requireAuth();
-        
+
         LTIX::getConnection();
-        
-        $context_id = U::currentContextId();
-        
-        // Get all pages for this context (instructors see all, students see only published)
+
+        $context_id = ReqScope::currentContextId();
         $is_instructor = $this->isInstructor();
-        $sql = "SELECT page_id, title, logical_key 
-                FROM {$CFG->dbprefix}pages 
-                WHERE context_id = :CID";
-        $params = array(':CID' => $context_id);
-        
-        if (!$is_instructor) {
-            $sql .= " AND published = 1";
-        }
-        
-        $sql .= " ORDER BY title ASC";
-        
-        $pages = $PDOX->allRowsDie($sql, $params);
+        $pages = PageRepository::listForPicker($context_id, !$is_instructor);
         
         // Get base path for REST-style URLs
         $pages_base = $this->toolHome(self::ROUTE);
@@ -274,94 +211,142 @@ class Pages extends Tool {
         $this->requireAuth();
 
         $apphome = isset($CFG->apphome) ? rtrim($CFG->apphome, '/') : '';
-        $lessons_file = isset($CFG->lessons) ? $CFG->lessons : '';
+        $parent = $this->toolParent(self::ROUTE);
+        $data = self::lessonsDocumentForPicker();
+        return new JsonResponse(self::lessonsLinkPickerPayload(
+            is_array($data) ? $data : array(),
+            $apphome,
+            $parent . '/lessons',
+            $parent . '/lessons_launch/',
+            $parent . '/launch/',
+            $parent . '/discussions'
+        ));
+    }
+
+    /**
+     * Current lessons document for the link picker (manifest, then $CFG->lessons).
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function lessonsDocumentForPicker() {
+        $doc = Manifest::currentDocument();
+        if ( is_array($doc) && isset($doc['json']) && is_string($doc['json']) ) {
+            $data = json_decode($doc['json'], true);
+            if ( is_array($data) ) {
+                return LessonsNormalize::normalizeDocument($data);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Pages / Lessons / Files picker rows from a lessons document.
+     *
+     * @param array<string, mixed> $data
+     * @return array{items: list<array<string, mixed>>, modules: list<array<string, mixed>>, launches: list<array<string, mixed>>}
+     */
+    public static function lessonsLinkPickerPayload(array $data, $apphome, $lessons_base, $lessons_launch, $launch_base, $discussions_base = null) {
+        $data = LessonsNormalize::normalizeDocument($data);
         $items = array();
-
-        if (empty($apphome) || empty($lessons_file) || !is_readable($lessons_file)) {
-            return new JsonResponse(array('items' => $items, 'modules' => array(), 'launches' => array()));
-        }
-
-        $json = @file_get_contents($lessons_file);
-        if ($json === false) {
-            return new JsonResponse(array('items' => $items, 'modules' => array(), 'launches' => array()));
-        }
-
-        $data = @json_decode($json, true);
-        if (!is_array($data) || empty($data['modules'])) {
-            return new JsonResponse(array('items' => $items, 'modules' => array(), 'launches' => array()));
-        }
-
         $launches_out = array();
+        $top_level_modules = array();
+        $apphome = is_string($apphome) ? rtrim($apphome, '/') : '';
+
         $top_launches = U::get($data, 'launches', array());
-        if (is_array($top_launches)) {
-            foreach ($top_launches as $launch) {
-                if (!is_array($launch)) {
+        if ( is_array($top_launches) ) {
+            foreach ( $top_launches as $launch ) {
+                if ( ! is_array($launch) ) {
                     continue;
                 }
                 $type = U::get($launch, 'type', 'lti');
                 $title = U::get($launch, 'title', '');
                 $rlid = U::get($launch, 'resource_link_id', '');
-                if ($type !== 'lti' || $title === '' || $rlid === '') {
+                if ( $type !== 'lti' || $title === '' || $rlid === '' ) {
                     continue;
                 }
                 $launches_out[] = array(
                     'type' => $type,
                     'title' => $title,
-                    'url' => $apphome . '/launch/' . rawurlencode($rlid),
+                    'url' => $launch_base . rawurlencode($rlid),
                     'resource_link_id' => $rlid,
                     'result' => U::get($launch, 'result', true),
                 );
             }
         }
 
-        $top_level_modules = array();
-        foreach ($data['modules'] as $module) {
+        $modules = U::get($data, 'modules', array());
+        if ( ! is_array($modules) ) {
+            return array('items' => $items, 'modules' => $top_level_modules, 'launches' => $launches_out);
+        }
+
+        foreach ( $modules as $module ) {
+            if ( ! is_array($module) ) {
+                continue;
+            }
             $module_title = U::get($module, 'title', '');
             $module_anchor = U::get($module, 'anchor', '');
-            if (!empty($module_title) && !empty($module_anchor)) {
+            if ( $module_title !== '' && $module_anchor !== '' ) {
                 $top_level_modules[] = array(
                     'title' => $module_title,
-                    'url' => $apphome . '/lessons/' . $module_anchor,
+                    'url' => $lessons_base . '/' . $module_anchor,
                     'anchor' => $module_anchor
                 );
             }
             $module_items = U::get($module, 'items', array());
+            if ( ! is_array($module_items) ) {
+                continue;
+            }
 
-            foreach ($module_items as $item) {
-                $type = U::get($item, 'type', '');
-                $title = U::get($item, 'title', '');
+            foreach ( $module_items as $item ) {
+                if ( ! is_array($item) ) {
+                    continue;
+                }
+                $norm = LessonsNormalize::normalizeItem($item);
+                $type = U::get($norm, 'type', '');
+                $kind = LessonsNormalize::presentationKind($norm);
+                $title = U::get($norm, 'title', '');
                 $url = null;
 
-                if ($type === 'header') {
+                if ( LessonsNormalize::isHeading($norm) || $type === 'header' ) {
                     continue;
                 }
 
-                if ($type === 'lti' || $type === 'not-lti' || $type === 'discussion') {
-                    $resource_link_id = U::get($item, 'resource_link_id', '');
-                    if (!empty($resource_link_id)) {
-                        $url = $apphome . '/lessons_launch/' . rawurlencode($resource_link_id);
+                if ( LessonsNormalize::isDiscussion($norm) ) {
+                    $resource_link_id = U::get($norm, 'resource_link_id', '');
+                    if ( $resource_link_id !== '' ) {
+                        $url = self::discussionPickerUrl($resource_link_id, $discussions_base, $lessons_launch);
                     }
-                } elseif ($type === 'slide' || $type === 'reference') {
-                    $href = U::get($item, 'href', '');
-                    if (!empty($href)) {
+                } else if ( LessonsNormalize::isLtiLaunch($norm) || $type === 'not-lti' ) {
+                    $resource_link_id = U::get($norm, 'resource_link_id', '');
+                    if ( $resource_link_id !== '' ) {
+                        $url = $lessons_launch . rawurlencode($resource_link_id);
+                    }
+                } else if ( $kind === 'slide' || $kind === 'reference' || $kind === 'assignment'
+                    || $kind === 'solution' || $type === 'web_link' || $type === 'html_page'
+                    || $type === 'file' ) {
+                    $href = U::get($norm, 'href', '');
+                    if ( $href !== '' ) {
                         $url = str_replace('{apphome}', $apphome, $href);
                     }
-                } elseif ($type === 'video' && U::get($item, 'youtube', '')) {
-                    $youtube_id = trim(U::get($item, 'youtube', ''));
-                    if (!empty($youtube_id)) {
+                } else if ( $kind === 'video' ) {
+                    $href = U::get($norm, 'href', '');
+                    $youtube_id = trim(U::get($norm, 'youtube', ''));
+                    if ( $href !== '' ) {
+                        $url = str_replace('{apphome}', $apphome, $href);
+                    } else if ( $youtube_id !== '' ) {
                         $url = 'https://www.youtube.com/watch?v=' . $youtube_id;
                     }
                 }
 
-                if (!empty($url) && !empty($title)) {
+                if ( $url !== null && $url !== '' && $title !== '' ) {
                     $item_data = array(
                         'title' => $title,
                         'url' => $url,
                         'module' => $module_title,
                         'module_anchor' => $module_anchor,
-                        'type' => $type
+                        'type' => $kind !== '' ? $kind : $type
                     );
-                    if ($type === 'video') {
+                    if ( $kind === 'video' ) {
                         $item_data['target_blank'] = true;
                     }
                     $items[] = $item_data;
@@ -369,7 +354,48 @@ class Pages extends Tool {
             }
         }
 
-        return new JsonResponse(array('items' => $items, 'modules' => $top_level_modules, 'launches' => $launches_out));
+        $top_discussions = U::get($data, 'discussions', array());
+        if ( is_array($top_discussions) ) {
+            foreach ( $top_discussions as $discussion ) {
+                if ( ! is_array($discussion) ) {
+                    continue;
+                }
+                $norm = LessonsNormalize::normalizeItem($discussion);
+                if ( ! LessonsNormalize::isDiscussion($norm) ) {
+                    continue;
+                }
+                $title = U::get($norm, 'title', '');
+                $resource_link_id = U::get($norm, 'resource_link_id', '');
+                if ( $title === '' || $resource_link_id === '' ) {
+                    continue;
+                }
+                $items[] = array(
+                    'title' => $title,
+                    'url' => self::discussionPickerUrl($resource_link_id, $discussions_base, $lessons_launch),
+                    'module' => '',
+                    'module_anchor' => '',
+                    'type' => 'discussion',
+                );
+            }
+        }
+
+        return array('items' => $items, 'modules' => $top_level_modules, 'launches' => $launches_out);
+    }
+
+    /**
+     * Picker URL for a discussion resource_link_id.
+     *
+     * @param mixed $resource_link_id
+     * @param mixed $discussions_base
+     * @param string $lessons_launch
+     * @return string
+     */
+    private static function discussionPickerUrl($resource_link_id, $discussions_base, $lessons_launch) {
+        $id = rawurlencode((string) $resource_link_id);
+        if ( is_string($discussions_base) && $discussions_base !== '' ) {
+            return rtrim($discussions_base, '/').'/'.$id;
+        }
+        return $lessons_launch.$id;
     }
 
     public function add(Request $request)
@@ -393,6 +419,7 @@ class Pages extends Tool {
             <h1>Add New Page</h1>
             
             <form method="post" id="page_form">
+                <?= self::csrfField() ?>
                 <div class="form-group">
                     <label for="title">Title:</label>
                     <input type="text" class="form-control" id="title" name="title" 
@@ -450,352 +477,18 @@ class Pages extends Tool {
         <script type="text/javascript">
         <?php $json_url = $tool_home . '/json'; ?>
         <?php $lessons_json_url = $tool_home . '/lessons-json'; ?>
+        <?php $files_home = $this->controllerUrl(\Tsugi\Controllers\Files::ROUTE, self::ROUTE); ?>
         var pagesJsonUrl = '<?= $json_url ?>';
         var lessonsJsonUrl = '<?= $lessons_json_url ?>';
+        var filesJsonUrl = '<?= htmlspecialchars($files_home . '/json') ?>';
+        var filesBase = '<?= htmlspecialchars($files_home) ?>';
         var pagesBase = '<?= htmlspecialchars($pages_base) ?>';
         var appHome = '<?= htmlspecialchars(isset($apphome) ? $apphome : '') ?>';
         var currentPageId = <?= isset($current_page_id) ? (int)$current_page_id : 'null' ?>;
 
         <?php \Tsugi\UI\CKEditor::renderConfigScript(); ?>
 
-        var editor;
-        var pagesList = [];
-        var lessonsList = [];
-        var lessonsModules = [];
-
-        Promise.all([
-            fetch(pagesJsonUrl).then(function(r) { return r.json(); }),
-            fetch(lessonsJsonUrl).then(function(r) { return r.json(); })
-        ]).then(function(results) {
-            pagesList = results[0] || [];
-            var lessonsData = results[1] || {};
-            lessonsList = lessonsData.items || (Array.isArray(lessonsData) ? lessonsData : []);
-            lessonsModules = lessonsData.modules || [];
-            populatePageLinkList();
-        }).catch(function(error) {
-            console.error('Error loading link data:', error);
-        });
-
-        function createExpandoSection(title, count, itemsContainer, startCollapsed) {
-            var expando = document.createElement('div');
-            expando.className = 'page-link-expando' + (startCollapsed ? ' collapsed' : '');
-            expando.setAttribute('role', 'group');
-            expando.setAttribute('aria-label', title);
-
-            var header = document.createElement('div');
-            header.className = 'page-link-expando-header';
-            header.setAttribute('role', 'button');
-            header.setAttribute('aria-expanded', !startCollapsed);
-            header.setAttribute('tabindex', '0');
-            header.innerHTML = '<span>' + title + ' (' + count + ')</span><span class="expando-chevron" aria-hidden="true">&#9660;</span>';
-
-            header.onclick = function(e) {
-                e.preventDefault();
-                expando.classList.toggle('collapsed');
-                header.setAttribute('aria-expanded', !expando.classList.contains('collapsed'));
-            };
-            header.onkeydown = function(e) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    expando.classList.toggle('collapsed');
-                    header.setAttribute('aria-expanded', !expando.classList.contains('collapsed'));
-                }
-            };
-
-            expando.appendChild(header);
-            expando.appendChild(itemsContainer);
-            return expando;
-        }
-
-        function populatePageLinkList() {
-            var listDiv = document.getElementById('page-link-list');
-            if (!listDiv) return;
-            
-            listDiv.innerHTML = '';
-            
-            var displayPages = currentPageId ? pagesList.filter(function(p) { return p.id != currentPageId; }) : pagesList;
-            var hasContent = false;
-            
-            if (displayPages.length > 0) {
-                var pagesContent = document.createElement('div');
-                pagesContent.className = 'page-link-expando-content';
-                pagesContent.setAttribute('role', 'list');
-
-                displayPages.forEach(function(page) {
-                    var item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'page-link-item';
-                    item.textContent = page.title;
-                    item.setAttribute('role', 'listitem');
-                    item.onclick = function() {
-                        insertPageLink(page);
-                        closePageLinkModal();
-                    };
-                    item.onkeydown = function(e) {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            insertPageLink(page);
-                            closePageLinkModal();
-                        }
-                    };
-                    pagesContent.appendChild(item);
-                });
-
-                var pagesExpando = createExpandoSection('Pages', displayPages.length, pagesContent, true);
-                listDiv.appendChild(pagesExpando);
-                hasContent = true;
-            }
-
-            if (lessonsModules.length > 0) {
-                var modulesContent = document.createElement('div');
-                modulesContent.className = 'page-link-expando-content';
-                modulesContent.setAttribute('role', 'list');
-
-                lessonsModules.forEach(function(moduleItem) {
-                    var item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'page-link-item';
-                    item.textContent = moduleItem.title;
-                    item.setAttribute('role', 'listitem');
-                    item.setAttribute('title', moduleItem.url);
-                    item.onclick = function() {
-                        insertLessonLink(moduleItem);
-                        closePageLinkModal();
-                    };
-                    item.onkeydown = function(e) {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            insertLessonLink(moduleItem);
-                            closePageLinkModal();
-                        }
-                    };
-                    modulesContent.appendChild(item);
-                });
-
-                var modulesExpando = createExpandoSection('Modules', lessonsModules.length, modulesContent, true);
-                listDiv.appendChild(modulesExpando);
-                hasContent = true;
-            }
-            
-            if (lessonsList.length > 0) {
-                var typeGroups = {
-                    video: { label: 'Videos', items: [] },
-                    discussion: { label: 'Discussions', items: [] },
-                    lti: { label: 'LTI & Tools', items: [] },
-                    'not-lti': { label: 'LTI & Tools', items: [] },
-                    reference: { label: 'References', items: [] },
-                    slide: { label: 'Slides', items: [] }
-                };
-
-                lessonsList.forEach(function(lessonItem) {
-                    var t = lessonItem.type || 'reference';
-                    if (t === 'not-lti') t = 'lti';
-                    if (typeGroups[t]) typeGroups[t].items.push(lessonItem);
-                });
-
-                var ltiItems = (typeGroups.lti ? typeGroups.lti.items : []).concat(typeGroups['not-lti'] ? typeGroups['not-lti'].items : []);
-                var groupsToShow = [
-                    { label: 'Videos', items: typeGroups.video ? typeGroups.video.items : [] },
-                    { label: 'Discussions', items: typeGroups.discussion ? typeGroups.discussion.items : [] },
-                    { label: 'LTI & Tools', items: ltiItems },
-                    { label: 'References', items: typeGroups.reference ? typeGroups.reference.items : [] },
-                    { label: 'Slides', items: typeGroups.slide ? typeGroups.slide.items : [] }
-                ];
-
-                groupsToShow.forEach(function(group) {
-                    if (!group.items || group.items.length === 0) return;
-
-                    var content = document.createElement('div');
-                    content.className = 'page-link-expando-content';
-                    content.setAttribute('role', 'list');
-
-                    group.items.forEach(function(lessonItem) {
-                        var item = document.createElement('button');
-                        item.type = 'button';
-                        item.className = 'page-link-item';
-                        item.textContent = lessonItem.title + (lessonItem.module ? ' (' + lessonItem.module + ')' : '');
-                        item.setAttribute('role', 'listitem');
-                        item.setAttribute('title', lessonItem.url);
-                        item.onclick = function() {
-                            insertLessonLink(lessonItem);
-                            closePageLinkModal();
-                        };
-                        item.onkeydown = function(e) {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                insertLessonLink(lessonItem);
-                                closePageLinkModal();
-                            }
-                        };
-                        content.appendChild(item);
-                    });
-
-                    var expando = createExpandoSection(group.label, group.items.length, content, true);
-                    listDiv.appendChild(expando);
-                    hasContent = true;
-                });
-            }
-            
-            if (!hasContent) {
-                listDiv.innerHTML = '<p role="status">No pages or lesson content available.</p>';
-            }
-        }
-
-        var pageLinkModalFocusBeforeOpen = null;
-
-        function showPageLinkModal() {
-            var modal = document.getElementById('page-link-modal');
-            pageLinkModalFocusBeforeOpen = document.activeElement;
-            modal.style.display = 'block';
-            requestAnimationFrame(function() { modal.classList.add('open'); });
-            document.addEventListener('keydown', pageLinkModalKeyHandler);
-            var firstFocusable = modal.querySelector('.page-link-item') || modal.querySelector('button');
-            if (firstFocusable) {
-                firstFocusable.focus();
-            } else {
-                modal.focus();
-            }
-        }
-
-        function closePageLinkModal() {
-            var modal = document.getElementById('page-link-modal');
-            modal.classList.remove('open');
-            document.removeEventListener('keydown', pageLinkModalKeyHandler);
-            setTimeout(function() {
-                modal.style.display = 'none';
-                if (pageLinkModalFocusBeforeOpen) {
-                    pageLinkModalFocusBeforeOpen.focus();
-                }
-            }, 250);
-        }
-
-        function pageLinkModalKeyHandler(e) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                closePageLinkModal();
-            }
-        }
-
-        function insertPageLink(page) {
-            if (!editor) return;
-            
-            const model = editor.model;
-            const selection = model.document.selection;
-            const url = pagesBase + '/' + encodeURIComponent(page.logical_key);
-            
-            model.change(writer => {
-                if (selection.isCollapsed) {
-                    const textNode = writer.createText(page.title);
-                    const insertPosition = selection.getFirstPosition();
-                    const insertedRange = model.insertContent(textNode, insertPosition);
-                    writer.setSelection(insertedRange);
-                }
-            });
-            
-            editor.execute('link', url);
-        }
-
-        function insertLessonLink(lessonItem) {
-            if (!editor) return;
-            
-            const model = editor.model;
-            const selection = model.document.selection;
-            const url = lessonItem.url;
-            const title = lessonItem.title;
-            
-            model.change(writer => {
-                if (selection.isCollapsed) {
-                    const textNode = writer.createText(title);
-                    const insertPosition = selection.getFirstPosition();
-                    const insertedRange = model.insertContent(textNode, insertPosition);
-                    writer.setSelection(insertedRange);
-                }
-            });
-            
-            editor.execute('link', url);
-        }
-
-        $(document).ready( function () {
-            ClassicEditor
-                .create( document.querySelector( '#editor_body' ), ClassicEditor.defaultConfig )
-                .then(ed => {
-                    editor = ed;
-                    
-                    setTimeout(function() {
-                        addPageLinkButtonToToolbar();
-                    }, 500);
-                })
-                .catch( error => {
-                    console.error( error );
-                });
-            
-            $('#page_form').on('submit', function(e) {
-                if ( editor ) {
-                    $('#editor_body').val(editor.getData());
-                }
-            });
-            
-            window.onclick = function(event) {
-                var modal = document.getElementById('page-link-modal');
-                if (event.target == modal) {
-                    closePageLinkModal();
-                }
-            };
-        });
-
-        function addPageLinkButtonToToolbar() {
-            var toolbar = document.querySelector('.ck-editor .ck-toolbar') || 
-                          document.querySelector('.ck.ck-toolbar') ||
-                          document.querySelector('[class*="ck-toolbar"]');
-            
-            if (!toolbar) {
-                console.log('Toolbar not found, retrying...');
-                setTimeout(addPageLinkButtonToToolbar, 200);
-                return;
-            }
-            
-            if (toolbar.querySelector('[data-page-link-button]')) {
-                return;
-            }
-            
-            var linkButton = toolbar.querySelector('button[aria-label*="Link" i]') ||
-                             toolbar.querySelector('button[title*="Link" i]') ||
-                             toolbar.querySelector('.ck-button[class*="link" i]');
-            
-            var separator = document.createElement('span');
-            separator.className = 'ck ck-toolbar__separator';
-            
-            var button = document.createElement('button');
-            button.className = 'ck ck-button ck-toolbar__item';
-            button.type = 'button';
-            button.setAttribute('aria-label', 'Insert Page Link');
-            button.setAttribute('title', 'Insert Page Link');
-            button.setAttribute('data-page-link-button', 'true');
-            button.innerHTML = '<svg class="ck-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px; fill: currentColor;" aria-hidden="true"><path d="M7 18c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.15.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12L8.1 13h7.45c.75 0 1.41-.41 1.75-1.03L21.7 4H5.21l-.94-2H1zm16 16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>';
-            
-            button.onclick = function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                showPageLinkModal();
-            };
-            
-            if (linkButton && linkButton.parentElement) {
-                var parent = linkButton.parentElement;
-                if (linkButton.nextSibling) {
-                    parent.insertBefore(separator, linkButton.nextSibling);
-                    parent.insertBefore(button, separator.nextSibling);
-                } else {
-                    parent.appendChild(separator);
-                    parent.appendChild(button);
-                }
-            } else {
-                var toolbarGroup = toolbar.querySelector('.ck-toolbar__items') || toolbar;
-                toolbarGroup.appendChild(separator);
-                toolbarGroup.appendChild(button);
-            }
-            
-            console.log('Page link button added to toolbar');
-        }
+        <?php \Tsugi\UI\CKEditor::renderLinkPickerScript(); ?>
         </script>
         <?php
         $OUTPUT->footerEnd();
@@ -803,98 +496,49 @@ class Pages extends Tool {
 
     public function addPost(Request $request)
     {
-        global $CFG, $PDOX;
-        
         $this->requireInstructor('/pages');
         
         $tool_home = $this->toolHome(self::ROUTE);
         $add_url = $tool_home . '/add';
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($add_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
-        
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
-        
+
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
+
         $title = trim(U::get($_POST, 'title'));
-        $body = U::get($_POST, 'body', '');
+        $body = $this->canonicalizePageHtml(U::get($_POST, 'body', ''));
         $published = U::get($_POST, 'published', 0) ? 1 : 0;
         $is_main = U::get($_POST, 'is_main', 0) ? 1 : 0;
         $is_front_page = U::get($_POST, 'is_front_page', 0) ? 1 : 0;
-        
+
         if (empty($title)) {
             U::flashError('Title is required');
             return new RedirectResponse($add_url);
         }
-        
-        // Generate logical key from title
-        $logical_key = $this->generateLogicalKey($title);
-        
-        // Check if logical_key already exists for this context
-        $existing = $PDOX->rowDie(
-            "SELECT page_id FROM {$CFG->dbprefix}pages 
-             WHERE context_id = :CID AND logical_key = :KEY",
-            array(':CID' => $context_id, ':KEY' => $logical_key)
+
+        $logical_key = PageRepository::uniqueLogicalKey(
+            $context_id,
+            PageRepository::generateLogicalKey($title)
         );
-        
-        if ($existing) {
-            // Append number to make it unique
-            $counter = 1;
-            $original_key = $logical_key;
-            while ($existing) {
-                $logical_key = $original_key . '-' . $counter;
-                if (strlen($logical_key) > 99) {
-                    $logical_key = substr($original_key, 0, 99 - strlen('-' . $counter)) . '-' . $counter;
-                }
-                $existing = $PDOX->rowDie(
-                    "SELECT page_id FROM {$CFG->dbprefix}pages 
-                     WHERE context_id = :CID AND logical_key = :KEY",
-                    array(':CID' => $context_id, ':KEY' => $logical_key)
-                );
-                $counter++;
-            }
-        }
-        
-        // Check if there are any other pages
-        $page_count = $PDOX->rowDie(
-            "SELECT COUNT(*) as cnt FROM {$CFG->dbprefix}pages WHERE context_id = :CID",
-            array(':CID' => $context_id)
-        );
-        
-        // If there are no other pages, this must be the main page
-        if ($page_count['cnt'] == 0) {
+
+        $page_count = PageRepository::countForContext($context_id);
+        if ($page_count == 0) {
             $is_main = 1;
         } else if ($is_main) {
-            // If this is marked as main and there are other pages, unset all other main pages first
-            $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}pages SET is_main = 0 WHERE context_id = :CID",
-                array(':CID' => $context_id)
-            );
+            PageRepository::clearMain($context_id);
         }
-        
-        // If this is marked as front page, unset all other front pages first
+
         if ($is_front_page) {
-            $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}pages SET is_front_page = 0 WHERE context_id = :CID",
-                array(':CID' => $context_id)
-            );
+            PageRepository::clearFront($context_id);
         }
-        
-        $sql = "INSERT INTO {$CFG->dbprefix}pages 
-                (context_id, title, logical_key, body, published, is_main, is_front_page, user_id, created_at, updated_at) 
-                VALUES (:CID, :title, :key, :body, :published, :main, :front_page, :UID, NOW(), NOW())";
-        $values = array(
-            ':CID' => $context_id,
-            ':title' => $title,
-            ':key' => $logical_key,
-            ':body' => $body,
-            ':published' => $published,
-            ':main' => $is_main,
-            ':front_page' => $is_front_page,
-            ':UID' => $user_id
-        );
-        $q = $PDOX->queryReturnError($sql, $values);
-        if ($q->success) {
+
+        if (PageRepository::insert($context_id, $user_id, $title, $logical_key, $body, $published, $is_main, $is_front_page)) {
             U::flashSuccess('Page created successfully');
             return new RedirectResponse($manage_url);
         } else {
@@ -905,7 +549,7 @@ class Pages extends Tool {
 
     public function edit(Request $request, $id)
     {
-        global $CFG, $OUTPUT, $PDOX;
+        global $CFG, $OUTPUT;
         
         $this->requireInstructor('/pages');
         
@@ -916,7 +560,7 @@ class Pages extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $page_id = intval($id);
         
         if (!$page_id) {
@@ -924,12 +568,7 @@ class Pages extends Tool {
             return new RedirectResponse($manage_url);
         }
         
-        // Get page for editing
-        $page = $PDOX->rowDie(
-            "SELECT * FROM {$CFG->dbprefix}pages 
-             WHERE page_id = :PID AND context_id = :CID",
-            array(':PID' => $page_id, ':CID' => $context_id)
-        );
+        $page = PageRepository::load($page_id, $context_id);
         
         if (!$page) {
             U::flashError('Page not found');
@@ -945,6 +584,7 @@ class Pages extends Tool {
             <h1>Edit Page</h1>
 
             <form method="post" id="page_form">
+                <?= self::csrfField() ?>
                 <div class="form-group">
                     <label for="title">Title:</label>
                     <input type="text" class="form-control" id="title" name="title" 
@@ -954,7 +594,7 @@ class Pages extends Tool {
                 <div class="form-group">
                     <label for="body">Body:</label>
                     <div class="ckeditor-container">
-                        <textarea name="body" id="editor_body"><?= htmlspecialchars(U::get($_POST, 'body', $page['body'])) ?></textarea>
+                        <textarea name="body" id="editor_body"><?= htmlspecialchars(U::get($_POST, 'body', $this->expandPageHtml($page['body']))) ?></textarea>
                     </div>
                 </div>
                 
@@ -1003,352 +643,18 @@ class Pages extends Tool {
         <script type="text/javascript">
         <?php $json_url = $tool_home . '/json'; ?>
         <?php $lessons_json_url = $tool_home . '/lessons-json'; ?>
+        <?php $files_home = $this->controllerUrl(\Tsugi\Controllers\Files::ROUTE, self::ROUTE); ?>
         var pagesJsonUrl = '<?= $json_url ?>';
         var lessonsJsonUrl = '<?= $lessons_json_url ?>';
+        var filesJsonUrl = '<?= htmlspecialchars($files_home . '/json') ?>';
+        var filesBase = '<?= htmlspecialchars($files_home) ?>';
         var pagesBase = '<?= htmlspecialchars($pages_base) ?>';
         var appHome = '<?= htmlspecialchars(isset($apphome) ? $apphome : '') ?>';
         var currentPageId = <?= isset($current_page_id) ? (int)$current_page_id : 'null' ?>;
 
         <?php \Tsugi\UI\CKEditor::renderConfigScript(); ?>
 
-        var editor;
-        var pagesList = [];
-        var lessonsList = [];
-        var lessonsModules = [];
-
-        Promise.all([
-            fetch(pagesJsonUrl).then(function(r) { return r.json(); }),
-            fetch(lessonsJsonUrl).then(function(r) { return r.json(); })
-        ]).then(function(results) {
-            pagesList = results[0] || [];
-            var lessonsData = results[1] || {};
-            lessonsList = lessonsData.items || (Array.isArray(lessonsData) ? lessonsData : []);
-            lessonsModules = lessonsData.modules || [];
-            populatePageLinkList();
-        }).catch(function(error) {
-            console.error('Error loading link data:', error);
-        });
-
-        function createExpandoSection(title, count, itemsContainer, startCollapsed) {
-            var expando = document.createElement('div');
-            expando.className = 'page-link-expando' + (startCollapsed ? ' collapsed' : '');
-            expando.setAttribute('role', 'group');
-            expando.setAttribute('aria-label', title);
-
-            var header = document.createElement('div');
-            header.className = 'page-link-expando-header';
-            header.setAttribute('role', 'button');
-            header.setAttribute('aria-expanded', !startCollapsed);
-            header.setAttribute('tabindex', '0');
-            header.innerHTML = '<span>' + title + ' (' + count + ')</span><span class="expando-chevron" aria-hidden="true">&#9660;</span>';
-
-            header.onclick = function(e) {
-                e.preventDefault();
-                expando.classList.toggle('collapsed');
-                header.setAttribute('aria-expanded', !expando.classList.contains('collapsed'));
-            };
-            header.onkeydown = function(e) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    expando.classList.toggle('collapsed');
-                    header.setAttribute('aria-expanded', !expando.classList.contains('collapsed'));
-                }
-            };
-
-            expando.appendChild(header);
-            expando.appendChild(itemsContainer);
-            return expando;
-        }
-
-        function populatePageLinkList() {
-            var listDiv = document.getElementById('page-link-list');
-            if (!listDiv) return;
-            
-            listDiv.innerHTML = '';
-            
-            var displayPages = currentPageId ? pagesList.filter(function(p) { return p.id != currentPageId; }) : pagesList;
-            var hasContent = false;
-            
-            if (displayPages.length > 0) {
-                var pagesContent = document.createElement('div');
-                pagesContent.className = 'page-link-expando-content';
-                pagesContent.setAttribute('role', 'list');
-
-                displayPages.forEach(function(page) {
-                    var item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'page-link-item';
-                    item.textContent = page.title;
-                    item.setAttribute('role', 'listitem');
-                    item.onclick = function() {
-                        insertPageLink(page);
-                        closePageLinkModal();
-                    };
-                    item.onkeydown = function(e) {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            insertPageLink(page);
-                            closePageLinkModal();
-                        }
-                    };
-                    pagesContent.appendChild(item);
-                });
-
-                var pagesExpando = createExpandoSection('Pages', displayPages.length, pagesContent, true);
-                listDiv.appendChild(pagesExpando);
-                hasContent = true;
-            }
-
-            if (lessonsModules.length > 0) {
-                var modulesContent = document.createElement('div');
-                modulesContent.className = 'page-link-expando-content';
-                modulesContent.setAttribute('role', 'list');
-
-                lessonsModules.forEach(function(moduleItem) {
-                    var item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'page-link-item';
-                    item.textContent = moduleItem.title;
-                    item.setAttribute('role', 'listitem');
-                    item.setAttribute('title', moduleItem.url);
-                    item.onclick = function() {
-                        insertLessonLink(moduleItem);
-                        closePageLinkModal();
-                    };
-                    item.onkeydown = function(e) {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            insertLessonLink(moduleItem);
-                            closePageLinkModal();
-                        }
-                    };
-                    modulesContent.appendChild(item);
-                });
-
-                var modulesExpando = createExpandoSection('Modules', lessonsModules.length, modulesContent, true);
-                listDiv.appendChild(modulesExpando);
-                hasContent = true;
-            }
-            
-            if (lessonsList.length > 0) {
-                var typeGroups = {
-                    video: { label: 'Videos', items: [] },
-                    discussion: { label: 'Discussions', items: [] },
-                    lti: { label: 'LTI & Tools', items: [] },
-                    'not-lti': { label: 'LTI & Tools', items: [] },
-                    reference: { label: 'References', items: [] },
-                    slide: { label: 'Slides', items: [] }
-                };
-
-                lessonsList.forEach(function(lessonItem) {
-                    var t = lessonItem.type || 'reference';
-                    if (t === 'not-lti') t = 'lti';
-                    if (typeGroups[t]) typeGroups[t].items.push(lessonItem);
-                });
-
-                var ltiItems = (typeGroups.lti ? typeGroups.lti.items : []).concat(typeGroups['not-lti'] ? typeGroups['not-lti'].items : []);
-                var groupsToShow = [
-                    { label: 'Videos', items: typeGroups.video ? typeGroups.video.items : [] },
-                    { label: 'Discussions', items: typeGroups.discussion ? typeGroups.discussion.items : [] },
-                    { label: 'LTI & Tools', items: ltiItems },
-                    { label: 'References', items: typeGroups.reference ? typeGroups.reference.items : [] },
-                    { label: 'Slides', items: typeGroups.slide ? typeGroups.slide.items : [] }
-                ];
-
-                groupsToShow.forEach(function(group) {
-                    if (!group.items || group.items.length === 0) return;
-
-                    var content = document.createElement('div');
-                    content.className = 'page-link-expando-content';
-                    content.setAttribute('role', 'list');
-
-                    group.items.forEach(function(lessonItem) {
-                        var item = document.createElement('button');
-                        item.type = 'button';
-                        item.className = 'page-link-item';
-                        item.textContent = lessonItem.title + (lessonItem.module ? ' (' + lessonItem.module + ')' : '');
-                        item.setAttribute('role', 'listitem');
-                        item.setAttribute('title', lessonItem.url);
-                        item.onclick = function() {
-                            insertLessonLink(lessonItem);
-                            closePageLinkModal();
-                        };
-                        item.onkeydown = function(e) {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                insertLessonLink(lessonItem);
-                                closePageLinkModal();
-                            }
-                        };
-                        content.appendChild(item);
-                    });
-
-                    var expando = createExpandoSection(group.label, group.items.length, content, true);
-                    listDiv.appendChild(expando);
-                    hasContent = true;
-                });
-            }
-            
-            if (!hasContent) {
-                listDiv.innerHTML = '<p role="status">No pages or lesson content available.</p>';
-            }
-        }
-
-        var pageLinkModalFocusBeforeOpen = null;
-
-        function showPageLinkModal() {
-            var modal = document.getElementById('page-link-modal');
-            pageLinkModalFocusBeforeOpen = document.activeElement;
-            modal.style.display = 'block';
-            requestAnimationFrame(function() { modal.classList.add('open'); });
-            document.addEventListener('keydown', pageLinkModalKeyHandler);
-            var firstFocusable = modal.querySelector('.page-link-item') || modal.querySelector('button');
-            if (firstFocusable) {
-                firstFocusable.focus();
-            } else {
-                modal.focus();
-            }
-        }
-
-        function closePageLinkModal() {
-            var modal = document.getElementById('page-link-modal');
-            modal.classList.remove('open');
-            document.removeEventListener('keydown', pageLinkModalKeyHandler);
-            setTimeout(function() {
-                modal.style.display = 'none';
-                if (pageLinkModalFocusBeforeOpen) {
-                    pageLinkModalFocusBeforeOpen.focus();
-                }
-            }, 250);
-        }
-
-        function pageLinkModalKeyHandler(e) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                closePageLinkModal();
-            }
-        }
-
-        function insertPageLink(page) {
-            if (!editor) return;
-            
-            const model = editor.model;
-            const selection = model.document.selection;
-            const url = pagesBase + '/' + encodeURIComponent(page.logical_key);
-            
-            model.change(writer => {
-                if (selection.isCollapsed) {
-                    const textNode = writer.createText(page.title);
-                    const insertPosition = selection.getFirstPosition();
-                    const insertedRange = model.insertContent(textNode, insertPosition);
-                    writer.setSelection(insertedRange);
-                }
-            });
-            
-            editor.execute('link', url);
-        }
-
-        function insertLessonLink(lessonItem) {
-            if (!editor) return;
-            
-            const model = editor.model;
-            const selection = model.document.selection;
-            const url = lessonItem.url;
-            const title = lessonItem.title;
-            
-            model.change(writer => {
-                if (selection.isCollapsed) {
-                    const textNode = writer.createText(title);
-                    const insertPosition = selection.getFirstPosition();
-                    const insertedRange = model.insertContent(textNode, insertPosition);
-                    writer.setSelection(insertedRange);
-                }
-            });
-            
-            editor.execute('link', url);
-        }
-
-        $(document).ready( function () {
-            ClassicEditor
-                .create( document.querySelector( '#editor_body' ), ClassicEditor.defaultConfig )
-                .then(ed => {
-                    editor = ed;
-                    
-                    setTimeout(function() {
-                        addPageLinkButtonToToolbar();
-                    }, 500);
-                })
-                .catch( error => {
-                    console.error( error );
-                });
-            
-            $('#page_form').on('submit', function(e) {
-                if ( editor ) {
-                    $('#editor_body').val(editor.getData());
-                }
-            });
-            
-            window.onclick = function(event) {
-                var modal = document.getElementById('page-link-modal');
-                if (event.target == modal) {
-                    closePageLinkModal();
-                }
-            };
-        });
-
-        function addPageLinkButtonToToolbar() {
-            var toolbar = document.querySelector('.ck-editor .ck-toolbar') || 
-                          document.querySelector('.ck.ck-toolbar') ||
-                          document.querySelector('[class*="ck-toolbar"]');
-            
-            if (!toolbar) {
-                console.log('Toolbar not found, retrying...');
-                setTimeout(addPageLinkButtonToToolbar, 200);
-                return;
-            }
-            
-            if (toolbar.querySelector('[data-page-link-button]')) {
-                return;
-            }
-            
-            var linkButton = toolbar.querySelector('button[aria-label*="Link" i]') ||
-                             toolbar.querySelector('button[title*="Link" i]') ||
-                             toolbar.querySelector('.ck-button[class*="link" i]');
-            
-            var separator = document.createElement('span');
-            separator.className = 'ck ck-toolbar__separator';
-            
-            var button = document.createElement('button');
-            button.className = 'ck ck-button ck-toolbar__item';
-            button.type = 'button';
-            button.setAttribute('aria-label', 'Insert Page Link');
-            button.setAttribute('title', 'Insert Page Link');
-            button.setAttribute('data-page-link-button', 'true');
-            button.innerHTML = '<svg class="ck-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px; fill: currentColor;" aria-hidden="true"><path d="M7 18c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.15.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12L8.1 13h7.45c.75 0 1.41-.41 1.75-1.03L21.7 4H5.21l-.94-2H1zm16 16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>';
-            
-            button.onclick = function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                showPageLinkModal();
-            };
-            
-            if (linkButton && linkButton.parentElement) {
-                var parent = linkButton.parentElement;
-                if (linkButton.nextSibling) {
-                    parent.insertBefore(separator, linkButton.nextSibling);
-                    parent.insertBefore(button, separator.nextSibling);
-                } else {
-                    parent.appendChild(separator);
-                    parent.appendChild(button);
-                }
-            } else {
-                var toolbarGroup = toolbar.querySelector('.ck-toolbar__items') || toolbar;
-                toolbarGroup.appendChild(separator);
-                toolbarGroup.appendChild(button);
-            }
-            
-            console.log('Page link button added to toolbar');
-        }
+        <?php \Tsugi\UI\CKEditor::renderLinkPickerScript(); ?>
         </script>
         <?php
         $OUTPUT->footerEnd();
@@ -1356,20 +662,22 @@ class Pages extends Tool {
 
     public function editPost(Request $request, $id)
     {
-        global $CFG, $PDOX;
-        
         $this->requireInstructor('/pages');
         
         $tool_home = $this->toolHome(self::ROUTE);
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($manage_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $page_id = intval($id);
         
         $title = trim(U::get($_POST, 'title'));
-        $body = U::get($_POST, 'body', '');
+        $body = $this->canonicalizePageHtml(U::get($_POST, 'body', ''));
         $published = U::get($_POST, 'published', 0) ? 1 : 0;
         $is_main = U::get($_POST, 'is_main', 0) ? 1 : 0;
         $is_front_page = U::get($_POST, 'is_front_page', 0) ? 1 : 0;
@@ -1379,92 +687,22 @@ class Pages extends Tool {
             $edit_url = $tool_home . '/edit/' . $page_id;
             return new RedirectResponse($edit_url);
         }
-        
-        // Generate logical key from title
-        $logical_key = $this->generateLogicalKey($title);
-        
-        // Check if logical_key already exists for this context (excluding current page)
-        $existing = $PDOX->rowDie(
-            "SELECT page_id FROM {$CFG->dbprefix}pages 
-             WHERE context_id = :CID AND logical_key = :KEY AND page_id != :PID",
-            array(':CID' => $context_id, ':KEY' => $logical_key, ':PID' => $page_id)
+
+        $logical_key = PageRepository::uniqueLogicalKey(
+            $context_id,
+            PageRepository::generateLogicalKey($title),
+            $page_id
         );
-        
-        if ($existing) {
-            // Append number to make it unique
-            $counter = 1;
-            $original_key = $logical_key;
-            while ($existing) {
-                $logical_key = $original_key . '-' . $counter;
-                if (strlen($logical_key) > 99) {
-                    $logical_key = substr($original_key, 0, 99 - strlen('-' . $counter)) . '-' . $counter;
-                }
-                $existing = $PDOX->rowDie(
-                    "SELECT page_id FROM {$CFG->dbprefix}pages 
-                     WHERE context_id = :CID AND logical_key = :KEY AND page_id != :PID",
-                    array(':CID' => $context_id, ':KEY' => $logical_key, ':PID' => $page_id)
-                );
-                $counter++;
-            }
-        }
-        
-        // If this is marked as main, unset all other main pages first
+
         if ($is_main) {
-            $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}pages SET is_main = 0 WHERE context_id = :CID",
-                array(':CID' => $context_id)
-            );
-        }
-        
-        // If this is marked as front page, unset all other front pages first
-        if ($is_front_page) {
-            $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}pages SET is_front_page = 0 WHERE context_id = :CID",
-                array(':CID' => $context_id)
-            );
+            PageRepository::clearMain($context_id);
         }
 
-        // Fetch current page to check if content changed (for history)
-        $current = $PDOX->rowDie(
-            "SELECT title, body FROM {$CFG->dbprefix}pages WHERE page_id = :PID AND context_id = :CID",
-            array(':PID' => $page_id, ':CID' => $context_id)
-        );
-        $content_changed = ($current && ($current['title'] !== $title || $current['body'] !== $body));
-        
-        $sql = "UPDATE {$CFG->dbprefix}pages 
-                SET title = :title, logical_key = :key, body = :body, 
-                    published = :published, is_main = :main, is_front_page = :front_page, updated_at = NOW()
-                WHERE page_id = :PID AND context_id = :CID";
-        $values = array(
-            ':title' => $title,
-            ':key' => $logical_key,
-            ':body' => $body,
-            ':published' => $published,
-            ':main' => $is_main,
-            ':front_page' => $is_front_page,
-            ':PID' => $page_id,
-            ':CID' => $context_id
-        );
-        $q = $PDOX->queryReturnError($sql, $values);
-        if ($q->success) {
-            // Save previous version to history only when content (title or body) actually changed
-            if ($content_changed && $current) {
-                $PDOX->queryDie(
-                    "INSERT INTO {$CFG->dbprefix}page_history (page_id, title, body) VALUES (:PID, :title, :body)",
-                    array(':PID' => $page_id, ':title' => $current['title'], ':body' => $current['body'])
-                );
-                // Trim to last 5 per page (delete oldest)
-                $ids = $PDOX->allRowsDie(
-                    "SELECT history_id FROM {$CFG->dbprefix}page_history WHERE page_id = :PID ORDER BY saved_at DESC",
-                    array(':PID' => $page_id)
-                );
-                if (count($ids) > 5) {
-                    $to_delete = array_slice($ids, 5);
-                    foreach ($to_delete as $row) {
-                        $PDOX->queryDie("DELETE FROM {$CFG->dbprefix}page_history WHERE history_id = :HID", array(':HID' => $row['history_id']));
-                    }
-                }
-            }
+        if ($is_front_page) {
+            PageRepository::clearFront($context_id);
+        }
+
+        if (PageRepository::update($page_id, $context_id, $title, $logical_key, $body, $published, $is_main, $is_front_page)) {
             U::flashSuccess('Page updated successfully');
             return new RedirectResponse($manage_url);
         } else {
@@ -1476,8 +714,8 @@ class Pages extends Tool {
 
     public function manage(Request $request)
     {
-        global $CFG, $OUTPUT, $PDOX;
-        
+        global $CFG, $OUTPUT;
+
         $this->requireInstructor('/pages');
         
         $tool_home = $this->toolHome(self::ROUTE);
@@ -1487,26 +725,10 @@ class Pages extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
-        
-        // Get page_ids that have history (for showing History button)
-        // Join via pages to scope to this context — context_id was removed from page_history (redundant via FK)
-        $pages_with_history = $PDOX->allRowsDie(
-            "SELECT DISTINCT ph.page_id FROM {$CFG->dbprefix}page_history ph
-             JOIN {$CFG->dbprefix}pages p ON ph.page_id = p.page_id
-             WHERE p.context_id = :CID",
-            array(':CID' => $context_id)
-        );
-        $page_ids_with_history = array_column($pages_with_history, 'page_id');
-        
-        // Get all pages for this context
-        $pages = $PDOX->allRowsDie(
-            "SELECT page_id, title, logical_key, published, is_main, is_front_page, created_at, updated_at 
-             FROM {$CFG->dbprefix}pages 
-             WHERE context_id = :CID 
-             ORDER BY is_main DESC, is_front_page DESC, title ASC",
-            array(':CID' => $context_id)
-        );
+        $context_id = ReqScope::currentContextId();
+
+        $page_ids_with_history = PageRepository::pageIdsWithHistory($context_id);
+        $pages = PageRepository::listForManage($context_id);
 
         $OUTPUT->header();
         $OUTPUT->bodyStart();
@@ -1574,6 +796,7 @@ class Pages extends Tool {
                                     <a href="<?= htmlspecialchars($history_url) ?>" class="btn btn-xs btn-info" aria-label="<?= htmlspecialchars(__('History')) ?> <?= htmlspecialchars($page['title']) ?>">History</a>
                                     <?php endif; ?>
                                     <form method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to toggle the published status?');">
+                                        <?= self::csrfField() ?>
                                         <input type="hidden" name="action" value="toggle_published">
                                         <input type="hidden" name="page_id" value="<?= $page['page_id'] ?>">
                                         <button type="submit" class="btn btn-xs btn-warning" aria-label="<?= $page['published'] ? 'Unpublish' : 'Publish' ?> <?= htmlspecialchars($page['title']) ?>">
@@ -1581,6 +804,7 @@ class Pages extends Tool {
                                         </button>
                                     </form>
                                     <form method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this page?');">
+                                        <?= self::csrfField() ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="page_id" value="<?= $page['page_id'] ?>">
                                         <button type="submit" class="btn btn-xs btn-danger" aria-label="Delete <?= htmlspecialchars($page['title']) ?>">Delete</button>
@@ -1598,51 +822,36 @@ class Pages extends Tool {
 
     public function managePost(Request $request)
     {
-        global $CFG, $PDOX;
-        
         $this->requireInstructor('/pages');
         
         $tool_home = $this->toolHome(self::ROUTE);
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($manage_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         
         // Handle delete action
         $action = U::get($_POST, 'action');
         $page_id = U::get($_POST, 'page_id');
         
         if ($action === 'delete' && $page_id) {
-            // Verify ownership/context
-            $check = $PDOX->rowDie(
-                "SELECT page_id FROM {$CFG->dbprefix}pages 
-                 WHERE page_id = :PID AND context_id = :CID",
-                array(':PID' => $page_id, ':CID' => $context_id)
-            );
-            if ($check) {
-                $sql = "DELETE FROM {$CFG->dbprefix}pages 
-                        WHERE page_id = :PID AND context_id = :CID";
-                $q = $PDOX->queryReturnError($sql, array(':PID' => $page_id, ':CID' => $context_id));
-                if ($q->success) {
-                    U::flashSuccess('Page deleted successfully');
-                } else {
-                    U::flashError('Error deleting page');
-                }
+            $deleted = PageRepository::delete($page_id, $context_id);
+            if ($deleted === true) {
+                U::flashSuccess('Page deleted successfully');
+            } else if ($deleted === false) {
+                U::flashError('Error deleting page');
             } else {
                 U::flashError('Page not found');
             }
         }
-        
-        // Handle toggle published action
+
         if ($action === 'toggle_published' && $page_id) {
-            $q = $PDOX->queryReturnError(
-                "UPDATE {$CFG->dbprefix}pages 
-                 SET published = NOT published 
-                 WHERE page_id = :PID AND context_id = :CID",
-                array(':PID' => $page_id, ':CID' => $context_id)
-            );
-            if ($q->success) {
+            if (PageRepository::togglePublished($page_id, $context_id)) {
                 U::flashSuccess('Page status updated successfully');
             } else {
                 U::flashError('Error updating page status');
@@ -1654,7 +863,7 @@ class Pages extends Tool {
 
     public function history(Request $request, $id)
     {
-        global $CFG, $OUTPUT, $PDOX;
+        global $OUTPUT;
 
         $this->requireInstructor('/pages');
 
@@ -1663,24 +872,16 @@ class Pages extends Tool {
 
         LTIX::getConnection();
 
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $page_id = intval($id);
 
-        $page = $PDOX->rowDie(
-            "SELECT page_id, title, body, logical_key, updated_at FROM {$CFG->dbprefix}pages 
-             WHERE page_id = :PID AND context_id = :CID",
-            array(':PID' => $page_id, ':CID' => $context_id)
-        );
+        $page = PageRepository::loadForHistory($page_id, $context_id);
         if (!$page) {
             U::flashError('Page not found');
             return new RedirectResponse($manage_url);
         }
 
-        $histories = $PDOX->allRowsDie(
-            "SELECT history_id, title, body, saved_at FROM {$CFG->dbprefix}page_history 
-             WHERE page_id = :PID ORDER BY saved_at DESC",
-            array(':PID' => $page_id)
-        );
+        $histories = PageRepository::listHistory($page_id);
 
         if (count($histories) == 0) {
             U::flashError('No history for this page');
@@ -1731,11 +932,9 @@ class Pages extends Tool {
                                         data-body="<?= htmlspecialchars($h['body']) ?>">View / Diff</button>
                                 <form method="post" action="<?= $tool_home ?>/history/restore" style="display: inline;"
                                       onsubmit="return confirm('Restore this version? The current version will be saved to history.');">
+                                    <?= self::csrfField() ?>
                                     <input type="hidden" name="page_id" value="<?= $page_id ?>">
                                     <input type="hidden" name="history_id" value="<?= (int)$h['history_id'] ?>">
-                                    <?php if (!empty($_SESSION['CSRF_TOKEN'])): ?>
-                                    <input type="hidden" name="CSRF_TOKEN" value="<?= htmlspecialchars($_SESSION['CSRF_TOKEN']) ?>">
-                                    <?php endif; ?>
                                     <button type="submit" class="btn btn-xs btn-primary">Restore</button>
                                 </form>
                             </td>
@@ -1822,16 +1021,18 @@ class Pages extends Tool {
 
     public function historyRestore(Request $request)
     {
-        global $CFG, $PDOX;
-
         $this->requireInstructor('/pages');
 
         $tool_home = $this->toolHome(self::ROUTE);
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($manage_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
 
         LTIX::getConnection();
 
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $page_id = (int) U::get($_POST, 'page_id');
         $history_id = (int) U::get($_POST, 'history_id');
 
@@ -1840,50 +1041,15 @@ class Pages extends Tool {
             return new RedirectResponse($manage_url);
         }
 
-        $page = $PDOX->rowDie(
-            "SELECT page_id, title, body, logical_key FROM {$CFG->dbprefix}pages 
-             WHERE page_id = :PID AND context_id = :CID",
-            array(':PID' => $page_id, ':CID' => $context_id)
+        $err = PageRepository::restoreHistory(
+            $page_id,
+            $history_id,
+            $context_id,
+            $this->courseFileBaseUrl(self::ROUTE),
+            self::courseLocalPrefixes()
         );
-        $hist = $PDOX->rowDie(
-            "SELECT history_id, title, body FROM {$CFG->dbprefix}page_history 
-             WHERE history_id = :HID AND page_id = :PID",
-            array(':HID' => $history_id, ':PID' => $page_id)
-        );
-        if (!$page || !$hist) {
-            U::flashError('Page or history entry not found');
-            return new RedirectResponse($manage_url);
-        }
-
-        $logical_key = $this->generateLogicalKey($hist['title']);
-
-        $PDOX->beginTransaction();
-        try {
-            $PDOX->queryDie(
-                "INSERT INTO {$CFG->dbprefix}page_history (page_id, title, body) VALUES (:PID, :title, :body)",
-                array(':PID' => $page_id, ':title' => $page['title'], ':body' => $page['body'])
-            );
-            $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}pages SET title = :title, logical_key = :key, body = :body, updated_at = NOW() WHERE page_id = :PID AND context_id = :CID",
-                array(':title' => $hist['title'], ':key' => $logical_key, ':body' => $hist['body'], ':PID' => $page_id, ':CID' => $context_id)
-            );
-            $PDOX->queryDie(
-                "DELETE FROM {$CFG->dbprefix}page_history WHERE history_id = :HID",
-                array(':HID' => $history_id)
-            );
-            $ids = $PDOX->allRowsDie(
-                "SELECT history_id FROM {$CFG->dbprefix}page_history WHERE page_id = :PID ORDER BY saved_at DESC",
-                array(':PID' => $page_id)
-            );
-            if (count($ids) > 5) {
-                foreach (array_slice($ids, 5) as $row) {
-                    $PDOX->queryDie("DELETE FROM {$CFG->dbprefix}page_history WHERE history_id = :HID", array(':HID' => $row['history_id']));
-                }
-            }
-            $PDOX->commit();
-        } catch (\Exception $e) {
-            $PDOX->rollBack();
-            U::flashError('Error restoring: ' . $e->getMessage());
+        if ( $err !== null ) {
+            U::flashError($err);
             return new RedirectResponse($manage_url);
         }
 

@@ -16,7 +16,6 @@ class ConfigInfoTest extends \PHPUnit\Framework\TestCase
         $this->assertIsArray($CFG->extensions);
         $this->assertEmpty($CFG->extensions);
         $this->assertEquals('https://static.tsugi.org', $CFG->staticroot);
-        $this->assertEquals($dirroot . '/storage/', $CFG->lumen_storage);
     }
 
     public function testConstructorWithDataroot() {
@@ -77,6 +76,36 @@ class ConfigInfoTest extends \PHPUnit\Framework\TestCase
         
         $CFG->setExtension('key', 'value2');
         $this->assertEquals('value2', $CFG->getExtension('key'));
+    }
+
+    public function testPromotedExtensionsWriteCoreProperties() {
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://localhost:8888/tsugi');
+        $this->assertFalse($CFG->show_courses_widget);
+        $this->assertFalse($CFG->show_course_catalog);
+        $this->assertFalse($CFG->home_path);
+
+        $CFG->setExtension('show_courses_widget', true);
+        $CFG->setExtension('show_course_catalog', true);
+        $CFG->setExtension('home_path', 'https://example.com/home');
+        $this->assertTrue($CFG->show_courses_widget);
+        $this->assertTrue($CFG->show_course_catalog);
+        $this->assertSame('https://example.com/home', $CFG->home_path);
+        $this->assertTrue($CFG->getExtension('show_courses_widget'));
+        $this->assertTrue($CFG->getExtension('show_course_catalog'));
+        $this->assertSame('https://example.com/home', $CFG->getExtension('home_path'));
+        $this->assertTrue($CFG->extensions['show_courses_widget']);
+        $this->assertTrue($CFG->extensions['show_course_catalog']);
+        $this->assertSame('https://example.com/home', $CFG->extensions['home_path']);
+    }
+
+    public function testPromotedPropertiesReadableViaGetExtension() {
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://localhost:8888/tsugi');
+        $CFG->show_courses_widget = true;
+        $CFG->show_course_catalog = true;
+        $CFG->home_path = 'https://example.com/home';
+        $this->assertTrue($CFG->getExtension('show_courses_widget'));
+        $this->assertTrue($CFG->getExtension('show_course_catalog'));
+        $this->assertSame('https://example.com/home', $CFG->getExtension('home_path'));
     }
 
     public function testServerPrefixWithWwwroot() {
@@ -146,6 +175,61 @@ class ConfigInfoTest extends \PHPUnit\Framework\TestCase
         $this->assertFalse($CFG->canAuthor());
         $CFG->author_allow = true;
         $this->assertTrue($CFG->canAuthor());
+    }
+
+    public function testHasSiteLessons() {
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://example.com/tsugi');
+        $this->assertFalse($CFG->lessons);
+        $this->assertTrue(isset($CFG->lessons));
+        $this->assertFalse($CFG->hasSiteContextTitle());
+        $this->assertFalse($CFG->hasSiteLessons());
+        $CFG->lessons = '';
+        $this->assertFalse($CFG->hasSiteLessons());
+        $CFG->lessons = '/path/to/lessons.json';
+        $this->assertFalse($CFG->hasSiteLessons());
+        $CFG->context_title = 'Web Applications for Everybody';
+        $this->assertTrue($CFG->hasSiteContextTitle());
+        $this->assertTrue($CFG->hasSiteLessons());
+        $CFG->lessons = '   ';
+        $this->assertFalse($CFG->hasSiteLessons());
+        $CFG->lessons = '/path/to/lessons.json';
+        $CFG->context_title = '   ';
+        $this->assertFalse($CFG->hasSiteContextTitle());
+        $this->assertFalse($CFG->hasSiteLessons());
+    }
+
+    public function testGetHomeUrlFallsBackToApphomeThenWwwroot() {
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://example.com/tsugi');
+        $this->assertFalse($CFG->hasHomeUrl());
+        $this->assertEquals('http://example.com/tsugi', $CFG->getHomeUrl());
+
+        $CFG->apphome = 'http://example.com/app';
+        $this->assertTrue($CFG->hasHomeUrl());
+        $this->assertEquals('http://example.com/app', $CFG->getHomeUrl());
+
+        $CFG->apphome = '  ';
+        $this->assertFalse($CFG->hasHomeUrl());
+        $this->assertEquals('http://example.com/tsugi', $CFG->getHomeUrl());
+    }
+
+    public function testGetHomeUrlUsesHomePath() {
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://example.com/tsugi');
+        $CFG->apphome = 'http://example.com/app';
+        $CFG->home_path = $CFG->wwwroot;
+        $this->assertTrue($CFG->hasHomeUrl());
+        $this->assertEquals('http://example.com/tsugi', $CFG->getHomeUrl());
+
+        $CFG->home_path = 'https://example.org/wherever/';
+        $this->assertEquals('https://example.org/wherever', $CFG->getHomeUrl());
+
+        $CFG->apphome = false;
+        $CFG->home_path = '/';
+        $this->assertTrue($CFG->hasHomeUrl());
+        $this->assertEquals('/', $CFG->getHomeUrl());
+
+        $CFG->home_path = '   ';
+        $this->assertFalse($CFG->hasHomeUrl());
+        $this->assertEquals('http://example.com/tsugi', $CFG->getHomeUrl());
     }
 
     public function testGetLoginUrl() {
@@ -225,5 +309,35 @@ class ConfigInfoTest extends \PHPUnit\Framework\TestCase
         $CFG->servicedesc = false;
         $result = $CFG->getBadgeOrganization();
         $this->assertEquals('Service Name', $result);
+    }
+
+    public function testEnabledQaSettings() {
+        global $CFG;
+        $previous = $CFG ?? null;
+        $CFG = new ConfigInfo(realpath(dirname(__FILE__)), 'http://localhost:8888/tsugi');
+        try {
+            $this->assertSame(array(), $CFG->enabledQaSettings());
+            $this->assertSame('', \Tsugi\Controllers\Admin::qaNotice());
+
+            $CFG->qa_allow_local_jwks = true;
+            $CFG->qa_demo_login = false;
+            $CFG->qa_demo_secret = '';
+            $this->assertSame(array('qa_allow_local_jwks'), $CFG->enabledQaSettings());
+
+            $CFG->qa_demo_login = true;
+            $CFG->qa_demo_secret = 's3cret';
+            $this->assertSame(
+                array('qa_allow_local_jwks', 'qa_demo_login', 'qa_demo_secret'),
+                $CFG->enabledQaSettings()
+            );
+            $notice = \Tsugi\Controllers\Admin::qaNotice();
+            $this->assertStringContainsString('QA settings enabled, these settings are not suitable for production systems', $notice);
+            $this->assertStringContainsString('qa_allow_local_jwks', $notice);
+            $this->assertStringContainsString('qa_demo_login', $notice);
+            $this->assertStringContainsString('qa_demo_secret', $notice);
+            $this->assertStringNotContainsString('s3cret', $notice);
+        } finally {
+            $CFG = $previous;
+        }
     }
 }

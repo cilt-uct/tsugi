@@ -1,7 +1,21 @@
 # Repository Guidelines
 
+## This checkout only
+
+This folder is the Tsugi you are editing. A sibling clone often exists at `/Users/csev/htdocs/tsugi`. **Do not use that tree** unless it is the Cursor workspace. PHP admin scripts must `require` via `__DIR__` so `php admin/upgrade.php` cannot pick up `dj4e/config.php` and jump to `htdocs/tsugi`. See `.cursor/rules/this-checkout-only.mdc`.
+
+## Manifest course waiver (expires 2026-11-16)
+
+This waiver is temporary. Before 2026-11-16, a manifest saved before `lti_content` may break. Treat manifest courses as fresh courses created after this change. Do not spend effort migrating old lesson JSON, old `lti_link` rows, or courses that already have a manifest. If the user says a manifest course can break, accept that until the reminder window below.
+
+Starting 2026-11-02, the waiver is close to expiring. On the first reply in a conversation that touches lessons, manifests, LTI content, or course settings, say this even if the user just said manifest courses can break: CodeRabbit's waiver expires 2026-11-16, and after that it will flag existing manifest courses that regress. Ask whether to extend the date or let it expire. Say it once per conversation, then continue the work.
+
+On or after 2026-11-16 the waiver is expired. Do not keep treating an existing manifest as disposable, and do not move the date yourself. Tell the user the waiver expired and ask whether manifest courses are now production before changing that behavior. Delete this section once that decision is made.
+
+File-based lessons (`$CFG->lessons`, no `manifest_id`) are outside this waiver. Those launches must keep working.
+
 ## Project Structure & Module Organization
-- Root entry points live in `index.php`, `login.php`, `logout.php`, and `admin/` for the administration console UI.
+- Root entry points live in `index.php` and `admin/` for the administration console UI. `/login` and `/logout` (and the legacy `login.php` / `logout.php` URLs) are Login/Logout controllers via `tsugi.php`.
 - Core feature areas are organized by domain: `api/` (HTTP endpoints), `lti/` (LTI launch and flow), `mod/` (optional modules), `tool/` (in-tree tools shipped with this repo), `store/` (tool store), `util/` (shared helpers), and `locale/` (translations).
 - Configuration starts from `config-dist.php`; copy to `config.php` and edit for local secrets and settings.
 - Dependencies are vendored in `vendor/` (including `tsugi/lib` and `koseu/lib`), so changes there should be intentional and tracked.
@@ -30,11 +44,12 @@
 - `composer update tsugi/lib` — update the Tsugi PHP runtime without bumping all transitive dependencies (see `docs/composer.md`).
 - `composer update --ignore-platform-reqs` — advance dependencies when explicitly needed.
 
-## Session and auth helpers (`lib/include/lms_lib.php`)
-- **`isLoggedIn()`** means the current user id is non-zero (`loggedInUserId() !== 0`). It **does not** require a non-zero **`currentContextId()`** (course/context). Users can be authenticated site-wide without a course.
-- **Contexts and LTI:** The long-term model is that users **log in first**, then **pick among multiple contexts** (courses). **For now**, there is typically **one** active context at a time unless the request is an **LTI launch** (where the LMS may bind a course). **LTI launches can also be “no context”** (system-wide or non-course tools), so “logged in” must remain valid when **`currentContextId()` is zero**.
-- Use **`currentContextId()`** (and checks like `currentContextId() !== 0`) only when the code path **requires** a course/context. Do **not** change `isLoggedIn()` to require context, and do not “fix” call sites by folding context into login unless the product requirement explicitly asks for it.
-- **`loggedInUserId()`** and **`currentContextId()`** are paired by source (session vs `$USER`/`$CONTEXT`); see the docblocks in `lms_lib.php` before refactoring auth checks.
+## Session and auth helpers (`ReqScope`)
+- **`ReqScope::isLoggedInLegacy()`** means the current user id is non-zero (`ReqScope::loggedInUserIdLegacy() !== 0`). It **does not** require a non-zero **`ReqScope::currentContextIdLegacy()`** (course/context). Users can be authenticated site-wide without a course.
+- **Contexts and LTI:** The long-term model is that users **log in first**, then **pick among multiple contexts** (courses). **For now**, there is typically **one** active context at a time unless the request is an **LTI launch** (where the LMS may bind a course). **LTI launches can also be “no context”** (system-wide or non-course tools), so “logged in” must remain valid when **`ReqScope::currentContextIdLegacy()` is zero**.
+- Use **`ReqScope::currentContextIdLegacy()`** (and checks like `ReqScope::currentContextIdLegacy() !== 0`) only when the code path **requires** a course/context. Do **not** change `ReqScope::isLoggedInLegacy()` to require context, and do not “fix” call sites by folding context into login unless the product requirement explicitly asks for it.
+- **`ReqScope::loggedInUserIdLegacy()`** and **`ReqScope::currentContextIdLegacy()`** are paired by source (session vs `$USER`/`$CONTEXT`). `ReqScope` caches that pair for the request. After a mid-request course change, call `ReqScope::resetIdentity()`. Call the readers only after the session has started.
+- **`ReqScope::loggedInUserId()`**, **`ReqScope::currentContextId()`**, and **`ReqScope::isLoggedIn()`** read only the user and course already stored on `ReqScope::current()`. A missing user or course is 0. `isLoggedIn()` is a non-zero user id and does not require a course.
 
 ## Coding Style & Naming Conventions
 - Follow the existing PHP style in nearby files: 4-space indentation, braces on the same line, and compact, readable conditionals.
@@ -44,6 +59,7 @@
 ## Testing Guidelines
 - This repository does not include a formal automated test suite; `test/old_test.php` is legacy.
 - Validate changes manually by running the app, visiting key admin screens, and re-running the database upgrade flow if schema changes are involved.
+- **App Store test harness (no login):** anything under `mod/` and anything under `tool/` can be launched from the store without signing in. Start at `$CFG->wwwroot/tool` (redirects to the store) or go directly to `$CFG->wwwroot/store/test/{name}` (for example `/tsugi/store/test/trophy`). Use **Try It**, pick an identity (Jane Instructor or a student), and exercise the tool in the iframe. Some instructor views (Trophy is one) show a launch var dump — that is expected, not a broken page. Do not assume a site login is required for this path.
 
 ## Commit & Pull Request Guidelines
 - Recent commits are short, sentence-style summaries (e.g., “Add item to headers.”). Keep messages concise and action-oriented.

@@ -6,11 +6,17 @@ namespace Tsugi\Controllers;
 use \Tsugi\Util\U;
 use Tsugi\Util\LTI;
 use Tsugi\Core\LTIX;
-use Tsugi\Lumen\Application;
+use Tsugi\Core\Manifest;
+use Tsugi\Core\Membership;
+use Tsugi\Lumos\Application;
+use Tsugi\Services\Lessons\LessonsService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
+
+use Tsugi\Core\ReqScope;
+use Tsugi\Services\Discussions\DiscussionsService;
 
 class Discussions extends Tool {
 
@@ -20,6 +26,10 @@ class Discussions extends Tool {
     public static function routes(Application $app, $prefix=self::ROUTE) {
         $app->router->get($prefix, 'Discussions@get');
         $app->router->get($prefix.'/', 'Discussions@get');
+        $app->router->get($prefix.'/add', 'Discussions@addForm');
+        $app->router->post($prefix.'/add', 'Discussions@addPost');
+        $app->router->get($prefix.'/reorder', 'Discussions@reorderForm');
+        $app->router->post($prefix.'/reorder', 'Discussions@reorderPost');
         $app->router->get($prefix.'/manage', 'Discussions@manage');
         $app->router->get($prefix.'/scan-fix-unread-tracking', 'Discussions@scanFixUnreadTracking');
         $app->router->get($prefix.'/expire-threads', 'Discussions@expireThreads');
@@ -30,21 +40,39 @@ class Discussions extends Tool {
         $app->router->post($prefix.'/scan-fix-unread-tracking-run', 'Discussions@scanFixUnreadTrackingRun');
         $app->router->post($prefix.'/expire-threads-dry-run', 'Discussions@expireThreadsDryRun');
         $app->router->post($prefix.'/expire-comments-dry-run', 'Discussions@expireCommentsDryRun');
-        $app->router->get($prefix.'_launch/{anchor}', function(Request $request, $anchor = null) use ($app) {
-            return Discussions::launch($app, $anchor);
-        });
+        $app->router->get($prefix.'/{rlid}/analytics', 'Discussions@discussionAnalytics');
+        $app->router->get($prefix.'/{rlid}/thread/new', 'Discussions@discussionThreadForm');
+        $app->router->post($prefix.'/{rlid}/thread/new', 'Discussions@discussionThreadForm');
+        $app->router->get($prefix.'/{rlid}/thread/{threadId}/edit', 'Discussions@discussionThreadEdit');
+        $app->router->post($prefix.'/{rlid}/thread/{threadId}/edit', 'Discussions@discussionThreadEdit');
+        $app->router->get($prefix.'/{rlid}/thread/{threadId}/remove', 'Discussions@discussionThreadRemove');
+        $app->router->post($prefix.'/{rlid}/thread/{threadId}/remove', 'Discussions@discussionThreadRemove');
+        $app->router->get($prefix.'/{rlid}/thread/{threadId}', 'Discussions@discussionThread');
+        $app->router->post($prefix.'/{rlid}/thread/{threadId}', 'Discussions@discussionThread');
+        $app->router->get($prefix.'/{rlid}/comment/{commentId}/edit', 'Discussions@discussionCommentForm');
+        $app->router->post($prefix.'/{rlid}/comment/{commentId}/edit', 'Discussions@discussionCommentForm');
+        $app->router->get($prefix.'/{rlid}/comment/{commentId}/remove', 'Discussions@discussionCommentRemove');
+        $app->router->post($prefix.'/{rlid}/comment/{commentId}/remove', 'Discussions@discussionCommentRemove');
+        $app->router->post($prefix.'/{rlid}/api/threadsetboolean/{threadId}/{column}/{value}', 'Discussions@discussionApiThreadBoolean');
+        $app->router->post($prefix.'/{rlid}/api/threadusersetboolean/{threadId}/{column}/{value}', 'Discussions@discussionApiThreadUserBoolean');
+        $app->router->post($prefix.'/{rlid}/api/commentsetboolean/{commentId}/{column}/{value}', 'Discussions@discussionApiCommentBoolean');
+        $app->router->post($prefix.'/{rlid}/api/addsubcomment', 'Discussions@discussionApiAddSubComment');
+        $app->router->get($prefix.'/{rlid}', 'Discussions@discussion');
+        $app->router->post($prefix.'/{rlid}', 'Discussions@discussion');
     }
 
     public function get(Request $request)
     {
         global $CFG, $OUTPUT;
 
-        if ( ! isset($CFG->lessons) ) {
-            die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
-        }
+        $l = Manifest::requireCurrentLessons();
 
-        // Load the Lesson
-        $l = new \Tsugi\UI\Lessons($CFG->lessons);
+        $add_url = null;
+        $reorder_url = null;
+        if ( Manifest::activeId() > 0 && $this->isInstructor() ) {
+            $add_url = U::addSession($this->toolHome(self::ROUTE) . '/add');
+            $reorder_url = U::addSession($this->toolHome(self::ROUTE) . '/reorder');
+        }
 
         $OUTPUT->header();
         $OUTPUT->bodyStart();
@@ -52,122 +80,544 @@ class Discussions extends Tool {
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
         echo('<main class="container" id="main-content">');
-        $l->renderDiscussions(false);
+        self::renderDiscussions($l, false, $this->toolHome(self::ROUTE), $add_url, $reorder_url);
         echo('</main>');
         $OUTPUT->footer();
 
 
     }
 
-    public static function launch(Application $app, $anchor=null)
+    /**
+     * Instructor form to add a course-level discussion (manifest courses only).
+     */
+    public function addForm(Request $request)
     {
-        global $CFG;
-        $tsugi = $app['tsugi'];
+        global $OUTPUT;
 
-        $path = U::rest_path();
-        $redirect_path = U::addSession($path->parent);
-        if ( $redirect_path == '') $redirect_path = '/';
-
-        if ( ! isset($CFG->lessons) ) {
-            $app->tsugiFlashError(__('Cannot find lessons.json ($CFG->lessons)'));
-            return new RedirectResponse($redirect_path);
+        $list_url = U::addSession($this->toolHome(self::ROUTE));
+        $gate = $this->addDiscussionGate($list_url);
+        if ( $gate ) {
+            return $gate;
         }
 
-        /// Load the Lesson
-        $l = new \Tsugi\UI\Lessons($CFG->lessons);
-        if ( ! $l ) {
-            $app->tsugiFlashError(__('Cannot load lessons.'));
-            return new RedirectResponse($redirect_path);
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <h1><?= __('Add discussion') ?></h1>
+            <p><?= __('Creates a new discussion in this course and saves it as a new manifest version.') ?></p>
+            <form method="post" action="<?= htmlspecialchars(U::addSession($this->toolHome(self::ROUTE) . '/add')) ?>">
+                <?= self::csrfField() ?>
+                <p>
+                    <label for="discussion_title"><?= __('Title') ?></label><br/>
+                    <input type="text" id="discussion_title" name="title" required maxlength="512" style="min-width: 20em;"/>
+                </p>
+                <p>
+                    <button type="submit" class="btn btn-primary"><?= __('Add discussion') ?></button>
+                    <a href="<?= htmlspecialchars($list_url) ?>" class="btn btn-default"><?= __('Cancel') ?></a>
+                </p>
+            </form>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * POST: append a top-level discussion and save a new manifest version.
+     */
+    public function addPost(Request $request)
+    {
+        $list_url = U::addSession($this->toolHome(self::ROUTE));
+        $form_url = U::addSession($this->toolHome(self::ROUTE) . '/add');
+        $gate = $this->addDiscussionGate($list_url);
+        if ( $gate ) {
+            return $gate;
+        }
+        $csrf = self::requireCsrf($form_url);
+        if ( $csrf ) {
+            return $csrf;
         }
 
-        $lti = $l->getLtiByRlid($anchor);
-        if ( ! $lti ) {
-            $app->tsugiFlashError(__('Cannot find lti resource link id'));
-            return new RedirectResponse($redirect_path);
+        $title = trim((string) U::get($_POST, 'title', ''));
+        if ( $title === '' ) {
+            U::flashError(__('Title is required.'));
+            return new RedirectResponse($form_url);
         }
 
-        // Check that the session has the minimums...
-        if ( U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
-                && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email') )
-        {
-            // All good
-        } else {
-            $app->tsugiFlashError(__('Missing session data required for launch'));
-            return new RedirectResponse($redirect_path);
+        $doc = Manifest::currentDocument();
+        if ( ! $doc ) {
+            U::flashError(__('Cannot find course manifest.'));
+            return new RedirectResponse($list_url);
+        }
+        $data = json_decode($doc['json'], true);
+        if ( ! is_array($data) ) {
+            U::flashError(__('Cannot parse course manifest.'));
+            return new RedirectResponse($list_url);
         }
 
-        $key = isset($_SESSION['oauth_consumer_key']) ? $_SESSION['oauth_consumer_key'] : false;
-        $secret = false;
-        if ( isset($_SESSION['secret']) ) {
-            $secret = LTIX::decrypt_secret($_SESSION['secret']);
+        try {
+            $added = Manifest::appendDiscussion($data, $title);
+            Manifest::saveNewVersion(
+                ReqScope::currentContextId(),
+                $added['data'],
+                ReqScope::loggedInUserId(),
+                'Add discussion'
+            );
+        } catch ( \InvalidArgumentException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($form_url);
+        } catch ( \Exception $e ) {
+            U::flashError(__('Failed to save discussion.'));
+            return new RedirectResponse($form_url);
         }
 
-        $resource_link_id = $lti->resource_link_id;
-        $parms = array(
-            'lti_message_type' => 'basic-lti-launch-request',
-            'resource_link_id' => $resource_link_id,
-            'resource_link_title' => $lti->title,
-            'tool_consumer_info_product_family_code' => 'tsugi',
-            'tool_consumer_info_version' => '1.1',
-            'context_id' => $_SESSION['context_key'],
-            'context_label' => $CFG->context_title,
-            'context_title' => $CFG->context_title,
-            'user_id' => $_SESSION['user_key'],
-            'lis_person_name_full' => $_SESSION['displayname'],
-            'lis_person_contact_email_primary' => $_SESSION['email'],
-            'roles' => 'Learner'
-        );
-        if ( isset($_SESSION['avatar']) ) $parms['user_image'] = $_SESSION['avatar'];
+        U::flashSuccess(__('Discussion added.'));
+        return new RedirectResponse($list_url);
+    }
 
-        if ( isset($lti->custom) ) {
-            foreach($lti->custom as $custom) {
-                if ( isset($custom->value) ) {
-                    $parms['custom_'.$custom->key] = $custom->value;
-                }
-                if ( isset($custom->json) ) {
-                    $parms['custom_'.$custom->key] = json_encode($custom->json);
-                }
+    /**
+     * Instructor page to drag-reorder discussions (manifest courses only).
+     */
+    public function reorderForm(Request $request)
+    {
+        global $OUTPUT;
+
+        $list_url = U::addSession($this->toolHome(self::ROUTE));
+        $gate = $this->addDiscussionGate($list_url);
+        if ( $gate ) {
+            return $gate;
+        }
+
+        $l = Manifest::requireCurrentLessons();
+        $discussions = $l->flattenedDiscussions();
+        if ( count($discussions) < 2 ) {
+            U::flashError(__('You need at least two discussions to reorder.'));
+            return new RedirectResponse($list_url);
+        }
+
+        $save_url = U::addSession($this->toolHome(self::ROUTE) . '/reorder');
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <style>
+.tsugi-discussions-sortable { list-style: none; padding-left: 0; max-width: 40em; }
+.tsugi-discussions-sortable > li {
+    display: flex; align-items: center; gap: 0.5em;
+    padding: 0.6em 0.75em; margin-bottom: 0.4em;
+    background: #fff; border: 1px solid #ddd; border-radius: 3px;
+}
+.tsugi-discussion-drag-handle { cursor: grab; color: #999; padding: 0.15em 0.45em; user-select: none; font-size: 1.2em; }
+.tsugi-discussion-drag-handle:hover { color: #333; }
+.tsugi-discussion-drag-handle:active { cursor: grabbing; }
+.tsugi-discussions-sortable .ui-sortable-placeholder {
+    height: 2.5em; border: 2px dashed #007bff; visibility: visible !important;
+    background: #f0f8ff;
+}
+.tsugi-reorder-save-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #333; color: #fff; padding: 15px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.2); z-index: 1000;
+}
+.tsugi-reorder-save-bar.hidden { display: none; }
+.tsugi-reorder-save-bar .actions { display: flex; gap: 10px; }
+        </style>
+        <main class="container" id="main-content" style="padding-bottom: 5em;">
+            <p><a href="<?= htmlspecialchars($list_url) ?>" class="btn btn-default btn-sm tsugi-reorder-leave"><?= __('Back to Discussions') ?></a></p>
+            <h1><?= __('Reorder discussions') ?></h1>
+            <p><?= __('Drag the handle to change the order, then save. Nothing is stored until you save.') ?></p>
+            <?php
+            // TODO: Keyboard reorder (Move up/down) for every drag-reorder UI, not just this
+            // list: Settings → Navigation, Lessons authoring, Discussions reorder.
+            ?>
+            <ul id="tsugi-reorder-list" class="tsugi-discussions-sortable">
+                <?php foreach ( $discussions as $discussion ) {
+                    $rid = isset($discussion->resource_link_id) ? (string) $discussion->resource_link_id : '';
+                    $title = isset($discussion->title) ? (string) $discussion->title : $rid;
+                    if ( $rid === '' ) {
+                        continue;
+                    }
+                ?>
+                <li data-resource-link-id="<?= htmlspecialchars($rid) ?>">
+                    <span class="tsugi-discussion-drag-handle" title="<?= htmlspecialchars(__('Drag to reorder')) ?>" aria-label="<?= htmlspecialchars(__('Drag to reorder')) ?>">&#8942;</span>
+                    <span><?= htmlspecialchars($title) ?></span>
+                </li>
+                <?php } ?>
+            </ul>
+            <p>
+                <button type="button" id="tsugi-reorder-save" class="btn btn-success" disabled><?= __('Save') ?></button>
+                <a href="<?= htmlspecialchars($list_url) ?>" class="btn btn-default tsugi-reorder-leave"><?= __('Discard') ?></a>
+            </p>
+        </main>
+        <div id="tsugi-reorder-save-bar" class="tsugi-reorder-save-bar hidden">
+            <div><?= __('You have unsaved order changes') ?></div>
+            <div class="actions">
+                <button type="button" id="tsugi-reorder-save-bar-btn" class="btn btn-success"><?= __('Save') ?></button>
+                <a href="<?= htmlspecialchars($list_url) ?>" class="btn btn-default tsugi-reorder-leave"><?= __('Discard') ?></a>
+            </div>
+        </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var hasChanges = false;
+            var allowLeave = false;
+            var saveUrl = <?= json_encode($save_url) ?>;
+            var listUrl = <?= json_encode($list_url) ?>;
+            var leaveMsg = <?= json_encode(__('Please save before you navigate, or discard your changes.')) ?>;
+
+            function markChanged() {
+                hasChanges = true;
+                var save = document.getElementById('tsugi-reorder-save');
+                if (save) save.disabled = false;
+                var bar = document.getElementById('tsugi-reorder-save-bar');
+                if (bar) bar.classList.remove('hidden');
             }
+
+            function collectOrder() {
+                var order = [];
+                document.querySelectorAll('#tsugi-reorder-list > li[data-resource-link-id]').forEach(function(li) {
+                    var id = li.getAttribute('data-resource-link-id');
+                    if (id) order.push(id);
+                });
+                return order;
+            }
+
+            function saveOrder() {
+                if (!hasChanges) return;
+                var btn = document.getElementById('tsugi-reorder-save');
+                var barBtn = document.getElementById('tsugi-reorder-save-bar-btn');
+                if (btn) btn.disabled = true;
+                if (barBtn) barBtn.disabled = true;
+                jQuery.ajax({
+                    url: saveUrl,
+                    method: 'POST',
+                    data: { order: collectOrder() },
+                    headers: tsugiCsrfHeaders()
+                })
+                    .done(function(data) {
+                        allowLeave = true;
+                        hasChanges = false;
+                        window.location = (data && data.redirect) ? data.redirect : listUrl;
+                    })
+                    .fail(function(xhr) {
+                        if (btn) btn.disabled = false;
+                        if (barBtn) barBtn.disabled = false;
+                        var msg = 'Could not save discussion order.';
+                        try {
+                            var body = JSON.parse(xhr.responseText);
+                            if (body && body.error) msg = body.error;
+                        } catch (e) {}
+                        alert(msg);
+                    });
+            }
+
+            if (typeof jQuery !== 'undefined' && jQuery.fn.sortable) {
+                jQuery('#tsugi-reorder-list').sortable({
+                    handle: '.tsugi-discussion-drag-handle',
+                    items: '> li',
+                    placeholder: 'ui-sortable-placeholder',
+                    tolerance: 'pointer',
+                    update: function() { markChanged(); }
+                });
+            }
+
+            var save = document.getElementById('tsugi-reorder-save');
+            if (save) save.addEventListener('click', saveOrder);
+            var barBtn = document.getElementById('tsugi-reorder-save-bar-btn');
+            if (barBtn) barBtn.addEventListener('click', saveOrder);
+
+            window.addEventListener('beforeunload', function(ev) {
+                if (!hasChanges || allowLeave) return;
+                ev.preventDefault();
+                ev.returnValue = leaveMsg;
+                return leaveMsg;
+            });
+
+            document.addEventListener('click', function(ev) {
+                var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+                if (!a || !hasChanges || allowLeave) return;
+                var href = a.getAttribute('href');
+                if (!href || href.charAt(0) === '#') return;
+                var target = (a.getAttribute('target') || '_self').toLowerCase();
+                if (target !== '_self') return;
+                ev.preventDefault();
+                if (window.confirm(leaveMsg + '\n\n' + <?= json_encode(__('Leave without saving?')) ?>)) {
+                    allowLeave = true;
+                    window.location = a.href;
+                }
+            }, true);
+        });
+        </script>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * POST: persist a new catalog order as a manifest version (AJAX).
+     */
+    public function reorderPost(Request $request)
+    {
+        if ( Manifest::activeId() < 1 ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Manifest required'), 403);
+        }
+        if ( ! $this->isInstructor() ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Instructor required'), 403);
+        }
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
         }
 
-        $return_url = $path->parent . '/' . str_replace('_launch', '', $path->controller) ;
-        $parms['launch_presentation_return_url'] = $return_url;
-
-        $sess_key = 'tsugi_top_nav_'.$CFG->wwwroot;
-        if ( isset($_SESSION[$sess_key]) ) {
-            $parms['ext_tsugi_top_nav'] = $_SESSION[$sess_key];
+        $order = U::get($_POST, 'order', array());
+        if ( is_string($order) ) {
+            $decoded = json_decode($order, true);
+            $order = is_array($decoded) ? $decoded : array();
+        }
+        if ( ! is_array($order) ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Order is required'), 400);
         }
 
-        $form_id = "tsugi_form_id_".bin2Hex(openssl_random_pseudo_bytes(4));
-        $parms['ext_lti_form_id'] = $form_id;
-
-        // Allow deployments to override lesson JSON launch URLs for discussions
-        // via $CFG->tdiscus (e.g., alternate host/path for tdiscus).
-        $endpoint = $lti->launch;
-        if ( isset($CFG->tdiscus) && U::isNotEmpty($CFG->tdiscus) ) {
-            $endpoint = $CFG->tdiscus;
+        $doc = Manifest::currentDocument();
+        if ( ! $doc ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Cannot find course manifest'), 500);
         }
-        \Tsugi\UI\Lessons::absolute_url_ref($endpoint);
-        $parms = LTI::signParameters($parms, $endpoint, "POST", $key, $secret,
-            "Finish Launch", $CFG->wwwroot, $CFG->servicename);
+        $data = json_decode($doc['json'], true);
+        if ( ! is_array($data) ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Cannot parse course manifest'), 500);
+        }
 
-        $content = LTI::postLaunchHTML($parms, $endpoint, false /*debug */);
-        print($content);
-        return "";
+        try {
+            $data = Manifest::reorderDiscussions($data, $order);
+            Manifest::saveNewVersion(
+                ReqScope::currentContextId(),
+                $data,
+                ReqScope::loggedInUserId(),
+                'Reorder discussions'
+            );
+        } catch ( \InvalidArgumentException $e ) {
+            return new JsonResponse(array('success' => false, 'error' => $e->getMessage()), 400);
+        } catch ( \Exception $e ) {
+            return new JsonResponse(array('success' => false, 'error' => 'Failed to save order'), 500);
+        }
+
+        U::flashSuccess(__('Discussion order saved.'));
+        return new JsonResponse(array(
+            'success' => true,
+            'redirect' => U::addSession($this->toolHome(self::ROUTE)),
+        ));
+    }
+
+    /**
+     * @return RedirectResponse|null
+     */
+    private function addDiscussionGate($list_url) {
+        if ( Manifest::activeId() < 1 ) {
+            U::flashError(__('Adding discussions is only available for courses with a manifest.'));
+            return new RedirectResponse($list_url);
+        }
+        $this->requireInstructor($list_url);
+        return null;
+    }
+
+    public function discussion(Request $request, $rlid)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::threadListPage());
+    }
+
+    public function discussionAnalytics(Request $request, $rlid)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::analyticsPage());
+    }
+
+    public function discussionThread(Request $request, $rlid, $threadId)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::threadPage($threadId, null));
+    }
+
+    public function discussionThreadForm(Request $request, $rlid)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::threadFormPage(null));
+    }
+
+    public function discussionThreadEdit(Request $request, $rlid, $threadId)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::threadFormPage($threadId));
+    }
+
+    public function discussionThreadRemove(Request $request, $rlid, $threadId)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::threadRemovePage($threadId));
+    }
+
+    public function discussionCommentForm(Request $request, $rlid, $commentId)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::commentFormPage($commentId));
+    }
+
+    public function discussionCommentRemove(Request $request, $rlid, $commentId)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        return $this->finishDiscussion(DiscussionsUi::commentRemovePage($commentId));
+    }
+
+    public function discussionApiThreadBoolean(Request $request, $rlid, $threadId, $column, $value)
+    {
+        return $this->discussionApiBoolean($rlid, 'thread', $threadId, $column, $value);
+    }
+
+    public function discussionApiThreadUserBoolean(Request $request, $rlid, $threadId, $column, $value)
+    {
+        return $this->discussionApiBoolean($rlid, 'threaduser', $threadId, $column, $value);
+    }
+
+    public function discussionApiCommentBoolean(Request $request, $rlid, $commentId, $column, $value)
+    {
+        return $this->discussionApiBoolean($rlid, 'comment', $commentId, $column, $value);
+    }
+
+    public function discussionApiAddSubComment(Request $request, $rlid)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        $err = DiscussionsUi::apiAddSubComment(null);
+        if ( is_string($err) ) {
+            return new Response($err, 400);
+        }
+        return '';
+    }
+
+    private function discussionApiBoolean($rlid, $kind, $id, $column, $value)
+    {
+        $gate = $this->openDiscussion($rlid);
+        if ( $gate ) {
+            return $gate;
+        }
+        DiscussionsUi::bind($this->discussionUrls($rlid));
+        $err = DiscussionsUi::apiSetBoolean($kind, $id, $column, $value);
+        if ( is_string($err) ) {
+            return new Response($err, 400);
+        }
+        return new Response('', 200);
+    }
+
+    /**
+     * @return RedirectResponse|null
+     */
+    private function openDiscussion($rlid)
+    {
+        $list_url = U::addSession($this->toolHome(self::ROUTE));
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
+            U::flashError(__('You must be logged in with a course to view this discussion.'));
+            return new RedirectResponse($list_url);
+        }
+        LTIX::getConnection();
+        $linkId = DiscussionsService::ensureLessonLink((string) $rlid);
+        if ( $linkId < 1 ) {
+            U::flashError(__('Cannot find that discussion in this course.'));
+            return new RedirectResponse($list_url);
+        }
+        $origin = ReqScope::ORIGIN_SITE;
+        $current = ReqScope::current();
+        if ( $current && is_string($current->origin) && $current->origin !== '' ) {
+            $origin = $current->origin;
+        }
+        try {
+            ReqScope::provision(
+                ReqScope::loggedInUserId(),
+                ReqScope::currentContextId(),
+                $linkId,
+                $origin
+            );
+        } catch ( \Throwable $ex ) {
+            U::flashError(__('Cannot open this discussion.'));
+            return new RedirectResponse($list_url);
+        }
+        $opened = ReqScope::current();
+        if ( ! $opened || ! $opened->link || (int) $opened->link->id !== $linkId ) {
+            U::flashError(__('Cannot open this discussion.'));
+            return new RedirectResponse($list_url);
+        }
+        return null;
+    }
+
+    private function discussionUrls($rlid)
+    {
+        $home = $this->toolHome(self::ROUTE).'/'.rawurlencode((string) $rlid);
+        return DiscussionUrls::forController($home);
+    }
+
+    /**
+     * @param string|null $to
+     * @return RedirectResponse|string
+     */
+    private function finishDiscussion($to)
+    {
+        if ( is_string($to) ) {
+            return new RedirectResponse(U::addSession($to));
+        }
+        return '';
     }
 
     public function json(Request $request)
     {
         global $CFG, $PDOX;
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             return new JsonResponse(array('status' => 'error', 'detail' => 'Must be logged in with context'), 401);
         }
 
         LTIX::getConnection();
 
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
 
         $has_mentions = $this->tableExists($CFG->dbprefix.'tdiscus_mention');
 
@@ -236,11 +686,15 @@ class Discussions extends Tool {
     {
         global $CFG, $PDOX;
 
-        $discussions_url = (isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot) . self::ROUTE;
+        $discussions_url = $this->toolHome(self::ROUTE);
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to mark discussions as read.'));
             return new RedirectResponse(U::addSession($discussions_url));
+        }
+        $csrf = self::requireCsrf(U::addSession($discussions_url));
+        if ( $csrf ) {
+            return $csrf;
         }
 
         if ( ! U::isNotEmpty($CFG->tdiscus) || ! $CFG->tdiscus ) {
@@ -250,8 +704,8 @@ class Discussions extends Tool {
 
         LTIX::getConnection();
 
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
 
         $PDOX->queryDie(
             "UPDATE {$CFG->dbprefix}tdiscus_user_thread UT
@@ -283,16 +737,20 @@ class Discussions extends Tool {
     {
         global $CFG, $PDOX;
 
-        $expire_url = (isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot) . self::ROUTE . '/expire-threads';
+        $expire_url = $this->toolHome(self::ROUTE) . '/expire-threads';
         $redirect_url = U::addSession($expire_url);
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussion expiration.'));
             return new RedirectResponse($redirect_url);
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can run discussion expiration.'));
             return new RedirectResponse($redirect_url);
+        }
+        $csrf = self::requireCsrf($redirect_url);
+        if ( $csrf ) {
+            return $csrf;
         }
 
         $months_raw = trim((string) U::get($_POST, 'months', ''));
@@ -303,7 +761,7 @@ class Discussions extends Tool {
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $confirm_raw = trim((string) U::get($_POST, 'confirm', ''));
         $confirm = ($confirm_raw === '1');
 
@@ -416,17 +874,17 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $OUTPUT, $PDOX;
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussion expiration.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can run discussion expiration.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $oldest_post_row = $PDOX->rowDie(
             "SELECT MIN(C.created_at) AS oldest_post_at
                 FROM {$CFG->dbprefix}tdiscus_comment C
@@ -445,7 +903,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         $oldest_post_at = U::get($oldest_post_row, 'oldest_post_at', null);
         $oldest_thread_at = U::get($oldest_thread_row, 'oldest_thread_at', null);
 
-        $dry_run_url = U::addSession(self::ROUTE.'/expire-threads-dry-run');
+        $dry_run_url = U::addSession($this->toolHome(self::ROUTE).'/expire-threads-dry-run');
         $expire_result = U::get($_SESSION, 'discussions_expire_dry_run_result', false);
         unset($_SESSION['discussions_expire_dry_run_result']);
 
@@ -454,7 +912,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
         echo('<main class="container" id="main-content">');
-        echo('<p><a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
+        echo('<p><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
         $this->renderExpireDryRunPanel($dry_run_url, $expire_result, $oldest_post_at, $oldest_thread_at);
         $this->emitExpireDeleteFormEnhancements();
         echo('</main>');
@@ -465,16 +923,20 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $PDOX;
 
-        $expire_url = (isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot) . self::ROUTE . '/expire-comments';
+        $expire_url = $this->toolHome(self::ROUTE) . '/expire-comments';
         $redirect_url = U::addSession($expire_url);
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussion expiration.'));
             return new RedirectResponse($redirect_url);
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can run discussion expiration.'));
             return new RedirectResponse($redirect_url);
+        }
+        $csrf = self::requireCsrf($redirect_url);
+        if ( $csrf ) {
+            return $csrf;
         }
 
         $months_raw = trim((string) U::get($_POST, 'months', ''));
@@ -485,7 +947,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $confirm_raw = trim((string) U::get($_POST, 'confirm', ''));
         $confirm = ($confirm_raw === '1');
 
@@ -578,17 +1040,17 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $OUTPUT, $PDOX;
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussion expiration.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can run discussion expiration.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $oldest_comment_row = $PDOX->rowDie(
             "SELECT MIN(C.created_at) AS oldest_comment_at
                 FROM {$CFG->dbprefix}tdiscus_comment C
@@ -599,7 +1061,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         );
         $oldest_comment_at = U::get($oldest_comment_row, 'oldest_comment_at', null);
 
-        $dry_run_url = U::addSession(self::ROUTE.'/expire-comments-dry-run');
+        $dry_run_url = U::addSession($this->toolHome(self::ROUTE).'/expire-comments-dry-run');
         $expire_result = U::get($_SESSION, 'discussions_expire_comments_dry_run_result', false);
         unset($_SESSION['discussions_expire_comments_dry_run_result']);
         $tdiscus_threads_ok = $this->ensureTdiscusThreadsLoaded();
@@ -609,7 +1071,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
         echo('<main class="container" id="main-content">');
-        echo('<p><a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
+        echo('<p><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
         $this->renderExpireCommentsDryRunPanel($dry_run_url, $expire_result, $oldest_comment_at, $tdiscus_threads_ok);
         $this->emitExpireDeleteFormEnhancements();
         echo('</main>');
@@ -620,13 +1082,13 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $OUTPUT;
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussions.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can manage discussions.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
 
         $OUTPUT->header();
@@ -634,7 +1096,7 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
         echo('<main class="container" id="main-content">');
-        echo('<p><a href="'.htmlspecialchars(U::addSession(self::ROUTE)).'" class="btn btn-default btn-sm">'.__('Back to Discussions').'</a></p>');
+        echo('<p><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE))).'" class="btn btn-default btn-sm">'.__('Back to Discussions').'</a></p>');
         echo('<h1>'.__('Manage Discussions').'</h1>');
         echo('<p>'.__('Discussion maintenance tools for this course context.').'</p>');
         echo('<ul>');
@@ -643,13 +1105,13 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         echo('<li>');
         echo('<a href="#" class="tsugi-discussions-reset-unread-tracking-link">'.__('Reset unread tracking for all users').'</a>');
         echo(' <span class="text-muted">('.__('clears read tracking for this course; subscription preferences are unchanged').')</span>');
-        echo('<form method="post" action="'.htmlspecialchars(U::addSession(self::ROUTE.'/reset-unread-tracking')).'" class="tsugi-discussions-reset-unread-tracking-form" style="display:none;"></form>');
+        echo('<form method="post" action="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/reset-unread-tracking')).'" class="tsugi-discussions-reset-unread-tracking-form" style="display:none;">'.self::csrfField().'</form>');
         echo('</li>');
         */
-        echo('<li><a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/expire-comments')).'">'.__('Expire old comments').'</a></li>');
-        echo('<li><a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/expire-threads')).'">'.__('Expire old threads').'</a></li>');
+        echo('<li><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/expire-comments')).'">'.__('Expire old comments').'</a></li>');
+        echo('<li><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/expire-threads')).'">'.__('Expire old threads').'</a></li>');
         echo('<li>');
-        echo('<a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/scan-fix-unread-tracking')).'">'.__('Scan unread tracking (dry run) and optionally fix').'</a>');
+        echo('<a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/scan-fix-unread-tracking')).'">'.__('Scan unread tracking (dry run) and optionally fix').'</a>');
         echo(' <span class="text-muted">('.__('pre-scan first, then run fix in a second step').')</span>');
         echo('</li>');
         echo('</ul>');
@@ -683,10 +1145,10 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $PDOX;
 
-        $manage_url = (isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot) . self::ROUTE . '/manage';
+        $manage_url = $this->toolHome(self::ROUTE) . '/manage';
         $redirect_url = U::addSession($manage_url);
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussions.'));
             return new RedirectResponse($redirect_url);
         }
@@ -694,13 +1156,17 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
             U::flashError(__('Only instructors can manage discussions.'));
             return new RedirectResponse($redirect_url);
         }
+        $csrf = self::requireCsrf($redirect_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         if ( ! U::isNotEmpty($CFG->tdiscus) || ! $CFG->tdiscus ) {
             U::flashError(__('Discussions are not available on this site.'));
             return new RedirectResponse($redirect_url);
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
 
         $PDOX->queryDie(
             "DELETE UTP FROM {$CFG->dbprefix}tdiscus_user_thread_participation UTP
@@ -740,34 +1206,34 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $OUTPUT;
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussions.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
         if ( ! $this->isInstructor() ) {
             U::flashError(__('Only instructors can manage discussions.'));
-            return new RedirectResponse(U::addSession(self::ROUTE));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE)));
         }
         if ( ! U::isNotEmpty($CFG->tdiscus) || ! $CFG->tdiscus ) {
             U::flashError(__('Discussions are not available on this site.'));
-            return new RedirectResponse(U::addSession(self::ROUTE.'/manage'));
+            return new RedirectResponse(U::addSession($this->toolHome(self::ROUTE).'/manage'));
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $counts = $this->unreadTrackingAuditCounts($context_id);
         $details = $this->unreadTrackingAuditDetails($context_id, 15);
         $likely_causes = $this->unreadTrackingLikelyCauses($counts);
         $last_result = U::get($_SESSION, 'discussions_scan_fix_unread_result', false);
         unset($_SESSION['discussions_scan_fix_unread_result']);
-        $run_url = U::addSession(self::ROUTE.'/scan-fix-unread-tracking-run');
+        $run_url = U::addSession($this->toolHome(self::ROUTE).'/scan-fix-unread-tracking-run');
 
         $OUTPUT->header();
         $OUTPUT->bodyStart();
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
         echo('<main class="container" id="main-content">');
-        echo('<p><a href="'.htmlspecialchars(U::addSession(self::ROUTE.'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
+        echo('<p><a href="'.htmlspecialchars(U::addSession($this->toolHome(self::ROUTE).'/manage')).'" class="btn btn-default btn-sm">'.__('Back to Manage Discussions').'</a></p>');
         echo('<div class="panel panel-info" style="margin-bottom: 1.5em;">');
         echo('<div class="panel-heading"><strong>'.__('Instructor: Unread tracking pre-scan (two phase)').'</strong></div>');
         echo('<div class="panel-body">');
@@ -796,11 +1262,13 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
         echo('<pre style="max-height: 24em; overflow:auto;">'.htmlspecialchars(json_encode($snapshot, JSON_PRETTY_PRINT)).'</pre>');
 
         echo('<form method="post" action="'.htmlspecialchars($run_url).'" class="form-inline" style="margin-bottom:0.75em;">');
+        echo(self::csrfField());
         echo('<input type="hidden" name="confirm" value="0">');
         echo('<button type="submit" class="btn btn-info">'.__('Run Pre-Scan Again (dry run)').'</button>');
         echo('</form>');
 
         echo('<form method="post" action="'.htmlspecialchars($run_url).'" class="form-inline tsugi-discussions-scan-fix-form">');
+        echo(self::csrfField());
         echo('<input type="hidden" name="confirm" value="1">');
         echo('<button type="submit" class="btn btn-danger" data-running-label="'.htmlspecialchars(__('Applying repairs…')).'">'.__('Apply Repair (phase 2)').'</button>');
         echo('</form>');
@@ -865,10 +1333,10 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
     {
         global $CFG, $PDOX;
 
-        $scan_url = (isset($CFG->apphome) ? $CFG->apphome : $CFG->wwwroot) . self::ROUTE . '/scan-fix-unread-tracking';
+        $scan_url = $this->toolHome(self::ROUTE) . '/scan-fix-unread-tracking';
         $redirect_url = U::addSession($scan_url);
 
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             U::flashError(__('You must be logged in with a course context to manage discussions.'));
             return new RedirectResponse($redirect_url);
         }
@@ -876,13 +1344,17 @@ WHERE thread_id IN (:THREAD_ID_1, :THREAD_ID_2, ... up to ".self::EXPIRE_DELETE_
             U::flashError(__('Only instructors can manage discussions.'));
             return new RedirectResponse($redirect_url);
         }
+        $csrf = self::requireCsrf($redirect_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         if ( ! U::isNotEmpty($CFG->tdiscus) || ! $CFG->tdiscus ) {
             U::flashError(__('Discussions are not available on this site.'));
             return new RedirectResponse($redirect_url);
         }
 
         LTIX::getConnection();
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $confirm_raw = trim((string) U::get($_POST, 'confirm', '0'));
         $confirm = ($confirm_raw === '1');
         $before = $this->unreadTrackingAuditCounts($context_id);
@@ -1194,6 +1666,7 @@ WHERE L.context_id = :CID
                     This first version is dry run only. It never deletes data, and always shows the SQL that would run.
                 </p>
                 <form method="post" action="<?= htmlspecialchars($action_url) ?>" class="form-inline" style="margin-bottom: 1em;">
+                    <?= self::csrfField() ?>
                     <div class="form-group">
                         <label for="expire-months">Months:</label>
                         <input id="expire-months" type="number" min="2" step="1" name="months"
@@ -1228,6 +1701,7 @@ Bound parameters
                     -->
                     <?php if ( intval(U::get($result, 'count', 0)) > 0 ) { ?>
                         <form method="post" action="<?= htmlspecialchars($action_url) ?>" class="form-inline tsugi-expire-delete-form">
+                            <?= self::csrfField() ?>
                             <input type="hidden" name="months" value="<?= intval($result['months']) ?>">
                             <input type="hidden" name="confirm" value="1">
                             <button type="submit" class="btn btn-danger"
@@ -1271,6 +1745,7 @@ Bound parameters
                     Deleting one match removes that comment and its whole subtree. Dry run shows counts and SQL; confirming deletes up to <?= intval(self::EXPIRE_DELETE_BATCH_LIMIT) ?> subtree(s) per run.
                 </p>
                 <form method="post" action="<?= htmlspecialchars($action_url) ?>" class="form-inline" style="margin-bottom: 1em;">
+                    <?= self::csrfField() ?>
                     <div class="form-group">
                         <label for="expire-comments-months">Months:</label>
                         <input id="expire-comments-months" type="number" min="2" step="1" name="months"
@@ -1306,6 +1781,7 @@ Bound parameters
                     -->
                     <?php if ( $tdiscus_threads_ok && intval(U::get($result, 'count', 0)) > 0 ) { ?>
                         <form method="post" action="<?= htmlspecialchars($action_url) ?>" class="form-inline tsugi-expire-delete-form">
+                            <?= self::csrfField() ?>
                             <input type="hidden" name="months" value="<?= intval($result['months']) ?>">
                             <input type="hidden" name="confirm" value="1">
                             <button type="submit" class="btn btn-danger"
@@ -1452,6 +1928,180 @@ Bound parameters
             array(':CID' => $context_id, ':UID' => $user_id)
         );
         return is_array($row);
+    }
+
+    public static function renderDiscussions(\Tsugi\Services\Lessons\LessonsService $lessons, $buffer=false, $toolHome=null, $addUrl=null, $reorderUrl=null)
+    {
+        ob_start();
+        global $CFG, $OUTPUT, $PDOX;
+
+        $discussions = $lessons->flattenedDiscussions();
+
+        $can_add = is_string($addUrl) && strlen($addUrl) > 0;
+        $can_reorder = is_string($reorderUrl) && strlen($reorderUrl) > 0 && count($discussions) > 1;
+        $show_catalog = count($discussions) > 0;
+
+        if ( ! $show_catalog && ! $can_add ) {
+            echo('<h1>'.__('Discussions not available')."</h1>\n");
+            $ob_output = ob_get_contents();
+            ob_end_clean();
+            if ( $buffer ) return $ob_output;
+            echo($ob_output);
+            return;
+        }
+
+        if ( $toolHome === null || $toolHome === '' ) {
+            $toolHome = \Tsugi\Controllers\Tool::determineToolHome('/discussions');
+        }
+
+        echo('<h1>'.__('Discussions:').' '.$lessons->lessons->title."</h1>\n");
+        if ( ! $show_catalog ) {
+            echo('<p>'.__('No discussions yet.')."</p>\n");
+            if ( $can_add ) {
+                echo('<p><a href="'.htmlspecialchars($addUrl).'" class="btn btn-primary btn-sm">'.htmlentities(__('Add discussion')).'</a></p>'."\n");
+            }
+            $ob_output = ob_get_contents();
+            ob_end_clean();
+            if ( $buffer ) return $ob_output;
+            echo($ob_output);
+            return;
+        }
+
+        $json_endpoint = U::addSession($toolHome . '/json');
+        $mark_read_url = U::addSession($toolHome . '/mark-read');
+        $manage_discussions_url = U::addSession($toolHome . '/manage');
+
+        // TODO: Perhaps the tdiscus service will get promoted to Tsugi
+        // but for now we bypass the abstraction and go straight to the source...
+        $rows_dict = array();
+        if ( U::get($_SESSION,'context_id') > 0 ) {
+            $current_user_id = ReqScope::loggedInUserId();
+            $rows = $PDOX->allRowsDie("SELECT L.link_key, L.link_sha256,
+                COUNT(T.thread_id) AS thread_count,
+                SUM(CASE WHEN COALESCE(UT.subscribe, 0) = 1 THEN 1 ELSE 0 END) AS subscribed_threads,
+                CONCAT(CONVERT_TZ(MAX(COALESCE(T.updated_at, T.created_at)), @@session.time_zone, '+00:00'), 'Z')
+                AS modified_at
+                FROM {$CFG->dbprefix}lti_link AS L
+                JOIN {$CFG->dbprefix}tdiscus_thread AS T ON T.link_id = L.link_id
+                LEFT JOIN {$CFG->dbprefix}tdiscus_user_thread AS UT
+                    ON UT.thread_id = T.thread_id AND UT.user_id = :UID
+                WHERE L.context_id = :CID
+                GROUP BY L.link_id, L.link_key, L.link_sha256
+                ORDER BY L.link_sha256",
+                array(':CID' => U::get($_SESSION,'context_id'), ':UID' => $current_user_id)
+            );
+            $rows_dict = array();
+            foreach($rows as $row) {
+                $rows_dict[$row['link_key']] = $row;
+            }
+            // echo("<pre>\n");var_dump($rows_dict);echo("</pre>\n");
+        }
+
+        $can_open = ReqScope::isLoggedIn() && ReqScope::currentContextId() !== 0;
+
+        echo('<ul class="tsugi-lessons-module-discussions-ul"> <!-- start of discussions -->'."\n");
+        foreach($discussions as $discussion ) {
+            $resource_link_title = $discussion->title;
+            $launch_path = U::addSession($toolHome . '/' . rawurlencode((string) $discussion->resource_link_id));
+            $info = "";
+            $row = U::get($rows_dict, $discussion->resource_link_id);
+            $subscribed_threads = intval(U::get($row, 'subscribed_threads', 0));
+            $bell_html = '';
+            if ( $subscribed_threads > 0 ) {
+                $bell_label = htmlentities(__('Subscribed threads').': '.$subscribed_threads);
+                $bell_html = ' <span style="color: #f0ad4e; font-size: 0.75em; vertical-align: middle;" title="'.$bell_label.'" aria-label="'.$bell_label.'">&#128276;</span>';
+            }
+            if ( $row ) {
+                $info = $row['thread_count'].' '.__('threads'). ' - '.__('last post').
+                    ' <time class="timeago" datetime="'.$row['modified_at'].'">'.$row['modified_at'].'</time>';
+            }
+
+            echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussion" data-resource-link-id="'.htmlspecialchars($discussion->resource_link_id).'">'."\n");
+            if ( $can_open ) {
+                echo('<a href="'.htmlspecialchars($launch_path).'">'.htmlentities($discussion->title).$bell_html.'</a>');
+            } else {
+                echo(htmlentities($resource_link_title).$bell_html.' ('.__('Login Required').')');
+            }
+            echo('<span class="tsugi-discussion-rollup-badges" aria-live="polite"></span>');
+            if ( strlen($info) > 0 ) {
+                echo('<div class="tsugi-discussion-meta">'.$info.'</div>'."\n");
+            }
+            echo("</li>\n");
+        }
+        echo("</ul><!-- end of discussions -->\n");
+
+        if ( ReqScope::isLoggedIn() && ReqScope::currentContextId() !== 0 ) {
+            $show_expire_button = false;
+            LTIX::getConnection();
+            $membership = Membership::ensureInSession(ReqScope::currentContextId(), ReqScope::loggedInUserId());
+            if ( $membership && $membership->isInstructor() ) {
+                $show_expire_button = true;
+            }
+            echo('<div style="margin: 1em 0 0; display: flex; gap: 0.5em; flex-wrap: wrap;">');
+            echo('<form method="post" action="'.htmlspecialchars($mark_read_url).'" class="tsugi-discussions-mark-read-form" style="margin: 0;">');
+            echo(\Tsugi\Controllers\Tool::csrfField());
+            echo('<button type="submit" class="btn btn-default btn-sm">'.htmlentities(__('Mark all as read')).'</button>');
+            echo('</form>'."\n");
+            if ( $show_expire_button ) {
+                echo('<a href="'.htmlspecialchars($manage_discussions_url).'" class="btn btn-warning btn-sm">'.htmlentities(__('Manage Discussions')).'</a>');
+            }
+            if ( $can_add ) {
+                echo('<a href="'.htmlspecialchars($addUrl).'" class="btn btn-primary btn-sm">'.htmlentities(__('Add discussion')).'</a>');
+            }
+            if ( $can_reorder ) {
+                echo('<a href="'.htmlspecialchars($reorderUrl).'" class="btn btn-default btn-sm">'.htmlentities(__('Reorder discussions')).'</a>');
+            }
+            echo("</div>\n");
+        }
+?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('<?= htmlentities($json_endpoint) ?>')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data || data.status !== 'success' || !Array.isArray(data.discussions)) return;
+
+            var byKey = {};
+            data.discussions.forEach(function(disc) {
+                if (disc && disc.resource_link_id) byKey[disc.resource_link_id] = disc;
+            });
+
+            document.querySelectorAll('.tsugi-lessons-module-discussion[data-resource-link-id]').forEach(function(node) {
+                var key = node.getAttribute('data-resource-link-id');
+                var disc = byKey[key];
+                if (!disc || !disc.badge) return;
+
+                var personal = parseInt(disc.badge.personal || 0, 10);
+                var participating = parseInt(disc.badge.participating || 0, 10);
+                var global = parseInt(disc.badge.global || 0, 10);
+
+                var chip = '';
+                if (personal > 0) {
+                    chip = '<span class="badge tsugi-discussion-badge tsugi-discussion-badge-personal" title="Personal unread: ' + personal + '" aria-label="Personal unread: ' + personal + '">' + personal + '</span>';
+                } else if (participating > 0) {
+                    chip = '<span class="badge tsugi-discussion-badge tsugi-discussion-badge-participating" title="Participating unread: ' + participating + '" aria-label="Participating unread: ' + participating + '">' + participating + '</span>';
+                } else if (global > 0) {
+                    chip = '<span class="badge tsugi-discussion-badge tsugi-discussion-badge-global" title="Global activity unread: ' + global + '" aria-label="Global activity unread: ' + global + '">' + global + '</span>';
+                }
+                if (!chip) return;
+
+                var holder = node.querySelector('.tsugi-discussion-rollup-badges');
+                if (!holder) return;
+                holder.innerHTML = chip;
+            });
+        })
+        .catch(function() {
+            // Keep discussions page usable even if badge rollups are unavailable.
+        });
+});
+</script>
+<?php
+
+
+        $ob_output = ob_get_contents();
+        ob_end_clean();
+        if ( $buffer ) return $ob_output;
+        echo($ob_output);
     }
 
 }

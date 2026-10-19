@@ -29,10 +29,18 @@ if ( $assn_id == false ) {
     return;
 }
 
-// Compute the user's grade
+// Compute the user's grade (0.0-1.0, or -1 if there is no submission)
 $grade = computeGrade($assn_id, $assn_json, $user_id);
-if ( $grade <= 0 ) {
+if ( $grade < 0 ) {
     $OUTPUT->jsonError('Nothing to grade for this user', $row);
+    return;
+}
+// 0 is a real score (submitted, nothing earned yet). Show it; do not pass 0% back to the LMS.
+if ( $grade == 0 ) {
+    $payload = array("status" => true, "grade" => 0);
+    $updated_at = loadResultUpdatedAt($user_id);
+    if ( $updated_at ) $payload['updated_at'] = $updated_at;
+    $OUTPUT->jsonOutput($payload);
     return;
 }
 
@@ -52,7 +60,7 @@ if ( $result && isset($result['grade']) ) {
 
 // Send the grade
 $debug_log = array();
-$status = LTIX::gradeSend($grade, $result, $debug_log); // This is the slow bit
+$status = gradeSendReleaseSession($grade, $result, $debug_log);
 
 if ( $status === true ) {
     // Send notification to the student whose grade was changed (only if grade actually changed)
@@ -65,12 +73,12 @@ if ( $status === true ) {
         $notification_url = addSession('index');
     }
     notifyGradeChange($user_id, $grade, $old_grade, $assn_json->title ?? null, $notification_url);
-    
-    if ( $user_id != $USER->id ) {
-        $OUTPUT->jsonOutput(array("status" => $status, "debug" => $debug_log));
-    } else {
-        $OUTPUT->jsonOutput(array("status" => $status, "grade" => $grade, "debug" => $debug_log));
-    }
+
+    $payload = array("status" => $status, "debug" => $debug_log);
+    if ( $user_id == $USER->id ) $payload['grade'] = $grade;
+    $updated_at = loadResultUpdatedAt($user_id);
+    if ( $updated_at ) $payload['updated_at'] = $updated_at;
+    $OUTPUT->jsonOutput($payload);
 } else {
     $OUTPUT->jsonError($status, $debug_log);
 }

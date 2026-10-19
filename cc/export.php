@@ -1,21 +1,25 @@
 <?php
 
-use \Tsugi\UI\Lessons;
+use \Tsugi\Services\Lessons\LessonsService;
+use \Tsugi\Services\Lessons\LessonsCartridge;
+use \Tsugi\Services\Lessons\LessonsLegacyFiles;
+use \Tsugi\Services\Lessons\LessonsLegacyGift;
+use \Tsugi\Services\Lessons\LessonsNormalize;
 use \Tsugi\Util\U;
 use \Tsugi\Util\CC;
 use \Tsugi\Util\CC_LTI;
 use \Tsugi\Util\CC_WebLink;
 
-require_once "../config.php";
+require_once __DIR__ . '/legacy_form.php';
+require_once __DIR__ . '/../config.php';
 
 if ( ! isset($CFG->lessons) ) {
     die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
 }
 
 // Load the Lesson
-$l = new Lessons($CFG->lessons);
+$l = new LessonsService($CFG->lessons);
 
-// Helper function to get module path from DOMNode
 function get_module_path($module_node, $cc_dom) {
     // Use reflection to access private modulePaths property
     $reflection = new \ReflectionClass($cc_dom);
@@ -26,10 +30,34 @@ function get_module_path($module_node, $cc_dom) {
     return isset($modulePaths[$moduleHash]) ? $modulePaths[$moduleHash] : '';
 }
 
-// Helper function to process a single item for CC export
-function process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $youtube, $topic) {
+/**
+ * Cartridge item identifier for a lesson resource link id.
+ * ":" is written as _colon_. Null when the lesson has no link id.
+ *
+ * @param mixed $resource_link_id
+ * @return string|null
+ */
+function legacy_export_identifier($resource_link_id) {
+    $identifier = \Tsugi\Services\Quiz1\Quiz1Repository::cartridgeIdentifierForLinkKey($resource_link_id);
+    return $identifier !== '' ? $identifier : null;
+}
+
+/**
+ * Helper function to process a single item for CC export
+ *
+ * @param object $item_obj
+ * @param object $module
+ * @param \DOMNode $sub_module
+ * @param \ZipArchive $zip
+ * @param CC $cc_dom
+ * @param string|false $topic
+ * @param LessonsLegacyFiles $local_files
+ * @param LessonsLegacyGift $gift_qti
+ */
+function process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $topic, LessonsLegacyFiles $local_files, LessonsLegacyGift $gift_qti) {
     global $CFG;
     $type = isset($item_obj->type) ? $item_obj->type : '';
+    $kind = LessonsNormalize::presentationKind($item_obj);
     
     // Get parent path for deterministic ID generation
     $parentPath = get_module_path($sub_module, $cc_dom);
@@ -37,100 +65,60 @@ function process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $youtub
     // Skip text type for now
     if ( $type == 'text' ) return;
     
-    // Handle header type - add as Canvas sub-header (no resource needed)
-    if ( $type == 'header' ) {
-        $header_text = isset($item_obj->text) ? $item_obj->text : (isset($item_obj->title) ? $item_obj->title : '');
-        if ( $header_text ) {
-            $cc_dom->add_header_item($sub_module, $header_text, $parentPath);
-        }
+    // Heading / legacy header: Canvas sub-header (no resource)
+    if ( LessonsCartridge::addHeadingItem($cc_dom, $sub_module, $item_obj, $parentPath) ) {
         return;
     }
     
-    // Handle video type — prefer Kaltura embed (inline iframe in Canvas) when configured
-    if ( $type == 'video' ) {
-        $title = __('Video:').' '.$item_obj->title;
-        $kaltura_url = Lessons::kalturaEmbedUrl($item_obj);
-        if ( $kaltura_url ) {
-            // new_tab=false => Canvas ExternalUrl launches inline in an iframe
-            $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $kaltura_url, $parentPath, false);
-        } else if ( $youtube && isset($CFG->youtube_url) && !empty($item_obj->youtube) ) {
-            $custom_arr = array();
-            $endpoint = U::absolute_url($CFG->youtube_url);
-            $endpoint = U::add_url_parm($endpoint, 'v', $item_obj->youtube);
-            $extensions = array('apphome' => $CFG->apphome);
-            $resource_link_id = isset($item_obj->resource_link_id) ? $item_obj->resource_link_id : null;
-            if ( $youtube == 'track_grade' ) {
-                $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath);
-            } else {
-                $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath);
-            }
-        } else if ( !empty($item_obj->youtube) ) {
-            $url = U::youtubeWatchUrl($item_obj->youtube);
-            $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parentPath);
-        }
+    // Video (legacy type=video or normalized web_link/video)
+    if ( LessonsCartridge::addVideoItem($zip, $cc_dom, $sub_module, $item_obj, $parentPath) ) {
         return;
     }
     
-    // Handle slide type
-    if ( $type == 'slide' ) {
+    // Handle slide type (legacy type=slide or normalized web_link/slides)
+    if ( $type == 'slide' || $kind == 'slide' ) {
         $slide_title = isset($item_obj->title) ? $item_obj->title : basename(isset($item_obj->href) ? $item_obj->href : (isset($item_obj->url) ? $item_obj->url : ''));
         $slide_href = isset($item_obj->href) ? $item_obj->href : (isset($item_obj->url) ? $item_obj->url : '');
-        $slide_href = Lessons::expandLink($slide_href);
+        $slide_href = LessonsService::expandLink($slide_href);
         $url = U::absolute_url($slide_href);
         $title = 'Slides: '.$slide_title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parentPath);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parentPath, $item_obj);
         return;
     }
     
-    // Handle reference type
-    if ( $type == 'reference' ) {
-        $title = $item_obj->title;
-        $href = Lessons::expandLink($item_obj->href);
-        $url = U::absolute_url($href);
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parentPath);
-        return;
-    }
-    
-    // Handle assignment type
-    if ( $type == 'assignment' ) {
+    // Handle reference type (legacy type=reference or normalized web_link/reference)
+    if ( $type == 'reference' || $kind == 'reference' ) {
+        $title = isset($item_obj->title) ? $item_obj->title : $module->title;
         $href = isset($item_obj->href) ? $item_obj->href : (isset($item_obj->url) ? $item_obj->url : '');
-        $href = Lessons::expandLink($href);
+        $href = LessonsService::expandLink($href);
+        $url = U::absolute_url($href);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parentPath, $item_obj);
+        return;
+    }
+    
+    // Handle assignment type (legacy type=assignment or normalized web_link/assignment)
+    if ( $type == 'assignment' || $kind == 'assignment' ) {
+        $href = isset($item_obj->href) ? $item_obj->href : (isset($item_obj->url) ? $item_obj->url : '');
+        $href = LessonsService::expandLink($href);
         $url = U::absolute_url($href);
         $title = 'Assignment: '.$module->title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parentPath);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parentPath, $item_obj);
         return;
     }
     
-    // Handle solution type
-    if ( $type == 'solution' ) {
+    // Handle solution type (legacy type=solution or normalized web_link/solution)
+    if ( $type == 'solution' || $kind == 'solution' ) {
         $href = isset($item_obj->href) ? $item_obj->href : (isset($item_obj->url) ? $item_obj->url : '');
-        $href = Lessons::expandLink($href);
+        $href = LessonsService::expandLink($href);
         $url = U::absolute_url($href);
         $title = 'Solution: '.$module->title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parentPath);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parentPath, $item_obj);
         return;
     }
     
-    // Handle lti type
+    // Handle lti type — GIFT quizzes become QTI by default
     if ( $type == 'lti' ) {
-        $title = isset($item_obj->title) ? $item_obj->title : $module->title;
-        if (strpos($title, ':') === false ) $title = 'Tool: '.$title;
-        $custom_arr = array();
-        if ( isset($item_obj->custom) ) {
-            foreach($item_obj->custom as $custom) {
-                if ( isset($custom->value) ) {
-                    $custom_arr[$custom->key] = $custom->value;
-                }
-                if ( isset($custom->json) ) {
-                    $custom_arr[$custom->key] = json_encode($custom->json);
-                }
-            }
-        }
-        $endpoint = U::absolute_url(Lessons::expandLink($item_obj->launch));
-        $endpoint = U::add_url_parm($endpoint, 'inherit', $item_obj->resource_link_id);
-        $extensions = array('apphome' => $CFG->apphome);
-        $resource_link_id = isset($item_obj->resource_link_id) ? $item_obj->resource_link_id : null;
-        $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath);
+        $gift_qti->addToModule($zip, $cc_dom, $sub_module, $item_obj, $module, $parentPath);
         return;
     }
     
@@ -141,7 +129,10 @@ function process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $youtub
 
         // If there is no LTI involved
         if ( $topic == "lms" || ! isset($CFG->tdiscus) ) {
-            $cc_dom->zip_add_topic_to_module($zip, $sub_module, $title, $text, $parentPath);
+            $cc_dom->zip_add_topic_to_module(
+                $zip, $sub_module, $title, $text, $parentPath,
+                legacy_export_identifier(isset($item_obj->resource_link_id) ? $item_obj->resource_link_id : null)
+            );
             return;
         }
 
@@ -162,11 +153,12 @@ function process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $youtub
         $endpoint = U::add_url_parm($endpoint, 'inherit', $item_obj->resource_link_id);
         $extensions = array('apphome' => $CFG->apphome);
         $resource_link_id = isset($item_obj->resource_link_id) ? $item_obj->resource_link_id : null;
+        $identifier = legacy_export_identifier($resource_link_id);
 
         if ( $topic == 'lti_grade' ) {
-            $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath);
+            $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath, $identifier);
         } else {
-            $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath);
+            $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parentPath, $identifier);
         }
         return;
     }
@@ -179,10 +171,8 @@ if ( isset($_POST['ext_content_return_url']) ) {
     $return_url = U::add_url_parm($return_url, 'text', $CFG->servicename);
 
     $export_url = $CFG->wwwroot . '/cc/export?tsugi_lms=canvas';
-    $export_url_youtube = U::add_url_parm($export_url, 'youtube', 'yes');
 
     $return_url_normal = U::add_url_parm($return_url, 'url', $export_url);
-    $return_url_youtube = U::add_url_parm($return_url, 'url', $export_url_youtube);
 
     $OUTPUT->header();
     $OUTPUT->bodystart(false);
@@ -201,9 +191,9 @@ if ( isset($_POST['ext_content_return_url']) ) {
     echo("<p>Modules: ".count($l->lessons->modules)."</p>\n");
     $resource_count = 0;
     $assignment_count = 0;
-    $discussion_count = 0;
+    $discussion_count = (int) LessonsCartridge::summarize($l)['discussions'];
     foreach($l->lessons->modules as $module) {
-        $resources = Lessons::getUrlResources($module);
+        $resources = LessonsService::getUrlResources($module);
         if ( ! $resources ) continue;
         $resource_count = $resource_count + count($resources);
         if ( isset($module->lti) ) {
@@ -216,48 +206,43 @@ if ( isset($_POST['ext_content_return_url']) ) {
     echo("<p>Resources: $resource_count </p>\n");
     echo("<p>Assignments: $assignment_count </p>\n");
     echo("<p>Discussion topics: $discussion_count </p>\n");
+    $file_scan = LessonsLegacyFiles::summarize($l);
+    CcExportForm::echoFilesPreview($file_scan);
+    $gift_scan = LessonsLegacyGift::summarize($l);
+    CcExportForm::echoGiftPreview($gift_scan);
 ?>
 <p>
 <form action="export">
 <input type="hidden" name="tsugi_lms" value="canvas" />
-<?php if ( $discussion_count > 0 ) {
-    if (isset($CFG->tdiscus) ) { ?>
+<?php CcExportForm::echoCartridgeSelect('cartridge_select_full'); ?>
+<?php CcExportForm::echoGiftQtiSelect('gift_qti_select_full'); ?>
+<?php if ( $discussion_count > 0 ) { ?>
 <p>
-<label for="topic_select_full">How would you like to import discussions/topics?</label>
+<label for="topic_select_full">How would you like to export discussions/topics?</label>
 <select name="topic" id="topic_select_full">
-  <option value="none">Do not import discussion topics</option>
+  <option value="lms" selected>Use the Canvas discussion tool</option>
+  <option value="none">Do not export discussion topics</option>
   <!-- <option value="lti">Use discussion tool on this server (LTI)</option> -->
   <option value="lti_grade">Use discussion tool on this server (LTI) with grade passback</option>
-  <option value="lms">Use the Canvas discussion tool</option>
 </select>
 </p>
-<?php } else { ?>
-<input type="hidden" name="topic" value="lms" />
 <?php } ?>
-<?php } ?>
-<?php if ( isset($CFG->youtube_url) ) { ?>
 <p>
-<label for="youtube_select_full">Would you like YouTube Tracked URLs?</label>
-<select name="youtube" id="youtube_select_full">
-  <option value="no">No - Launch directly to YouTube</option>
-  <!-- <option value="track">Use LTI launch to track access</option> -->
-  <option value="track_grade">Use LTI launch to track access and send grades</option>
-</select>
-</p>
 <input type="submit" onclick= "sendToCanvas(); return false;" class="btn btn-primary" value="Import modules" />
 </p>
 </form>
-<?php } ?>
 <script>
 function sendToCanvas() {
-    let youtube = $("#youtube_select_full").val();
-    let topic = $("#topic_select_full").val();
+    let topic = $("#topic_select_full").val() || 'lms';
+    let cartridge = $("#cartridge_select_full").val();
+    let gift_qti = $("#gift_qti_select_full").val();
 	let return_url = "<?= $return_url ?>";
 	let export_url = "<?= $CFG->wwwroot.'/cc/export?tsugi_lms=canvas' ?>";
-	export_url = export_url + '&youtube=' + youtube;
 	export_url = export_url + '&topic=' + topic;
+	export_url = export_url + '&cartridge=' + encodeURIComponent(cartridge);
+	export_url = export_url + '&gift_qti=' + encodeURIComponent(gift_qti);
     return_url = return_url + "&url=" + encodeURIComponent(export_url);
-    console.log(youtube, topic, export_url);
+    console.log(topic, cartridge, gift_qti, export_url);
     window.location.href = return_url;
 }
 </script>
@@ -281,31 +266,80 @@ if ( $anchors ) {
     if ( $anchor_count < 1 ) $anchors = false;
 }
 
+$topic = LessonsCartridge::exportTopicMode(U::get($_GET,'topic', false));
+$cartridge = U::get($_GET, 'cartridge', 'thick');
+$gift_qti_raw = U::get($_GET, 'gift_qti', 'qti');
+if ( isCli() ) {
+    global $argv;
+    if ( isset($argv) && is_array($argv) && in_array('thin', $argv, true) ) {
+        $cartridge = 'thin';
+    }
+    if ( isset($argv) && is_array($argv) && in_array('thick', $argv, true) ) {
+        $cartridge = 'thick';
+    }
+    if ( isset($argv) && is_array($argv) && in_array('lti', $argv, true) ) {
+        $gift_qti_raw = 'lti';
+    }
+    if ( isset($argv) && is_array($argv) && in_array('qti', $argv, true) ) {
+        $gift_qti_raw = 'qti';
+    }
+}
+$thick = LessonsLegacyFiles::wantsThickCartridge($cartridge);
+$convert_qti = LessonsLegacyGift::wantsGiftQti($gift_qti_raw);
+
+if ( isCli() ) {
+    $file_scan = LessonsLegacyFiles::summarize($l, $anchors);
+    echo('cartridge='.($thick ? 'thick' : 'thin').' files='.$file_scan['files'].' links='.$file_scan['links'].' scanned='.$file_scan['scanned']."\n");
+    foreach ( $file_scan['paths'] as $path ) {
+        echo('  '.$path."\n");
+    }
+    $gift_scan = LessonsLegacyGift::summarize($l, $anchors);
+    echo('gift_qti='.($convert_qti ? 'qti' : 'lti').' gift='.$gift_scan['gift'].' found='.$gift_scan['found'].' lti='.$gift_scan['lti'].' scanned='.$gift_scan['scanned']."\n");
+    foreach ( $gift_scan['paths'] as $path ) {
+        echo('  '.$path."\n");
+    }
+    foreach ( $gift_scan['warnings'] as $w ) {
+        echo('  warning: '.$w."\n");
+    }
+}
+
 // here we go...
-$service = strtolower($CFG->servicename);
+$tsugi_lms = LessonsCartridge::exportFlavor(U::get($_GET,'tsugi_lms', false));
 // https://stackoverflow.com/questions/64698935/using-ziparchive-with-php-8-and-temporary-files:wq
 $filename = tempnam(sys_get_temp_dir(), $CFG->servicename);
 unlink($filename);
-if ( isCli() ) $filename = 'cc.zip';
+$kind = $thick ? 'thick' : 'thin';
+if ( $convert_qti ) $kind .= '_qti';
+if ( isCli() ) $filename = 'cc_'.$kind.'.zip';
 $zip = new ZipArchive();
 if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
     die("Cannot open $filename\n");
 }
 
 if ( ! isCli() ) {
+    $download = LessonsCartridge::downloadName($l, $tsugi_lms);
+    $download = str_replace(array('\\', '"'), '', $download);
+    if ( str_ends_with($download, '.imscc') ) {
+        $download = substr($download, 0, -strlen('.imscc')).'_'.$kind.'.imscc';
+    } else {
+        $download .= '_'.$kind;
+    }
     header( "Content-Type: application/x-zip" );
-    header( "Content-Disposition: attachment; filename=\"".$service."_export.imscc\"" );
+    header( "Content-Disposition: attachment; filename=\"".$download."\"" );
 }
 
-$tsugi_lms = U::get($_GET,'tsugi_lms', false);
-$topic = U::get($_GET,'topic', false);
-$youtube = U::get($_GET,'youtube', false);
-if ( $youtube == 'no' ) $youtube = false;
-
-$cc_dom = new CC();
+$cc_dom = new CC(CC::profileForFlavor($tsugi_lms));
+if ( ! LessonsCartridge::wantsCanvasExtensions($tsugi_lms) ) {
+    $cc_dom->disable_canvas_extensions();
+}
+if ( LessonsCartridge::usesCanvasCartridge($tsugi_lms) ) {
+    $cc_dom->canvas_quiz_wrapper = true;
+}
 $cc_dom->set_title($CFG->context_title.' import');
+$local_files = new LessonsLegacyFiles($thick);
+$gift_qti = new LessonsLegacyGift($convert_qti);
 $top_module = false;
-if ( $tsugi_lms == 'sakai' ) {
+if ( $tsugi_lms === 'sakai' ) {
     $top_module = $cc_dom->add_module('Modules (import)', '');
 }
 
@@ -314,9 +348,14 @@ foreach($l->lessons->modules as $module) {
     if ( $anchors && ! in_array($module->anchor, $anchors) ) continue;
     if ( $top_module ) {
         $parent_path = 'Modules (import)';
-        $sub_module = $cc_dom->add_sub_module($top_module, $module->title, $parent_path);
+        $sub_module = $cc_dom->add_sub_module(
+            $top_module,
+            $module->title,
+            $parent_path,
+            $module
+        );
     } else {
-        $sub_module = $cc_dom->add_module($module->title, '');
+        $sub_module = $cc_dom->add_module($module->title, '', $module);
     }
 
     // Check if module uses items array (new format)
@@ -324,7 +363,7 @@ foreach($l->lessons->modules as $module) {
         // New format: process items array - each item is a flat object with a type field
         foreach($module->items as $item) {
             $item_obj = is_array($item) ? (object)$item : $item;
-            process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $youtube, $topic);
+            process_cc_item($item_obj, $module, $sub_module, $zip, $cc_dom, $topic, $local_files, $gift_qti);
         }
         // Skip legacy format if items array was processed
         continue;
@@ -336,34 +375,20 @@ foreach($l->lessons->modules as $module) {
     // Legacy format: process old arrays (videos, lti, etc.)
     if ( isset($module->videos) ) {
         foreach($module->videos as $video ) {
-            $title = __('Video:').' '.$video->title;
-            $kaltura_url = Lessons::kalturaEmbedUrl($video);
-            if ( $kaltura_url ) {
-                $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $kaltura_url, $parent_path_legacy, false);
-            } else if ( $youtube && isset($CFG->youtube_url) && !empty($video->youtube) ) {
-                $custom_arr = array();
-                $endpoint = U::absolute_url($CFG->youtube_url);
-                $endpoint = U::add_url_parm($endpoint, 'v', $video->youtube);
-                $extensions = array('apphome' => $CFG->apphome);
-                $resource_link_id = isset($video->resource_link_id) ? $video->resource_link_id : null;
-                if ( $youtube == 'track_grade' ) {
-                    $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy);
-                } else {
-                    $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy);
-                }
-            } else if ( !empty($video->youtube) ) {
-                $url = U::youtubeWatchUrl($video->youtube);
-                $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+            $v = is_object($video) ? clone $video : (object) $video;
+            if ( ! isset($v->type) ) {
+                $v->type = 'video';
             }
+            LessonsCartridge::addVideoItem($zip, $cc_dom, $sub_module, $v, $parent_path_legacy);
         }
     }
 
     // Old way
     if ( isset($module->slides) && is_string($module->slides) ) {
-        $slide_href = Lessons::expandLink($module->slides);
+        $slide_href = LessonsService::expandLink($module->slides);
         $url = U::absolute_url($slide_href);
         $title = 'Slides: '.$module->title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parent_path_legacy);
     }
 
     // Array way
@@ -376,57 +401,39 @@ foreach($l->lessons->modules as $module) {
                 $slide_title = $slide->title ;
                 $slide_href = $slide->href ;
             }
-            $slide_href = Lessons::expandLink($slide_href);
+            $slide_href = LessonsService::expandLink($slide_href);
             $url = U::absolute_url($slide_href);
             $title = 'Slides: '.$slide_title;
-            $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+            $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parent_path_legacy);
         }
     }
 
     if ( isset($module->assignment) ) {
-        $href = Lessons::expandLink($module->assignment);
+        $href = LessonsService::expandLink($module->assignment);
         $url = U::absolute_url($href);
         $title = 'Assignment: '.$module->title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parent_path_legacy);
     }
 
     if ( isset($module->solution) ) {
-        $href = Lessons::expandLink($module->solution);
+        $href = LessonsService::expandLink($module->solution);
         $url = U::absolute_url($href);
         $title = 'Solution: '.$module->title;
-        $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+        $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parent_path_legacy);
     }
 
     if ( isset($module->references) ) {
         foreach($module->references as $reference ) {
             $title = 'Reference: '.$reference->title;
-            $href = Lessons::expandLink($reference->href);
+            $href = LessonsService::expandLink($reference->href);
             $url = U::absolute_url($href);
-            $cc_dom->zip_add_url_to_module($zip, $sub_module, $title, $url, $parent_path_legacy);
+            $local_files->addToModule($zip, $cc_dom, $sub_module, $title, $url, $parent_path_legacy);
         }
     }
 
     if ( isset($module->lti) ) {
         foreach($module->lti as $lti ) {
-            $title = isset($lti->title) ? $lti->title : $module->title;
-            if (strpos($title, ':') === false ) $title = 'Tool: '.$title;
-            $custom_arr = array();
-            if ( isset($lti->custom) ) {
-                foreach($lti->custom as $custom) {
-                    if ( isset($custom->value) ) {
-                        $custom_arr[$custom->key] = $custom->value;
-                    }
-                    if ( isset($custom->json) ) {
-                        $custom_arr[$custom->key] = json_encode($custom->json);
-                    }
-                }
-            }
-            $endpoint = U::absolute_url(Lessons::expandLink($lti->launch));
-            // Sigh - some LMSs don't handle custom - sigh
-            $endpoint = U::add_url_parm($endpoint, 'inherit', $lti->resource_link_id);
-            $extensions = array('apphome' => $CFG->apphome);
-            $resource_link_id = isset($lti->resource_link_id) ? $lti->resource_link_id : null;
-            $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy);
+            $gift_qti->addToModule($zip, $cc_dom, $sub_module, $lti, $module, $parent_path_legacy);
         }
     }
 
@@ -437,7 +444,10 @@ foreach($l->lessons->modules as $module) {
 
 			// If there is no LTI involved
             if ( $topic ==  "lms" || ! isset($CFG->tdiscus) ) {
-                $cc_dom->zip_add_topic_to_module($zip, $sub_module, $title, $text, $parent_path_legacy);
+                $cc_dom->zip_add_topic_to_module(
+                    $zip, $sub_module, $title, $text, $parent_path_legacy,
+                    legacy_export_identifier(isset($discussion->resource_link_id) ? $discussion->resource_link_id : null)
+                );
                 continue;
             }
 
@@ -458,11 +468,12 @@ foreach($l->lessons->modules as $module) {
             $endpoint = U::add_url_parm($endpoint, 'inherit', $discussion->resource_link_id);
             $extensions = array('apphome' => $CFG->apphome);
             $resource_link_id = isset($discussion->resource_link_id) ? $discussion->resource_link_id : null;
+            $identifier = legacy_export_identifier($resource_link_id);
 
             if ( $topic == 'lti_grade' ) {
-                $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy);
+                $cc_dom->zip_add_lti_outcome_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy, $identifier);
             } else {
-                $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy);
+                $cc_dom->zip_add_lti_to_module($zip, $sub_module, $title, $endpoint, $custom_arr, $extensions, $resource_link_id, $parent_path_legacy, $identifier);
             }
         }
     }
@@ -476,7 +487,10 @@ $zip->addFromString('imsmanifest.xml',$cc_dom->saveXML());
 $zip->close();
 
 if ( isCli() ) {
-    echo("\nCLI run: Left zip file on cc.zip\n\n");
+    foreach ( $gift_qti->warnings() as $w ) {
+        echo('  warning: '.$w."\n");
+    }
+    echo("\nCLI run: Left zip file on $filename\n\n");
     return;
 }
 

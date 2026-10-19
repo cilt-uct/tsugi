@@ -6,7 +6,7 @@ namespace Tsugi\UI;
 use \Tsugi\Util\U;
 use Tsugi\Util\LTI;
 use Tsugi\Core\LTIX;
-use Tsugi\Core\WebSocket;
+use Tsugi\Core\Manifest;
 use Tsugi\UI\HandleBars;
 use Tsugi\UI\Theme;
 
@@ -52,6 +52,8 @@ use Tsugi\UI\Theme;
  */
 
 use \Tsugi\Core\Settings;
+
+use \Tsugi\Core\ReqScope;
 
 class Output {
 
@@ -136,11 +138,9 @@ class Output {
         echo(self::headerStart());
         echo($this->headerData());
         echo(self::headerCss());
-        if ( ($_SESSION['CSRF_TOKEN'] ?? null) ) {
-            echo('<script type="text/javascript">CSRF_TOKEN = "'.($_SESSION['CSRF_TOKEN'] ?? '').'";</script>'."\n");
-        } else {
-            echo('<script type="text/javascript">CSRF_TOKEN = "TODORemoveThis";</script>'."\n");
-        }
+        $csrf = LTIX::ensureCsrfToken();
+        echo('<script type="text/javascript">CSRF_TOKEN = "'.htmlspecialchars($csrf, ENT_QUOTES).'";'
+            .'function tsugiCsrfHeaders(h){h=h||{};if(CSRF_TOKEN){h["X-CSRF-TOKEN"]=CSRF_TOKEN;}return h;}</script>'."\n");
 
         // Set the containing frame id if we have one
         $element_id = LTIX::ltiRawParameter('ext_lti_element_id', false);
@@ -221,10 +221,6 @@ class Output {
         if ( isset($CFG->youtube_playlist) && $CFG->youtube_playlist ) {
             $retval .= "  youtube_playlist: ".self::json_encode_string_value($CFG->youtube_playlist).",\n";
         }
-        $websocket_url = (WebSocket::enabled() && $LINK) ? '"'.$CFG->websocket_url.'"' : 'false';
-        $retval .= "  websocket_url: ".$websocket_url.",\n";
-        $websocket_token = (WebSocket::enabled() && $LINK) ? '"'.WebSocket::getToken($LINK->launch).'"' : 'false';
-        $retval .= "  websocket_token: ".$websocket_token.",\n";
         $retval .= "  react_token: \"".session_id()."\",\n";
         $retval .= "  window_close_message: \""._m('Application complete - You can close this tab.')."\",\n";
         $retval .= "  session_expire_message: \""._m('Your session has expired')."\"\n";
@@ -435,6 +431,7 @@ function googleTranslateElementInit() {
         echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Notifications/tsugi-notifications.js') . '"></script>' . "\n");
         echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Calendar/tsugi-calendar-due.js') . '"></script>' . "\n");
         echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Discussions/tsugi-discussions.js') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Courses/tsugi-courses.js') . '"></script>' . "\n");
 
         // Register service worker for push notifications and offline support (if enabled)
         $service_worker_enabled = isset($CFG->service_worker) && $CFG->service_worker;
@@ -731,31 +728,53 @@ $('a').each(function (x) {
 
         $R = $CFG->wwwroot . '/';
         $set = new \Tsugi\UI\MenuSet();
-        if ( is_string($CFG->apphome) ) {
-            $set->setHome($CFG->servicename, $CFG->apphome);
-        } else {
-            $set->setHome($CFG->servicename, $R);
+        $set->setHome($CFG->servicename, $CFG->getHomeUrl());
+        if ( $CFG->hasSiteLessons() ) {
+            $lessonsHome = is_string($CFG->apphome) && strlen($CFG->apphome) > 0
+                ? rtrim($CFG->apphome, '/')
+                : rtrim($CFG->wwwroot, '/');
+            $set->addLeft(_m('Lessons'), $lessonsHome.'/lessons');
         }
         $set->addLeft(_m('Tools'), $R.'store');
-        if ( U::isLoggedIn() ) {
+        if ( ReqScope::isLoggedInLegacy() ) {
                 $set->addLeft(_m('Settings'), $R . 'settings');
         }
 
-        if ( U::isLoggedIn() ) {
+        if ( ReqScope::isLoggedInLegacy() ) {
             $submenu = new \Tsugi\UI\Menu();
-            $submenu->addLink(_m('Profile'), $R.'profile');
-            if ( $CFG->DEVELOPER || U::get($_COOKIE, 'adminmenu') ) {
-                $submenu->addLink(_m('Admin'), $R.'admin');
+            if ( $CFG->google_client_id ) {
+                $accountHome = is_string($CFG->apphome) && strlen($CFG->apphome) > 0
+                    ? rtrim($CFG->apphome, '/')
+                    : rtrim($CFG->wwwroot, '/');
+                $submenu->addLink(_m('Profile'), $accountHome.'/profile');
+                $submenu->addLink(_m('Map'), $accountHome.'/map');
+                if ( isset($_COOKIE['adminmenu']) && $_COOKIE['adminmenu'] == 'true' ) {
+                    $submenu->addLink(_m('Admin'), $R.'admin/');
+                }
+                $submenu->addLink(_m('Logout'), $accountHome.'/logout');
+                $set->addRight(self::avatarMenuTrigger(), $submenu);
+            } else {
+                $submenu->addLink(_m('Profile'), $R.'profile');
+                if ( $CFG->DEVELOPER || U::get($_COOKIE, 'adminmenu') ) {
+                    $submenu->addLink(_m('Admin'), $R.'admin');
+                }
+                $submenu->addLink(_m('Logout'), $R.'logout');
+                $set->addRight(htmlentities($_SESSION['displayname'] ?? ''), $submenu);
             }
-
-            $submenu->addLink(_m('Logout'), $R.'logout');
-            $set->addRight(htmlentities($_SESSION['displayname'] ?? ''), $submenu);
+            if ( \Tsugi\Controllers\Courses::showCoursesWidget() ) {
+                $set->addRight(
+                    \Tsugi\Controllers\Catalog::coursesWidgetTag(),
+                    false,
+                    true,
+                    'hidden-xs tsugi-wc-nav-item'
+                );
+            }
         } else {
             if ( $CFG->DEVELOPER || U::get($_COOKIE, 'adminmenu') ) {
                 $set->addLeft(_m('Admin'), $R.'admin');
             }
             if ( $CFG->google_client_id ) {
-                $set->addRight(_m('Login'), $R.'login');
+                $set->addRight(_m('Login'), $CFG->getLoginUrl());
             }
         }
 
@@ -766,6 +785,23 @@ $('a').each(function (x) {
         if ( $CFG->DEVELOPER) $set->addRight(_m('Links'), $submenu);
 
         return $set;
+    }
+
+    /**
+     * Avatar (or fallback image) used as the logged-in account dropdown trigger.
+     *
+     * Matches the dj4e/buildmenu.php img trigger, with equal width/height so
+     * border-radius: 50% is a circle. referrerpolicy is required for Google
+     * user-content photos, which otherwise often 403 and render as a blank oval.
+     */
+    public static function avatarMenuTrigger() {
+        $alt = htmlentities(__('User Profile Menu - Includes logout'));
+        $style = 'height: 2em; width: 2em; object-fit: cover; border-radius: 50%;';
+        if ( isset($_SESSION['avatar']) && is_string($_SESSION['avatar']) && $_SESSION['avatar'] !== '' ) {
+            $src = htmlspecialchars($_SESSION['avatar'], ENT_QUOTES, 'UTF-8');
+            return '<img src="'.$src.'" alt="'.$alt.'" referrerpolicy="no-referrer" style="'.$style.'"/>';
+        }
+        return '<img src="https://www.gravatar.com/avatar/?d=mp&amp;s=64" alt="'.$alt.'" style="'.$style.'"/>';
     }
 
     /**
@@ -823,6 +859,9 @@ $('a').each(function (x) {
     /**
      * Emit the top navigation block and optionally the tool navigation
      *
+     * On /courses/{id}/… the menu is the course manifest navigation, never
+     * $CFG->top_menu_callback / buildmenu.php.
+     *
      * Priority order on cookie-session pages (admin, login, site):
      * (1) $CFG->top_menu_callback when set (site-owned menu builder)
      * (2) $CFG->defaultmenu when set
@@ -837,7 +876,13 @@ $('a').each(function (x) {
         global $CFG, $TSUGI_LAUNCH;
 
         $menu_set = false;
-        if ( defined('COOKIE_SESSION') ) {
+        if ( \Tsugi\Controllers\Courses::isCourseMountedRequest() ) {
+            $cid = \Tsugi\Controllers\Courses::courseIdFromRequest();
+            $doc = \Tsugi\Core\Manifest::navigationDocumentForContext($cid);
+            $menu_set = \Tsugi\Services\CourseNav\CourseNav::compile($doc, $cid);
+        } else {
+            \Tsugi\Controllers\Courses::restoreSiteLoginContext();
+            if ( defined('COOKIE_SESSION') ) {
             // Cookie-session pages are never an LTI tool launch for nav purposes.
             // Stale lti_post, JWT, or cached tool nav must not produce "Done".
             if ( isset($CFG->top_menu_callback) && is_callable($CFG->top_menu_callback) ) {
@@ -907,6 +952,12 @@ $('a').each(function (x) {
             if ( $menu_set === false ) {
                 $menu_set = self::closeMenuSet();
             }
+            }
+        }
+
+        if ( $menu_set instanceof \Tsugi\UI\MenuSet
+            && ! \Tsugi\Controllers\Courses::isCourseMountedRequest() ) {
+            $menu_set = $this->dropSiteLessonsFromMenuSet($menu_set);
         }
 
         $suppressSiteNav = $_SESSION[self::SUPPRESS_SITE_NAV] ?? false;
@@ -935,6 +986,72 @@ $('a').each(function (x) {
         // Send it back
         if ( $this->buffer ) return $menu_txt;
         echo($menu_txt);
+    }
+
+    /**
+     * Site chrome shows Lessons only when hasSiteLessons() is true
+     * (lessons path plus a Google-wide context_title).
+     *
+     * Course-mounted /courses/{id}/ navigation is left unchanged.
+     */
+    private function dropSiteLessonsFromMenuSet($menu_set) {
+        global $CFG;
+        if ( ! $menu_set instanceof \Tsugi\UI\MenuSet ) {
+            return $menu_set;
+        }
+        if ( $CFG->hasSiteLessons() ) {
+            return $menu_set;
+        }
+        if ( $menu_set->left instanceof \Tsugi\UI\Menu ) {
+            $menu_set->left->menu = $this->dropSiteLessonsEntries($menu_set->left->menu);
+            if ( count($menu_set->left->menu) === 0 ) {
+                $menu_set->left = false;
+            }
+        }
+        return $menu_set;
+    }
+
+    /**
+     * @param mixed $entries
+     * @return array
+     */
+    private function dropSiteLessonsEntries($entries) {
+        if ( ! is_array($entries) ) {
+            return array();
+        }
+        $out = array();
+        foreach ( $entries as $entry ) {
+            if ( $this->isSiteLessonsNavEntry($entry) ) {
+                continue;
+            }
+            $out[] = $entry;
+        }
+        return $out;
+    }
+
+    /**
+     * @param mixed $entry
+     */
+    private function isSiteLessonsNavEntry($entry) {
+        if ( ! is_object($entry) ) {
+            return false;
+        }
+        $link = $entry->link ?? '';
+        if ( $link === 'Lessons' || $link === _m('Lessons') ) {
+            return true;
+        }
+        $href = $entry->href ?? false;
+        if ( ! is_string($href) ) {
+            return false;
+        }
+        $path = parse_url($href, PHP_URL_PATH);
+        if ( ! is_string($path) ) {
+            $path = $href;
+        }
+        if ( ! preg_match('#/lessons/?$#', $path) ) {
+            return false;
+        }
+        return ! preg_match('#/courses/\d+/lessons/?$#', $path);
     }
 
     /**
@@ -1007,7 +1124,7 @@ $('a').each(function (x) {
         }
         $retval .= $pad.'<li class="dropdown">'."\n";
         $dropdown_link_class = 'dropdown-toggle';
-        if (strpos($entry->link, '<img') !== false) {
+        if ( strpos($entry->link, '<img') !== false ) {
             // Drop down link contains an image so add class to style
             $dropdown_link_class .= ' dropdown-img';
         }
@@ -1243,8 +1360,12 @@ EOF;
 ?>
    </head>
 <body>
+<div class="container" style="padding: 2em;">
+  <h2><?= htmlentities($message) ?></h2>
+  <p><?= htmlentities($detail) ?></p>
+</div>
 <div id="dialog-confirm" style="display:none;" title="<?= htmlentities($message) ?>">
-<p><span class="ui-icon ui-icon-alert" style="float:left; margin:12px 12px 20px 0;"></span><?= $detail ?></p>
+<p><span class="ui-icon ui-icon-alert" style="float:left; margin:12px 12px 20px 0;"></span><?= htmlentities($detail) ?></p>
 </div>
 <?= self::footerScriptLinks() ?>
 <script>
@@ -1383,7 +1504,8 @@ $( function() {
             }
         }
 
-        // Override the config AND launch values if the user's preference is set in the $_SESSION
+        // Profile high-contrast override wins over site, launch, and course theme.
+        $profile_theme_key = null;
         if ( is_object($PDOX) && isset($_SESSION) && isset($_SESSION['profile_id']) ) {
             $profile_table = "{$CFG->dbprefix}profile";
             if ( $PDOX->metadata($profile_table) !== false ) {
@@ -1398,21 +1520,42 @@ $( function() {
                     if ( ! empty($profile_row) && ! is_null($profile_row['json']) ) {
                         $profile = json_decode($profile_row['json']);
                         if ( isset($profile->theme_override) ) {
-                            if ( $profile->theme_override == 'dark' ) {
-                                $dark_mode = true;
-                            } else if ( $profile->theme_override == 'light' ) {
-                                $dark_mode = null;
-                            }
+                            $profile_theme_key = Manifest::profileThemeKey($profile->theme_override);
                         }
                     }
                 }
             }
         }
 
+        if ( $profile_theme_key === 'hc-wob' ) {
+            $dark_mode = true;
+        } else if ( $profile_theme_key === 'hc-bow' ) {
+            $dark_mode = null;
+        }
+
         // Set dark mode configuration on the theme so apps can check
         // Example: conditional rendering of a twitter embed attribute
         Theme::$dark_mode = $dark_mode;
         Theme::$theme_base = $theme_base;
+
+        if ( is_string($profile_theme_key) ) {
+            $forced = Manifest::palette($profile_theme_key);
+            if ( is_array($forced) ) {
+                $theme = self::themeDefaultsPreservingFont($forced);
+                if (is_object($TSUGI_LAUNCH)) $_SESSION['tsugi_theme'] = $theme;
+                return $theme;
+            }
+        }
+
+        $courseTheme = null;
+        if ( Manifest::resolvedId() > 0 ) {
+            $courseTheme = Manifest::currentThemeArray();
+        }
+        if ( is_array($courseTheme) ) {
+            $theme = self::themeDefaultsPreservingFont($courseTheme);
+            if (is_object($TSUGI_LAUNCH)) $_SESSION['tsugi_theme'] = $theme;
+            return $theme;
+        }
 
         // Generate the theme
         if (isset($theme_base) && U::isValidCSSColor($theme_base)) {
@@ -1434,7 +1577,7 @@ $( function() {
             $theme = $CFG->theme;
         }
 
-        $theme = Theme::defaults($theme);
+        $theme = self::themeDefaultsPreservingFont($theme);
 
         // Check for individual overides from link, context, key, or launch
         foreach($theme as $name => $value ) {
@@ -1508,6 +1651,7 @@ $( function() {
         }
         $ret .= self::getThemeCss($theme);
         $ret .= '<link href="'.$s.'/css/tsugi2.css" rel="stylesheet">'."\n";
+        $ret .= self::navbarAlignCss();
         if ( isset($CFG->extra_css) ) {
             $ret .= '<style>'."\n".$CFG->extra_css."\n</style>\n";
         }
@@ -1529,6 +1673,99 @@ body {
 ';
         }
         return $ret;
+    }
+
+    /**
+     * Desktop vertical centering for the main nav.
+     *
+     * tsugi2.css already flex-centers the right cluster (avatar + widgets).
+     * Course nav also puts widgets in navbar-main, and often has only Home
+     * plus the avatar. Those two layouts were top-aligned against a taller
+     * right cluster. Do not apply this under 768px — the hamburger row
+     * already lines up.
+     */
+    public static function navbarAlignCss() {
+        return '<style>
+#tsugi_main_nav_bar .navbar-brand .tsugi-course-nav-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-right: 0.4em;
+  flex: 0 0 32px;
+}
+#tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img img {
+  width: 2em;
+  height: 2em;
+  max-width: 2em;
+  max-height: 2em;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+@media (min-width: 768px) {
+  #tsugi_main_nav_bar > .container-fluid {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  #tsugi_main_nav_bar .navbar-header {
+    float: none;
+    padding-top: 0;
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  #tsugi_main_nav_bar .navbar-brand {
+    float: none;
+    display: inline-flex;
+    align-items: center;
+    height: 50px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  #tsugi_main_nav_bar .navbar-collapse.collapse {
+    display: flex !important;
+    align-items: center;
+    flex: 1 1 auto;
+    width: auto;
+  }
+  #tsugi_main_nav_bar .navbar-nav.navbar-main,
+  #tsugi_main_nav_bar .navbar-nav.navbar-right {
+    display: flex;
+    align-items: center;
+    float: none;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  #tsugi_main_nav_bar .navbar-nav.navbar-right {
+    margin-left: auto;
+  }
+  #tsugi_main_nav_bar .navbar-nav > li.navbar-text,
+  #tsugi_main_nav_bar .navbar-nav > li.tsugi-wc-nav-item {
+    display: inline-flex !important;
+    align-items: center !important;
+    float: none;
+    min-height: 50px;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    line-height: 1;
+  }
+  #tsugi_main_nav_bar .navbar-nav > li.tsugi-wc-nav-item > tsugi-notifications,
+  #tsugi_main_nav_bar .navbar-nav > li.tsugi-wc-nav-item > tsugi-calendar-due,
+  #tsugi_main_nav_bar .navbar-nav > li.tsugi-wc-nav-item > tsugi-discussions,
+  #tsugi_main_nav_bar .navbar-nav > li.tsugi-wc-nav-item > tsugi-courses {
+    display: inline-flex;
+    align-items: center;
+    transform: translateY(2px);
+  }
+  #tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img {
+    display: inline-flex;
+    align-items: center;
+    min-height: 50px;
+  }
+}
+</style>'."\n";
     }
 
     /**
@@ -1556,6 +1793,21 @@ body {
         }
         $style .= '}</style>'."\n";
         return $style;
+    }
+
+    /**
+     * Theme::defaults() rebuilds the array and drops extras such as font-url.
+     *
+     * @param array<string, mixed> $theme
+     * @return array<string, mixed>
+     */
+    public static function themeDefaultsPreservingFont($theme) {
+        $fontUrl = is_array($theme) ? ($theme['font-url'] ?? null) : null;
+        $theme = Theme::defaults(is_array($theme) ? $theme : array());
+        if ( is_string($fontUrl) && $fontUrl !== '' ) {
+            $theme['font-url'] = $fontUrl;
+        }
+        return $theme;
     }
 
 }

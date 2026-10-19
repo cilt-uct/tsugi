@@ -1,6 +1,8 @@
 <?php
 
 use \Tsugi\Core\LTIX;
+use \Tsugi\Controllers\Catalog;
+use \Tsugi\Services\Site\Site;
 
 // In the top frame, we use cookies for session.
 if ( ! defined('COOKIE_SESSION') ) define('COOKIE_SESSION', true);
@@ -26,15 +28,28 @@ header('Content-Type: text/html; charset=utf-8');
 
 require_once("sanity-db.php");
 
-session_start();
-
-if ( $PDOX !== false ) LTIX::loginSecureCookie();
+LTIX::session_start();
 
 $OUTPUT->header();
 $OUTPUT->bodyStart();
 
 $OUTPUT->topNav();
 $OUTPUT->flashMessages();
+
+if ( Site::useCatalog() ) {
+    Catalog::renderListing();
+    $OUTPUT->footer();
+    return;
+}
+
+$site_body = Site::body();
+if ( is_string($site_body) ) {
+    echo('<div class="page-content">'."\n");
+    echo($site_body);
+    echo("\n</div>\n");
+    $OUTPUT->footer();
+    return;
+}
 ?>
 <p>
 Hello and welcome to <b><?php echo($CFG->servicename); ?></b>.
@@ -50,6 +65,7 @@ and create a profile and as you use tools from various courses you can
 associate those tools and courses with your profile.
 -->
 </p>
+<?php if ( $CFG->google_client_id ) { ?>
 <p>
 Other than logging in and setting up your profile, there is nothing much you can
 do at this screen.  
@@ -69,10 +85,10 @@ Some Tsugi servers accept key applications from instructors, but
 this server is not configured to accept applications for keys.
 <?php } ?>
 </p>
-You can install your own copy of the Tsugi Administration, Developer, and Management console from 
-<a href="https://github.com/tsugiproject/tsugi" target="_blank">https://github.com/tsugiproject/tsugi</a>.  
-This makes use of the Tsugi PHP runtime library
-<a href="https://github.com/tsugiproject/tsugi-php" target="_blank">https://github.com/tsugiproject/tsugi-php</a>.  
+<?php } ?>
+<p>
+You can install your own copy of the Tsugi from 
+<a href="https://github.com/tsugiproject/tsugi" target="_blank">https://github.com/tsugiproject/tsugi</a>.   
 </p>
 <p>
 You can install any of the following PHP Tsugi tools / toolsets:
@@ -94,13 +110,6 @@ and
 <a href="https://lti-tools.dr-chuck.com/tsugi/dev" target="_blank">working solutions</a> (secret)
 </li>
 </ul>
-</p>
-<p>
-A Java version of Tsugi is being developed at
-<a href="https://github.com/tsugiproject/tsugi-java-servlet" target="_blank">https://github.com/tsugiproject/tsugi-java-servlet</a>
-and a Node version of Tsugi is being developed at
-<a href="https://github.com/tsugiproject/tsugi-node-sample" target="_blank">https://github.com/tsugiproject/tsugi-node-sample</a>.
-Currently all Tsugi languages use this software as their administration and management console.
 </p>
 <p>
 Learning Tools Interoperability™ (LTI™) is a

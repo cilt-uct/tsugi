@@ -154,7 +154,7 @@ class Table {
         return $newsql . "\n";
     }
 
-    public static function pagedHeader($rows, $searchfields=array(), $orderfields=false, $view=false, $params=false, $extra_buttons=false) {
+    public static function pagedHeader($rows, $searchfields=array(), $orderfields=false, $view=false, $params=false, $extra_buttons=false, $after_html='') {
         if ( $params === false ) $params = $_GET;
         if ( $orderfields === false ) $orderfields = $searchfields;
 
@@ -260,15 +260,18 @@ class Table {
             echo('<a href="'.$button_url.'" class="btn btn-default">'._m($button_text).'</a>'."\n");
         }
     }
+    if ( is_string($after_html) && $after_html !== '' ) {
+        echo($after_html);
+    }
     ?>
     </form>
     <?php
     }
 
-    public static function pagedTable($rows, $searchfields=array(), $orderfields=false, $view=false, $params=false, $extra_buttons=false) 
+    public static function pagedTable($rows, $searchfields=array(), $orderfields=false, $view=false, $params=false, $extra_buttons=false, $after_html='') 
     {
         if ( $params === false ) $params = $_GET;
-        self::pagedHeader($rows, $searchfields, $orderfields, $view, $params, $extra_buttons);
+        self::pagedHeader($rows, $searchfields, $orderfields, $view, $params, $extra_buttons, $after_html);
 
         $count = count($rows);
 
@@ -318,6 +321,12 @@ class Table {
                         continue;
                     }
 
+                    $header_key = '_header_'.$k;
+                    if ( isset($row[$header_key]) ) {
+                        echo('<th scope="col">'.$row[$header_key]."</th>\n");
+                        continue;
+                    }
+
                     if ( $orderfields && ! Table::matchColumns($k, $orderfields ) ) {
                         echo("<th scope=\"col\">".CrudForm::fieldToTitle($k)."</th>\n");
                         continue;
@@ -336,10 +345,17 @@ class Table {
                     $stuff = Table::doUrl($params,$override);
                     $sort_attr = ($k == $order_by || ($order_by == '' && $k == 'id')) ? ' aria-sort="'.($desc == 1 ? 'descending' : 'ascending').'"' : '';
                     echo('<th scope="col" class="'.$color.'"'.$sort_attr.'>');
-                    echo(' <a href="'.$thispage);
+                    // Query-only so the link stays on this URL. The last path
+                    // segment (profile?order_by=) is resolved inside a folder
+                    // URL such as /admin/profile/ and 404s as /admin/profile/profile.
+                    // A leading ? is still relative, so cookieless session ids
+                    // are appended the same way as the old last-segment href.
+                    echo(' <a href="');
                     if ( U::strlen($stuff) > 0 ) {
-                        echo("?");
+                        echo('?');
                         echo($stuff);
+                    } else {
+                        echo($thispage);
                     }
                     echo('">');
                     echo(ucwords(str_replace('_',' ',$k)));
@@ -397,7 +413,7 @@ class Table {
     }
 
     public static function pagedAuto($sql, $query_parms, $searchfields,
-        $orderfields=false, $view=false, $params=false, $buttons=false) {
+        $orderfields=false, $view=false, $params=false, $buttons=false, $after_html='') {
         global $PDOX;
 
         if ( $params === false ) $params = $_GET;
@@ -408,7 +424,7 @@ class Table {
 
         $rows = $PDOX->allRowsDie($newsql, $query_parms);
 
-        Table::pagedTable($rows, $searchfields, $orderfields, $view, $params, $buttons);
+        Table::pagedTable($rows, $searchfields, $orderfields, $view, $params, $buttons, $after_html);
     }
 
 }

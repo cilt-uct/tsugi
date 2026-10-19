@@ -48,6 +48,9 @@ class ToolControllerTest extends \PHPUnit\Framework\TestCase
             public function exposeAssetUrl(string $filename, ?string $controllerName = null): string {
                 return $this->assetUrl($filename, $controllerName);
             }
+            public function exposeRequireGlobalRoute(string $url) {
+                return $this->requireGlobalRoute($url);
+            }
         };
     }
 
@@ -201,6 +204,48 @@ class ToolControllerTest extends \PHPUnit\Framework\TestCase
         $this->assertSame('https://local.ca4e.com/announcements', $tool->exposeToolHome('/announcements'));
     }
 
+    public function testToolHomeCollapsesLeadingDoubleSlashOnCourses(): void
+    {
+        $_SERVER['REQUEST_URI'] = '//courses';
+        $_SERVER['SCRIPT_NAME'] = '/other/script.php';
+        $home = \Tsugi\Controllers\Tool::determineToolHome('/courses');
+        $this->assertSame('/courses', $home);
+        $this->assertSame('/courses/1234', \Tsugi\Controllers\Tool::joinToolHome($home, '1234'));
+        $this->assertFalse(str_starts_with(\Tsugi\Controllers\Tool::joinToolHome($home, '1234'), '//'));
+    }
+
+    public function testToolHomeCoursesIndexIsNotProtocolRelative(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/courses';
+        $_SERVER['SCRIPT_NAME'] = '/other/script.php';
+        $home = \Tsugi\Controllers\Tool::determineToolHome('/courses');
+        $this->assertSame('/courses/1234', \Tsugi\Controllers\Tool::joinToolHome($home, '1234'));
+    }
+
+    public function testJoinToolHomeCollapsesProtocolRelativeHome(): void
+    {
+        $this->assertSame('/courses/1234', \Tsugi\Controllers\Tool::joinToolHome('//courses', '1234'));
+        $this->assertSame('/courses/create', \Tsugi\Controllers\Tool::joinToolHome('//courses/', '/create'));
+    }
+
+    public function testToolHomeFallbackSkipsSlashApphome(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/other/path';
+        $_SERVER['SCRIPT_NAME'] = '/different/script.php';
+        global $CFG;
+        $CFG->apphome = '/';
+        $this->assertSame('/courses', \Tsugi\Controllers\Tool::determineToolHome('/courses'));
+    }
+
+    public function testToolHomeFallbackRtrimsApphome(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/other/path';
+        $_SERVER['SCRIPT_NAME'] = '/different/script.php';
+        global $CFG;
+        $CFG->apphome = 'https://local.ca4e.com/';
+        $this->assertSame('https://local.ca4e.com/courses', \Tsugi\Controllers\Tool::determineToolHome('/courses'));
+    }
+
     /**
      * Controllers can be mounted at different levels: /lessons/x (simple) or /course/1234/lessons/x (nested)
      */
@@ -229,6 +274,21 @@ class ToolControllerTest extends \PHPUnit\Framework\TestCase
         $tool = $this->createAnnouncementsStub();
 
         $this->assertSame('/course/5678/pages', $tool->exposeToolHome('/pages'));
+    }
+
+    public function testToolHomeSiblingKeepsCourseMount(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/tsugi/courses/47/lessons/week-1';
+        $_SERVER['SCRIPT_NAME'] = '/other/script.php';
+        $this->assertSame('/tsugi/courses/47/quiz1', \Tsugi\Controllers\Tool::determineToolHome('/quiz1'));
+        $this->assertSame(
+            '/tsugi/courses/47/quiz1/7',
+            \Tsugi\Controllers\Tool::joinToolHome('/tsugi/courses/47/quiz1', '7')
+        );
+
+        $_SERVER['REQUEST_URI'] = '/courses/47/lessons/week-1';
+        $this->assertSame('/courses/47/quiz1', \Tsugi\Controllers\Tool::determineToolHome('/quiz1'));
+        $this->assertSame('/courses/47/discussions', \Tsugi\Controllers\Tool::determineToolHome('/discussions'));
     }
 
     // --- toolParent tests ---
@@ -322,6 +382,19 @@ class ToolControllerTest extends \PHPUnit\Framework\TestCase
 
         $this->assertSame('/course/1234/pages', $tool->exposeControllerUrl('/pages'));
         $this->assertSame('/course/1234/announcements', $tool->exposeControllerUrl('/announcements'));
+        $this->assertSame('/course/1234/quiz1', $tool->exposeControllerUrl('/quiz1'));
+    }
+
+    public function testControllerUrlFromLessonsAuthorKeepsCoursePrefix(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/33/lessons/_author';
+        $_SERVER['SCRIPT_NAME'] = '/other/script.php';
+        $tool = $this->createLessonsStub();
+
+        $this->assertSame('/courses/33/quiz1', $tool->exposeControllerUrl('/quiz1'));
+        $this->assertSame('/courses/33/files', $tool->exposeControllerUrl('/files'));
+        $this->assertSame('/courses/33/pages', $tool->exposeControllerUrl('/pages'));
+        $this->assertSame('/courses/33/lessons', $tool->exposeToolHome('/lessons'));
     }
 
     // --- determineParentPath tests (static) ---
@@ -477,5 +550,67 @@ class ToolControllerTest extends \PHPUnit\Framework\TestCase
         $staticUrl = $tool->exposeStaticUrl('test.js');
         $assetUrl = $tool->exposeAssetUrl('test.js');
         $this->assertSame($staticUrl, $assetUrl);
+    }
+
+    public function testOutboundContextTitlePrefersSessionOverSiteDefault(): void
+    {
+        global $CFG;
+        $CFG->context_title = 'Jangle for Everybody';
+        $_SESSION['context_title'] = 'Sandbox Course';
+        $this->assertSame('Sandbox Course', \Tsugi\Controllers\Tool::outboundContextTitle());
+    }
+
+    public function testOutboundContextTitleFallsBackToSiteDefault(): void
+    {
+        global $CFG;
+        $CFG->context_title = 'Jangle for Everybody';
+        unset($_SESSION['context_title']);
+        unset($_SESSION['lti']);
+        $this->assertSame('Jangle for Everybody', \Tsugi\Controllers\Tool::outboundContextTitle());
+    }
+
+    public function testIsCourseRouteUsesRequestUriAndClassRoute(): void
+    {
+        $tool = $this->createAnnouncementsStub();
+        $_SESSION['context_id'] = 42;
+
+        $_SERVER['REQUEST_URI'] = '/announcements';
+        $this->assertFalse($tool::isCourseRoute());
+
+        $_SERVER['REQUEST_URI'] = '/courses/42/announcements';
+        $this->assertTrue($tool::isCourseRoute());
+
+        $_SERVER['REQUEST_URI'] = '/courses/42/announcements/edit';
+        $this->assertTrue($tool::isCourseRoute());
+
+        $_SERVER['REQUEST_URI'] = '/courses/42/settings';
+        $this->assertFalse($tool::isCourseRoute());
+        $this->assertTrue($tool::isCourseRoute('/settings'));
+    }
+
+    public function testIsCourseRouteFalseWithoutRouteConstant(): void
+    {
+        $tool = $this->createToolStub();
+        $_SERVER['REQUEST_URI'] = '/courses/42/announcements';
+        $this->assertFalse($tool::isCourseRoute());
+    }
+
+    public function testRequireGlobalRouteNoopWhenNotCourseMounted(): void
+    {
+        $tool = $this->createAnnouncementsStub();
+        $_SERVER['REQUEST_URI'] = '/announcements';
+        $this->assertNull($tool->exposeRequireGlobalRoute('http://localhost/announcements'));
+    }
+
+    public function testRequireGlobalRouteBouncesOnlyWhenCourseMounted(): void
+    {
+        if ( ! class_exists(\Symfony\Component\HttpFoundation\RedirectResponse::class) ) {
+            $this->markTestSkipped('symfony/http-foundation is not on the lib test autoload');
+        }
+        $tool = $this->createAnnouncementsStub();
+        $_SERVER['REQUEST_URI'] = '/courses/42/announcements';
+        $resp = $tool->exposeRequireGlobalRoute('http://localhost/announcements');
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\RedirectResponse::class, $resp);
+        $this->assertSame('http://localhost/announcements', $resp->getTargetUrl());
     }
 }

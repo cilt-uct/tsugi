@@ -27,6 +27,12 @@ $p = $CFG->dbprefix;
 if ( !isset($_REQUEST['user_id']) ) die("user_id parameter required");
 $user_id = $_REQUEST['user_id'];
 
+if ( count($_POST) > 0 ) {
+    if ( \Tsugi\Controllers\Tool::csrfRedirect(addSession('student.php?user_id='.$user_id)) ) {
+        return;
+    }
+}
+
 // Load the assignment
 $row = loadAssignment();
 $assn_json = null;
@@ -139,7 +145,7 @@ if ( isset($_POST['instSubmit']) || isset($_POST['instSubmitAdvance']) ) {
     }
     $result['grade'] = -1; // Force resend
     $debug_log = array();
-    $status = LTIX::gradeSend($computed_grade, $result, $debug_log); // This is the slow bit
+    $status = gradeSendReleaseSession($computed_grade, $result, $debug_log);
     if ( $status === true ) {
         $_SESSION['success'] = 'Grade submitted to server';
         // Send notification to the student whose grade was changed (only if grade actually changed)
@@ -171,6 +177,7 @@ if ( isset($_POST['instSubmit']) || isset($_POST['instSubmitAdvance']) ) {
 
 // Compute grade
 $computed_grade = computeGrade($assn_id, $assn_json, $user_id); // Does not cache
+$grade_updated_at = loadResultUpdatedAt($user_id);
 if ( isset($_POST['resendSubmit']) ) {
      $result = Result::lookupResultBypass($user_id); // Does not cache
 
@@ -178,7 +185,7 @@ if ( isset($_POST['resendSubmit']) ) {
     $_SESSION['lti']['grade'] = -1;  // Force a resend
     $result['grade'] = -1;
     $debug_log = array();
-    $status = LTIX::gradeSend($computed_grade, $result, $debug_log); // This is the slow bit
+    $status = gradeSendReleaseSession($computed_grade, $result, $debug_log);
     if ( $status === true ) {
         $_SESSION['success'] = 'Grade submitted to server';
     } else {
@@ -369,7 +376,8 @@ if ( $submit_row === false ) {
 
 }
 
-echo('<form method="post">
+echo('<form method="post" class="js-once-submit">
+      '.\Tsugi\Controllers\Tool::csrfField().'
       <input type="hidden" name="user_id" value="'.$user_id.'">');
 
 if ( $next_user_id_ungraded !== false ) {
@@ -407,6 +415,7 @@ if ( $assn_json->rating > 0 ) {
 if ( isset($_GET['delete']) ) {
     $studenturl = Table::makeUrl('student.php', $getparms);
     echo('<form method="post">
+        '.\Tsugi\Controllers\Tool::csrfField().'
         <input type="hidden" name="user_id" value="'.$user_id.'">
         <label for="deleteNote">Enter an optional note to send to the student</label><br/>
         <textarea name="deleteNote" id="deleteNote" style="width:60%" rows="5">
@@ -425,10 +434,14 @@ if ( $assn_json->totalpoints == 0 ) {
     echo("<p>This is an ungraded assignment</p>\n");
 } else {
     echo("<p>Computed grade: ".$computed_grade."<br/>\n");
+    if ( U::isNotEmpty($grade_updated_at) ) {
+        echo("Last grade update: ".htmlentities($grade_updated_at)."<br/>\n");
+    }
 
     if ( isset($_GET['resend']) ) {
         $studenturl = Table::makeUrl('student.php', $getparms);
-        echo('<form method="post">
+        echo('<form method="post" class="js-once-submit">
+            '.\Tsugi\Controllers\Tool::csrfField().'
             <input type="hidden" name="user_id" value="'.$user_id.'">
             <input type="submit" name="resendSubmit" value="Resend the Grade" class="btn btn-warning">
             <input type="submit" name="doCancel" value="Cancel Resend" class="btn btn-normal"
@@ -454,7 +467,7 @@ if ( $our_flags !== false && count($our_flags) > 0 ) {
         echo("<td>".htmlentities($flag['email'] ?? '')."</td>\n");
         echo("<td>".htmlentities($flag['note'] ?? '')."</td>\n");
         echo("<td>".htmlentities($flag['updated_at'] ?? '')."</td>\n");
-        echo('<td> <form method="post"><input type="hidden"
+        echo('<td> <form method="post">'.\Tsugi\Controllers\Tool::csrfField().'<input type="hidden"
             name="flag_id" value="'.$flag['flag_id'].'">
         <input type="submit" name="deleteFlag" value="delete" class="btn btn-danger"></form></td>');
         echo("</tr>\n");
@@ -481,7 +494,7 @@ if ( $grades_received === false || count($grades_received) < 1 ) {
         if ( $assn_json->peerpoints > 0 ) echo("<td>".$grade['points']."</td>");
         if ( $assn_json->rating > 0 ) echo("<td>".$grade['rating']."</td>");
         echo("<td>".htmlentities($grade['note'] ?? '')."</td>".
-        '<td> <form method="post"><input type="hidden"
+        '<td> <form method="post">'.\Tsugi\Controllers\Tool::csrfField().'<input type="hidden"
             name="grade_id" value="'.$grade['grade_id'].'">
         <input type="hidden" name="user_id" value="'.$user_id.'">
         <input type="submit" name="deleteGrade" value="delete" class="btn btn-danger"></form></td>'.
@@ -513,7 +526,7 @@ if ( $grades_given === false || count($grades_given) < 1 ) {
         if ( $assn_json->peerpoints > 0 ) echo("<td>".$grade['points']."</td>");
         if ( $assn_json->rating > 0 ) echo("<td>".$grade['rating']."</td>");
         echo("<td>".htmlentities($grade['note'] ?? '')."</td>".
-        '<td> <form method="post"><input type="hidden"
+        '<td> <form method="post">'.\Tsugi\Controllers\Tool::csrfField().'<input type="hidden"
             name="grade_id" value="'.$grade['grade_id'].'">
         <input type="hidden" name="user_id" value="'.$user_id.'">
         <input type="submit" name="deleteGrade" value="delete" class="btn btn-danger"></form></td>'.
@@ -534,6 +547,36 @@ if ( isset($_SESSION['debug_log']) ) {
 $OUTPUT->footerStart();
 ?>
 <script src="<?= U::get_rest_parent() ?>/static/prism.js" type="text/javascript"></script>
+<script>
+document.querySelectorAll('form.js-once-submit').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+        if ( form.getAttribute('data-submitting') === '1' ) {
+            e.preventDefault();
+            return;
+        }
+        form.setAttribute('data-submitting', '1');
+        var submitter = e.submitter;
+        if ( submitter && submitter.name ) {
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = submitter.name;
+            hidden.value = submitter.value;
+            form.appendChild(hidden);
+        }
+        form.querySelectorAll('input[type=submit]').forEach(function(btn) {
+            if ( submitter && btn === submitter ) {
+                btn.value = 'Sending grade...';
+            }
+            btn.disabled = true;
+        });
+        var status = document.createElement('p');
+        status.setAttribute('role', 'status');
+        status.style.marginTop = '8px';
+        status.textContent = 'Sending grade to the LMS — please wait.';
+        form.appendChild(status);
+    });
+});
+</script>
 <?php
 load_htmls();
 $OUTPUT->footerEnd();

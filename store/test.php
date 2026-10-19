@@ -7,14 +7,14 @@ use \Tsugi\UI\Theme;
 
 if ( ! defined('COOKIE_SESSION') ) define('COOKIE_SESSION', true);
 require_once "../config.php";
-require_once "../admin/admin_util.php";
 require_once("dev-data.php");
 
-session_start();
+LTIX::session_start();
 
 $p = $CFG->dbprefix;
 LTIX::getConnection();
 
+$OUTPUT->noCacheHeader();
 $OUTPUT->header();
 ?>
 <style>
@@ -88,7 +88,7 @@ $OUTPUT->header();
 </style>
 <?php
 
-$registrations = findAllRegistrations();
+$registrations = \Tsugi\Services\Admin\AdminService::findAllRegistrations();
 if ( count($registrations) < 1 ) $registrations = false;
 
 // Switch user data if requested

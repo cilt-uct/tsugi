@@ -2,11 +2,11 @@
 
 require_once "src/Controllers/Discussions.php";
 require_once "src/Config/ConfigInfo.php";
-require_once "src/Lumen/Application.php";
-require_once "src/Lumen/Router.php";
+require_once "src/Lumos/Application.php";
+require_once "src/Lumos/Router.php";
 
 use \Tsugi\Controllers\Discussions;
-use \Tsugi\Lumen\Application;
+use \Tsugi\Lumos\Application;
 
 class DiscussionsControllerTest extends \PHPUnit\Framework\TestCase
 {
@@ -76,15 +76,14 @@ class DiscussionsControllerTest extends \PHPUnit\Framework\TestCase
         }
         $this->assertTrue($hasDiscussionsRoute, 'Should register /discussions route');
         
-        // Should have /discussions_launch route
-        $hasLaunchRoute = false;
+        $hasDiscussionRoute = false;
         foreach ($uris as $uri) {
-            if (strpos($uri, '/discussions_launch') === 0) {
-                $hasLaunchRoute = true;
+            if ($uri === '/discussions/{rlid}') {
+                $hasDiscussionRoute = true;
                 break;
             }
         }
-        $this->assertTrue($hasLaunchRoute, 'Should register /discussions_launch route');
+        $this->assertTrue($hasDiscussionRoute, 'Should register /discussions/{rlid}');
 
         $hasMarkReadRoute = false;
         foreach ($uris as $uri) {
@@ -120,5 +119,36 @@ class DiscussionsControllerTest extends \PHPUnit\Framework\TestCase
     public function testRouteConstant()
     {
         $this->assertEquals('/discussions', Discussions::ROUTE, 'ROUTE constant should be /discussions');
+    }
+
+    /**
+     * Nested /courses/{id}/discussions must keep generating nested launch URLs.
+     */
+    public function testDetermineToolHomeFollowsRequestUri()
+    {
+        $originalUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null;
+        try {
+            $_SERVER['REQUEST_URI'] = '/courses/2/discussions';
+            $home = \Tsugi\Controllers\Tool::determineToolHome(Discussions::ROUTE);
+            $this->assertEquals('/courses/2/discussions', $home);
+            $this->assertEquals('/courses/2/discussions/discussion_features',
+                $home . '/discussion_features');
+
+            $_SERVER['REQUEST_URI'] = '/discussions';
+            $home = \Tsugi\Controllers\Tool::determineToolHome(Discussions::ROUTE);
+            $this->assertEquals('/discussions', $home);
+            $this->assertEquals('/discussions/discussion_features',
+                $home . '/discussion_features');
+
+            $_SERVER['REQUEST_URI'] = '/courses/2/discussions/discussion_features';
+            $home = \Tsugi\Controllers\Tool::determineToolHome(Discussions::ROUTE);
+            $this->assertEquals('/courses/2/discussions', $home);
+        } finally {
+            if ( $originalUri === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $originalUri;
+            }
+        }
     }
 }

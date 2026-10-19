@@ -2,13 +2,15 @@
 
 namespace Tsugi\Controllers;
 
-use Tsugi\Lumen\Controller;
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Controller;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Tsugi\Util\U;
 use Tsugi\Util\Stripe as StripeUtil;
+
+use Tsugi\Core\ReqScope;
 
 /**
  * Stripe Checkout routes for premium / supporter payments.
@@ -62,7 +64,7 @@ class Stripe extends Controller {
         $home = Tool::configuredHomeUrl();
         $checkout_url = self::checkoutUrl($CFG);
 
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         if ($user_id <= 0) {
             Login::setReturnUrl($checkout_url);
             return new RedirectResponse(Login::loginUrl());
@@ -76,24 +78,38 @@ class Stripe extends Controller {
         $refund_policy = $CFG->refundPolicy();
         $profile_url = rtrim($home, '/') . '/profile';
         $home_url = rtrim($home, '/') . '/';
+        $support = \Tsugi\UI\Supporter::currentSupport($CFG);
+        $extending = is_array($support) && !empty($support['is_active']);
+        $until_label = $extending ? (string) ($support['premium_until_label'] ?? '') : '';
 
         $OUTPUT->header();
         $OUTPUT->bodyStart();
         $OUTPUT->topNav();
         ?>
 <main id="container">
-<h1><?= htmlspecialchars($supporter_label) ?></h1>
+<h1><?= $extending ? 'Extend supporter status' : htmlspecialchars($supporter_label) ?></h1>
+<?php if ($extending) { ?>
+<p>
+You already have <?= htmlspecialchars($supporter_label) ?> status<?php if ($until_label !== '') { ?>
+ through <strong><?= htmlspecialchars($until_label) ?></strong><?php } ?>.
+This one-time payment<?php if ($price_phrase !== '') { ?>
+ of <?= htmlspecialchars($price_phrase) ?><?php } ?>
+ adds <?= htmlspecialchars($premium_period) ?><?php if ($until_label !== '') { ?>, starting from that date<?php } ?>.
+</p>
+<?php } else { ?>
 <p>
 Support <?= htmlspecialchars($site_label) ?> with a one-time payment<?php if ($price_phrase !== '') { ?>
  of <?= htmlspecialchars($price_phrase) ?><?php } ?>.
 You will receive <?= htmlspecialchars($premium_period) ?> of <?= htmlspecialchars($supporter_label) ?> status.
 </p>
+<?php } ?>
 <p>The exact amount in your currency is shown on the next screen.</p>
 <p>You will be redirected to our payment provider to complete checkout securely.</p>
 <?php if ($refund_policy !== '') { ?>
 <p><em><?= htmlspecialchars($refund_policy) ?></em></p>
 <?php } ?>
 <form method="post" action="">
+<?= Tool::csrfField() ?>
 <p>
 <button type="submit" class="btn btn-success">Continue to payment</button>
 <a href="<?= htmlspecialchars($profile_url) ?>" class="btn btn-default">Cancel</a>
@@ -118,10 +134,14 @@ You will receive <?= htmlspecialchars($premium_period) ?> of <?= htmlspecialchar
         $home = Tool::configuredHomeUrl();
         $checkout_url = self::checkoutUrl($CFG);
 
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         if ($user_id <= 0) {
             Login::setReturnUrl($checkout_url);
             return new RedirectResponse(Login::loginUrl());
+        }
+        $csrf = Tool::requireCsrf($checkout_url);
+        if ( $csrf ) {
+            return $csrf;
         }
 
         $cfg = StripeUtil::config();
@@ -281,7 +301,7 @@ You will receive <?= htmlspecialchars($premium_period) ?> of <?= htmlspecialchar
                 }
 
                 $session_user_id = (int) StripeUtil::val($session, 'client_reference_id', 0);
-                $logged_in_user_id = U::loggedInUserId();
+                $logged_in_user_id = ReqScope::loggedInUserId();
                 if ($logged_in_user_id > 0 && $session_user_id > 0 && $logged_in_user_id !== $session_user_id) {
                     $status_message .= ' (This payment belongs to a different account.)';
                 }

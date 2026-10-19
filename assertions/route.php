@@ -5,8 +5,10 @@ require_once('../config.php');
 
 use \Tsugi\Util\U;
 use \Tsugi\Core\LTIX;
+use \Tsugi\Core\ReqScope;
 use \Tsugi\Core\Badges;
-use \Tsugi\UI\Lessons;
+use \Tsugi\Core\Manifest;
+use \Tsugi\Services\Lessons\LessonsService;
 use \Tsugi\LinkedIn\LinkedIn;
 use \Tsugi\Crypt\AesOpenSSL;
 use \Tsugi\Services\Badges\BadgeService;
@@ -52,7 +54,7 @@ if ($first_part === 'publish') {
         $OUTPUT->footer();
         return;
     }
-    $current_user_id = loggedInUserId();
+    $current_user_id = ReqScope::loggedInUserIdLegacy();
     if ($current_user_id === 0) {
         http_response_code(403);
         $OUTPUT->header();
@@ -62,11 +64,11 @@ if ($first_part === 'publish') {
         $OUTPUT->footer();
         return;
     }
-    if ( ! isset($CFG->lessons) ) {
-        die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
+    if ( ! Manifest::hasCurrent() ) {
+        die_with_error_log('Cannot find lessons.json ($CFG->lessons) or an active course manifest');
     }
     $PDOX = LTIX::getConnection();
-    $l = new Lessons($CFG->lessons);
+    $l = Manifest::requireCurrentLessons();
     $parsed = Badges::parseAssertionId($hex_id, $l);
     if ( is_string($parsed) ) {
         http_response_code(404);
@@ -124,10 +126,7 @@ if ($first_part === 'linkedin') {
         $OUTPUT->footer();
         return;
     }
-    if ( ! isset($CFG->lessons) ) {
-        die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
-    }
-    $l = new Lessons($CFG->lessons);
+    $l = Manifest::requireCurrentLessons();
     $destination = BadgeService::linkedInDestinationUrl($guid, $share, $l);
     if ( $destination === null ) {
         http_response_code(404);
@@ -138,7 +137,7 @@ if ($first_part === 'linkedin') {
         $OUTPUT->footer();
         return;
     }
-    $current_user_id = loggedInUserId();
+    $current_user_id = ReqScope::loggedInUserIdLegacy();
     $minted = BadgeService::getByGuid($guid);
     if ( $current_user_id > 0 && $minted && (int) $minted['user_id'] === $current_user_id ) {
         BadgeService::recordLinkedInClick($guid);
@@ -149,8 +148,8 @@ if ($first_part === 'linkedin') {
 
 // Handle fixed issuer route: /assertions/issuer.json
 if ($first_part === 'issuer.json') {
-    if ( ! isset($CFG->lessons) ) {
-        die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
+    if ( ! Manifest::hasCurrent() ) {
+        die_with_error_log('Cannot find lessons.json ($CFG->lessons) or an active course manifest');
     }
     $format = isset($_GET['format']) ? $_GET['format'] : 'ob2';
     if ($format === 'ob3') {
@@ -174,12 +173,12 @@ if ($first_part === 'badge' && count($path_parts) === 2) {
         $code = str_replace('?format=ob3', '', $code);
         $code = str_replace('&format=ob3', '', $code);
         
-        if ( ! isset($CFG->lessons) ) {
-            die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
+        if ( ! Manifest::hasCurrent() ) {
+            die_with_error_log('Cannot find lessons.json ($CFG->lessons) or an active course manifest');
         }
         
         $PDOX = LTIX::getConnection();
-        $l = new Lessons($CFG->lessons);
+        $l = Manifest::requireCurrentLessons();
         
         // Find the badge by code
         $badge = null;
@@ -290,12 +289,8 @@ if (strpos($first_part, '.vc.json') !== false) {
 }
 
 // Load lesson and parse assertion
-if ( ! isset($CFG->lessons) ) {
-    die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
-}
-
 $PDOX = LTIX::getConnection();
-$l = new Lessons($CFG->lessons);
+$l = Manifest::requireCurrentLessons();
 
 $row = null;
 $pieces = null;
@@ -398,7 +393,11 @@ switch ($resource) {
         $achievement_url = $CFG->wwwroot . "/assertions/badge/" . urlencode($code) . ".json?format=ob3";
         // OB1 legacy endpoints expect the long hex string; when viewing minted (GUID), generate it from pieces
         $legacy_hex = $encrypted;
-        if ( BadgeService::isMintedGuid($encrypted) && isset($CFG->badge_encrypt_password) && $CFG->badge_encrypt_password ) {
+        $legacy_context_id = isset($pieces[2]) ? $pieces[2] : null;
+        if ( BadgeService::isMintedGuid($encrypted)
+            && is_numeric($legacy_context_id)
+            && (int) $legacy_context_id > 0
+            && isset($CFG->badge_encrypt_password) && $CFG->badge_encrypt_password ) {
             $decrypted = $pieces[0] . ':' . $pieces[1] . ':' . $pieces[2];
             $legacy_hex = bin2hex(AesOpenSSL::encrypt($decrypted, $CFG->badge_encrypt_password));
         }
@@ -432,7 +431,7 @@ switch ($resource) {
         }
         
         // Get current logged-in user ID (session or $USER; see lms_lib.php)
-        $current_user_id = loggedInUserId();
+        $current_user_id = ReqScope::loggedInUserIdLegacy();
         $logged_in = $current_user_id !== 0;
         
         // Get badge owner user ID from the encrypted assertion ID

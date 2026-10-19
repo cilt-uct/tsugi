@@ -2,7 +2,7 @@
 
 namespace Tsugi\Controllers;
 
-class Tsugi extends \Tsugi\Lumen\Application {
+class Tsugi extends \Tsugi\Lumos\Application {
 
     public function __construct($launch, $baseDir = null)
     {
@@ -23,26 +23,37 @@ class Tsugi extends \Tsugi\Lumen\Application {
         ], function () use ($CFG) {
             // Register StaticFiles routes first to ensure they're matched before other routes
             \Tsugi\Controllers\StaticFiles::routes($this);
+            \Tsugi\Controllers\Analytics::routes($this);
             \Tsugi\Controllers\Announcements::routes($this);
             \Tsugi\Controllers\Assignments::routes($this);
             \Tsugi\Controllers\Badges::routes($this);
             \Tsugi\Controllers\Calendar::routes($this);
+            \Tsugi\Controllers\Catalog::routes($this);
             \Tsugi\Controllers\Courses::routes($this);
             \Tsugi\Controllers\Discussions::routes($this);
+            \Tsugi\Controllers\Files::routes($this);
             \Tsugi\Controllers\Grades::routes($this);
+            \Tsugi\Controllers\Home::routes($this);
             \Tsugi\Controllers\Lessons::routes($this);
+            \Tsugi\Controllers\Settings::routes($this);
             \Tsugi\Controllers\Labs::routes($this);
             \Tsugi\Controllers\LaunchController::routes($this);
             \Tsugi\Controllers\Login::routes($this);
+            \Tsugi\Controllers\GoogleClassroom::routes($this);
             \Tsugi\Controllers\Logout::routes($this);
             \Tsugi\Controllers\Map::routes($this);
             \Tsugi\Controllers\Pages::routes($this);
             \Tsugi\Controllers\Profile::routes($this);
+            \Tsugi\Controllers\Quiz1::routes($this);
             if ( is_array($CFG->getExtension('stripe')) ) {
                 \Tsugi\Controllers\Stripe::routes($this);
             }
+            if ( \Tsugi\Services\Mail\MailService::isSesConfigured() ) {
+                \Tsugi\Controllers\Ses::routes($this);
+            }
             \Tsugi\Controllers\Topics::routes($this);
             \Tsugi\Controllers\Notifications::routes($this);
+            \Tsugi\Controllers\ReqScopeDebug::routes($this);
         });
     }
 }

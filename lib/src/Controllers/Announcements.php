@@ -5,10 +5,12 @@ namespace Tsugi\Controllers;
 
 use \Tsugi\Util\U;
 use Tsugi\Core\LTIX;
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
+
+use Tsugi\Core\ReqScope;
 
 class Announcements extends Tool {
 
@@ -104,8 +106,8 @@ class Announcements extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
         
         // Record learner analytics
         $this->lmsRecordLaunchAnalytics(self::ROUTE, self::NAME);
@@ -355,6 +357,7 @@ class Announcements extends Tool {
                     
                     fetch(url, {
                         method: 'POST',
+                        headers: tsugiCsrfHeaders(),
                         body: formData
                     })
                     .then(response => response.json())
@@ -388,7 +391,9 @@ class Announcements extends Tool {
                                     newBtn.setAttribute('aria-expanded', 'false');
                                     newBtn.textContent = 'Show previously seen announcements (' + currentDismissedCount + ')';
                                     p.appendChild(newBtn);
-                                    var container = document.querySelector('.container');
+                                    var container = announcementsList && announcementsList.parentElement
+                                        ? announcementsList.parentElement
+                                        : document.getElementById('main-content');
                                     var announcementsList = document.getElementById('announcements-list');
                                     if (announcementsList) {
                                         container.insertBefore(p, announcementsList);
@@ -420,6 +425,48 @@ class Announcements extends Tool {
                                         }
                                     });
                                 }
+                            } else {
+                                var announcementsList = document.getElementById('announcements-list');
+                                var container = announcementsList && announcementsList.parentElement
+                                    ? announcementsList.parentElement
+                                    : document.getElementById('main-content');
+                                var dismissedDiv = document.createElement('div');
+                                dismissedDiv.id = 'dismissed-announcements-list';
+                                dismissedDiv.style.display = 'none';
+                                container.appendChild(dismissedDiv);
+                                dismissedDiv.appendChild(item);
+                                var seenP = document.createElement('p');
+                                seenP.className = 'text-muted';
+                                var seenBtn = document.createElement('button');
+                                seenBtn.id = 'show-dismissed-btn';
+                                seenBtn.type = 'button';
+                                seenBtn.className = 'btn btn-sm btn-link';
+                                seenBtn.style.padding = '0';
+                                seenBtn.setAttribute('data-dismissed-count', '0');
+                                seenBtn.setAttribute('aria-controls', 'dismissed-announcements-list');
+                                seenBtn.setAttribute('aria-expanded', 'false');
+                                seenBtn.textContent = 'Show previously seen announcements (0)';
+                                seenP.appendChild(seenBtn);
+                                if (announcementsList) {
+                                    container.insertBefore(seenP, announcementsList);
+                                } else {
+                                    container.appendChild(seenP);
+                                }
+                                var seenHidden = true;
+                                seenBtn.addEventListener('click', function() {
+                                    var seenCount = dismissedDiv.querySelectorAll('.announcement-item').length;
+                                    if (seenHidden) {
+                                        dismissedDiv.style.display = '';
+                                        seenBtn.textContent = 'Hide previously seen announcements (' + seenCount + ')';
+                                        seenBtn.setAttribute('aria-expanded', 'true');
+                                        seenHidden = false;
+                                    } else {
+                                        dismissedDiv.style.display = 'none';
+                                        seenBtn.textContent = 'Show previously seen announcements (' + seenCount + ')';
+                                        seenBtn.setAttribute('aria-expanded', 'false');
+                                        seenHidden = true;
+                                    }
+                                });
                             }
                             
                             updateDismissedCount(1);
@@ -470,7 +517,8 @@ class Announcements extends Tool {
                     var url = this.getAttribute('data-url');
                     
                     fetch(url, {
-                        method: 'POST'
+                        method: 'POST',
+                        headers: tsugiCsrfHeaders()
                     })
                     .then(response => response.json())
                     .then(data => {
@@ -484,7 +532,10 @@ class Announcements extends Tool {
                                 var dismissedDiv = document.createElement('div');
                                 dismissedDiv.id = 'dismissed-announcements-list';
                                 dismissedDiv.style.display = 'none';
-                                var container = document.querySelector('.container');
+                                var listForContainer = document.getElementById('announcements-list');
+                                var container = listForContainer && listForContainer.parentElement
+                                    ? listForContainer.parentElement
+                                    : document.getElementById('main-content');
                                 container.appendChild(dismissedDiv);
                                 dismissedAnnouncementsList = dismissedDiv;
                             }
@@ -539,7 +590,10 @@ class Announcements extends Tool {
                                 newBtn.setAttribute('aria-expanded', 'false');
                                 newBtn.textContent = 'Show previously seen announcements (' + currentDismissedCount + ')';
                                 dismissedP.appendChild(newBtn);
-                                var container = document.querySelector('.container');
+                                var listForContainer = document.getElementById('announcements-list');
+                                var container = listForContainer && listForContainer.parentElement
+                                    ? listForContainer.parentElement
+                                    : document.getElementById('main-content');
                                 var announcementsList = document.getElementById('announcements-list');
                                 if (announcementsList) {
                                     container.insertBefore(dismissedP, announcementsList);
@@ -586,8 +640,8 @@ class Announcements extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
         
         $announcement_data = $this->getAnnouncementsForUser($context_id, $user_id);
         $announcements = $announcement_data['announcements'];
@@ -625,6 +679,10 @@ class Announcements extends Tool {
         if ($request->getMethod() !== 'POST') {
             return new JsonResponse(['status' => 'error', 'detail' => 'Method not allowed'], 405);
         }
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         // Get POST data - FormData from fetch() should populate $_POST
         // But Symfony Request might consume the body, so check both
@@ -659,8 +717,8 @@ class Announcements extends Tool {
         
         $dismiss = ($dismiss_raw == 1 || $dismiss_raw === '1' || $dismiss_raw === true || $dismiss_raw === 'true') ? 1 : 0;
         
-        $user_id = U::loggedInUserId();
-        $context_id = U::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
         $announcement_id = intval($announcement_id);
         
         // Verify the announcement exists and belongs to this context
@@ -729,9 +787,13 @@ class Announcements extends Tool {
         if ($request->getMethod() !== 'POST') {
             return new JsonResponse(['status' => 'error', 'detail' => 'Method not allowed'], 405);
         }
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
-        $user_id = U::loggedInUserId();
-        $context_id = U::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
         
         // Get all undismissed, visible announcements for this user in this context
         $undismissed = $PDOX->allRowsDie(
@@ -813,6 +875,7 @@ class Announcements extends Tool {
                 </div>
                 <div class="panel-body">
                     <form method="POST" action="<?= $add_url ?>">
+                        <?= self::csrfField() ?>
                         <div class="form-group">
                             <label for="title">Title *</label>
                             <input type="text" class="form-control" id="title" name="title" 
@@ -868,11 +931,15 @@ class Announcements extends Tool {
         $tool_home = $this->toolHome(self::ROUTE);
         $add_url = $tool_home . '/add';
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($add_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
         
         $title = trim(U::get($_POST, 'title'));
         $text = trim(U::get($_POST, 'text'));
@@ -931,7 +998,7 @@ class Announcements extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $announcement_id = intval($id);
         
         if (!$announcement_id) {
@@ -972,6 +1039,7 @@ class Announcements extends Tool {
                 </div>
                 <div class="panel-body">
                     <form method="POST" action="<?= $edit_url ?>">
+                        <?= self::csrfField() ?>
                         <div class="form-group">
                             <label for="title">Title *</label>
                             <input type="text" class="form-control" id="title" name="title" 
@@ -1032,10 +1100,14 @@ class Announcements extends Tool {
         
         $tool_home = $this->toolHome(self::ROUTE);
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($manage_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         $announcement_id = intval($id);
         
         $title = trim(U::get($_POST, 'title'));
@@ -1097,7 +1169,7 @@ class Announcements extends Tool {
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         
         // Get all announcements for this context with read counts (includes drafts and scheduled)
         $announcements = $PDOX->allRowsDie(
@@ -1183,6 +1255,7 @@ class Announcements extends Tool {
                                         <?php $manage_url = $tool_home . '/manage'; ?>
                                         <?php if ($pub === 0 || ($publish_at && strtotime($publish_at) > time())): ?>
                                         <form method="POST" action="<?= $manage_url ?>" style="display: inline-block;">
+                                            <?= self::csrfField() ?>
                                             <input type="hidden" name="action" value="publish">
                                             <input type="hidden" name="announcement_id" value="<?= htmlspecialchars($announcement['announcement_id']) ?>">
                                             <button type="submit" class="btn btn-sm btn-success">Publish</button>
@@ -1191,6 +1264,7 @@ class Announcements extends Tool {
                                         <form method="POST" action="<?= $manage_url ?>" 
                                               style="display: inline-block;" 
                                               onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                            <?= self::csrfField() ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="announcement_id" value="<?= htmlspecialchars($announcement['announcement_id']) ?>">
                                             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -1215,10 +1289,14 @@ class Announcements extends Tool {
         
         $tool_home = $this->toolHome(self::ROUTE);
         $manage_url = $tool_home . '/manage';
+        $csrf = self::requireCsrf($manage_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         
         // Handle delete action
         $action = U::get($_POST, 'action');

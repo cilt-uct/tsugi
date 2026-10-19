@@ -2,10 +2,7 @@
 require_once "../config.php";
 require_once "parse.php";
 require_once "configure_parse.php";
-require_once "util.php";
 
-use \Tsugi\Util\U;
-use \Tsugi\Core\Cache;
 use \Tsugi\Core\LTIX;
 
 // Sanity checks
@@ -26,6 +23,9 @@ $results_rows = $PDOX->allRowsDie("SELECT result_id, R.link_id AS link_id, R.use
             array(':LI'=>$LINK->id, ':CI'=>$CONTEXT->id));
 
 if (!empty($_POST)) {
+  if ( \Tsugi\Controllers\Tool::csrfRedirect(addSession('configure.php')) ) {
+      return;
+  }
 
   $gift = parse_configure_post();
 
@@ -46,10 +46,8 @@ if (!empty($_POST)) {
   return;
 }
 
-$files = get_quiz_files();
 $menu = new \Tsugi\UI\MenuSet();
 $menu->addLeft('Back', 'index.php');
-// if ( $files && count($files) > 1 ) $menu->addRight('Load Quiz', 'old_configure.php');
 $menu->addRight('Edit Raw GIFT', 'old_configure.php');
 
 // View
@@ -62,6 +60,7 @@ $OUTPUT->topNav($menu);
 $OUTPUT->flashMessages();
 ?>
 <form method="post">
+<?= \Tsugi\Controllers\Tool::csrfField() ?>
 <?php
 // If we found results rows that weren't empty earlier, show a warning and disable the entire form
 if ($results_rows) {

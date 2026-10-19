@@ -14,11 +14,9 @@ use \Tsugi\Util\DeepLinkRequest;
 use \Tsugi\Util\LTIConstants;
 use \Tsugi\UI\Output;
 use \Tsugi\Core\I18N;
-use \Tsugi\Core\Settings;
 use \Tsugi\Core\SQLDialect;
 use \Tsugi\Core\Keyset;
 use \Tsugi\OAuth\OAuthUtil;
-use \Tsugi\Crypt\SecureCookie;
 use \Tsugi\Crypt\AesOpenSSL;
 
 use \Firebase\JWT\JWT;
@@ -85,6 +83,7 @@ class LTIX {
         $PDOX->addPDOXMeta("{$p}lms_plugins", array("pk" => "plugin_id", "lk" => array("plugin_path")));
         $PDOX->addPDOXMeta("{$p}lti_key", array("pk" => "key_id", "lk" => array("key_sha256")));
         $PDOX->addPDOXMeta("{$p}lti_context", array("pk" => "context_id", "lk" => array("context_sha256", "key_id")));
+        $PDOX->addPDOXMeta("{$p}context_images", array("pk" => "context_id"));
         $PDOX->addPDOXMeta("{$p}lti_link", array("pk" => "link_id", "lk" => array("link_sha256", "context_id")));
         $PDOX->addPDOXMeta("{$p}lti_user", array("pk" => "user_id", "lk" => array("user_sha256", "subject_sha256", "key_id")));
         $PDOX->addPDOXMeta("{$p}lti_membership", array("pk" => "membership_id", "lk" => array("user_id", "context_id")));
@@ -647,6 +646,8 @@ class LTIX {
         // Put the information into the row variable and put row into session
         $_SESSION[TSUGI_SESSION_LTI] = $row;
         $_SESSION[TSUGI_SESSION_LTI_POST] = $request_data;
+        // Always set/clear so a file-based launch cannot keep a leftover sandbox manifest_id.
+        \Tsugi\Core\Manifest::rememberInSession($row['manifest_id'] ?? 0);
 
         if ( isset($_SERVER['HTTP_USER_AGENT']) ) {
             $_SESSION['HTTP_USER_AGENT'] = $_SERVER['HTTP_USER_AGENT'];
@@ -668,16 +669,13 @@ class LTIX {
         $browser_mark = self::getBrowserMark();
         $_SESSION['BROWSER_MARK'] = $browser_mark;
 
-        $_SESSION['CSRF_TOKEN'] = uniqid();
+        self::ensureCsrfToken(true);
 
         // Save this to make sure the user does not wander unless we launched from the root
         $scp = $CFG->getScriptPath();
         if ( U::isNotEmpty($scp) ) {
             $_SESSION['script_path'] = $CFG->getScriptPath();
         }
-
-        // Check if we can auto-login the system user
-        if ( Settings::linkGet('dologin', false) && isset($PDOX) && $PDOX !== false ) self::loginSecureCookie();
 
         $breadcrumb = 'Launch,';
         $breadcrumb .= isset($row['key_id']) ? $row['key_id'] : '';
@@ -1172,9 +1170,9 @@ class LTIX {
             c.lineitems_url AS lineitems_url, c.memberships_url AS memberships_url,
             c.lti13_lineitems AS lti13_lineitems, c.lti13_membership_url AS lti13_membership_url,
             c.lti13_context_groups_url AS lti13_context_groups_url,
-            c.settings AS context_settings,
+            c.settings AS context_settings, c.manifest_id AS manifest_id,
             l.link_id, l.path AS link_path, l.title AS link_title, l.settings AS link_settings, l.settings_url AS link_settings_url,
-            l.lti13_lineitem AS lti13_lineitem, l.settings AS link_settings,
+            l.lti13_lineitem AS lti13_lineitem, l.upward AS upward, l.settings AS link_settings,
             u.user_id, u.displayname AS user_displayname, u.email AS user_email, u.user_key AS user_key, u.image AS user_image,
             u.locale AS user_locale,
             u.subscribe AS subscribe, u.user_sha256 AS user_sha256,
@@ -1641,6 +1639,16 @@ class LTIX {
             $row['result_url'] = $post['result_url'];
             $actions[] = "=== Updated result id=".$row['result_id']." result_url=".$row['result_url'].
                 " sourcedid=".$row['sourcedid']." service_id=".$row['service_id'];
+            $sourcedid = $row['sourcedid'] === null ? '' : (string) $row['sourcedid'];
+            if ( (int) ($row['upward'] ?? 0) === 0
+                && (int) $row['link_id'] > 0 && (int) $row['service_id'] > 0 && $sourcedid !== '' ) {
+                $sql = "UPDATE {$p}lti_link
+                    SET upward = 1, updated_at = NOW()
+                    WHERE link_id = :link_id AND upward = 0";
+                $PDOX->queryDie($sql, array(':link_id' => $row['link_id']));
+                $row['upward'] = 1;
+                $actions[] = "=== Marked link id=".$row['link_id']." upward";
+            }
         }
 
         // Here we handle lti13_lineitem
@@ -1997,8 +2005,15 @@ class LTIX {
 
         $_SESSION['HEARTBEAT_COUNT'] = 0;
 
+        // Site URLs (buildmenu): leave leftover /courses/{id} sandbox, use Google-login course.
+        if ( class_exists('\Tsugi\Controllers\Courses') ) {
+            \Tsugi\Controllers\Courses::restoreSiteLoginContext();
+        }
+
         $LTI = $_SESSION[TSUGI_SESSION_LTI] ?? null;
+        self::rejectDeletedContext($PDOX, $LTI);
         if ( count($needed) == 0 && $LTI === null ) {
+            self::provisionReqScope(null);
             return $TSUGI_LAUNCH;
         }
 
@@ -2009,7 +2024,100 @@ class LTIX {
             }
         }
 
-        return self::buildLaunch($LTI);
+        $launch = self::buildLaunch($LTI);
+        self::provisionReqScope($LTI);
+        return $launch;
+    }
+
+    /**
+     * Fill ReqScope from the open session without changing launch globals.
+     *
+     * A cookieless tool session is read from the stored launch row, including
+     * the link when that row has one. A cookie site session is read from
+     * $_SESSION['id'] and $_SESSION['context_id']. The link is copied only when
+     * the stored launch names that same course. A missing user or course is
+     * stored as null.
+     *
+     * @param mixed $LTI
+     * @return void
+     */
+    private static function provisionReqScope($LTI) {
+        $origin = defined('COOKIE_SESSION') ? ReqScope::ORIGIN_SITE : ReqScope::ORIGIN_LTI;
+        $user_id = 0;
+        $context_id = 0;
+        $link_id = null;
+        $lti_user = 0;
+        $lti_context = 0;
+        $lti_link = 0;
+        if ( is_array($LTI) ) {
+            $lti_user = (int) ($LTI['user_id'] ?? 0);
+            $lti_context = (int) ($LTI['context_id'] ?? 0);
+            $lti_link = (int) ($LTI['link_id'] ?? 0);
+        }
+        if ( $origin === ReqScope::ORIGIN_LTI ) {
+            $user_id = $lti_user;
+            $context_id = $lti_context;
+            if ( $lti_link > 0 ) {
+                $link_id = $lti_link;
+            }
+        } else {
+            if ( isset($_SESSION['id']) ) {
+                $user_id = (int) $_SESSION['id'];
+            }
+            if ( isset($_SESSION['context_id']) ) {
+                $context_id = (int) $_SESSION['context_id'];
+            }
+            if ( $user_id < 1 && $lti_user > 0 ) {
+                $user_id = $lti_user;
+                $context_id = $lti_context;
+                if ( $lti_link > 0 ) {
+                    $link_id = $lti_link;
+                }
+            } else if ( $lti_link > 0 && $lti_context > 0 && $lti_context === $context_id ) {
+                $link_id = $lti_link;
+            }
+        }
+        $post = $_SESSION[TSUGI_SESSION_LTI_POST] ?? null;
+        ReqScope::noteLtiLaunch(is_array($LTI) ? $LTI : null, is_array($post) ? $post : null);
+        try {
+            ReqScope::provision($user_id, $context_id, $link_id, $origin);
+        } catch ( \Throwable $ex ) {
+            error_log('ReqScope provision failed: '.$ex->getMessage());
+        }
+    }
+
+    /**
+     * A session launch for a soft-deleted course must not be rebuilt.
+     *
+     * Login, CSRF, and the stored LTI return URL stay. Only the course is dropped.
+     *
+     * @param object $PDOX
+     * @param mixed $LTI
+     * @return void
+     */
+    private static function rejectDeletedContext($PDOX, $LTI) {
+        global $CFG;
+
+        if ( ! is_array($LTI) ) {
+            return;
+        }
+        $context_id = (int) ($LTI['context_id'] ?? 0);
+        if ( $context_id < 1 || ! is_object($PDOX) ) {
+            return;
+        }
+        $row = $PDOX->rowDie(
+            "SELECT context_id FROM {$CFG->dbprefix}lti_context
+             WHERE context_id = :CID AND (deleted IS NULL OR deleted = 0)",
+            array(':CID' => $context_id)
+        );
+        if ( is_array($row) ) {
+            return;
+        }
+        if ( class_exists('\Tsugi\Controllers\Courses') ) {
+            \Tsugi\Controllers\Courses::dropActiveContext($context_id);
+        }
+        self::send403();
+        self::abort_with_error_log('Course has been deleted');
     }
 
     public static function buildLaunch($LTI) {
@@ -2032,15 +2140,19 @@ class LTIX {
             $USER->launch = $TSUGI_LAUNCH;
             $USER->id = $LTI['user_id'];
             $USER->key = $LTI['user_key'];
-            if (isset($LTI['user_email']) ) $USER->email = $LTI['user_email'];
-            if (isset($LTI['user_displayname']) ) {
-                $USER->displayname = $LTI['user_displayname'];
+            $email = $LTI['user_email'] ?? ($LTI['email'] ?? null);
+            if ( $email !== null ) $USER->email = $email;
+            $display = $LTI['user_displayname'] ?? ($LTI['displayname'] ?? null);
+            if ( $display !== null ) {
+                $USER->displayname = $display;
                 $pieces = explode(' ',$USER->displayname);
                 if ( count($pieces) > 0 ) $USER->firstname = $pieces[0];
                 if ( count($pieces) > 1 ) $USER->lastname = $pieces[count($pieces)-1];
             }
-            if (isset($LTI['user_image']) ) $USER->image = $LTI['user_image'];
-            if (isset($LTI['user_locale']) ) $USER->locale = $LTI['user_locale'];
+            $image = $LTI['user_image'] ?? ($LTI['image'] ?? null);
+            if ( $image !== null ) $USER->image = $image;
+            $locale = $LTI['user_locale'] ?? ($LTI['locale'] ?? null);
+            if ( $locale ) $USER->locale = $locale;
             if ( $USER->locale ) {
                 I18N::setLocale($USER->locale);
             }
@@ -2110,6 +2222,10 @@ class LTIX {
             if (isset($LTI['link_title']) ) $LINK->title = $LTI['link_title'];
             if (isset($LTI['link_count']) ) $LINK->activity = $LTI['link_count']+0;
             if (isset($LTI['link_user_count']) ) $LINK->user_activity = $LTI['link_user_count']+0;
+            if (isset($LTI['result_id']) ) $LINK->result_id = $LTI['result_id'];
+            if ( isset($LTI['grade']) && $LTI['grade'] !== null && $LTI['grade'] !== false && $LTI['grade'] !== '' ) {
+                $LINK->grade = $LTI['grade'];
+            }
 
             // Check to see if we are supposed to use SHA256 for this link
             $settings_method = $LINK->settingsGet('oauth_signature_method');
@@ -2577,6 +2693,21 @@ class LTIX {
         return isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'],$CFG->wwwroot) === 0 ;
     }
 
+    /**
+     * Session CSRF token for same-origin HTML forms (not LTI launches or signed webhooks).
+     *
+     * @param bool $rotate When true, always mint a new token (login / LTI launch).
+     * @return string
+     */
+    public static function ensureCsrfToken($rotate = false) {
+        $token = $_SESSION['CSRF_TOKEN'] ?? '';
+        if ( $rotate || ! is_string($token) || $token === '' ) {
+            $token = bin2hex(random_bytes(16));
+            $_SESSION['CSRF_TOKEN'] = $token;
+        }
+        return $token;
+    }
+
     // Returns true for a good CSRF and false if we could not verify it
     private static function checkCSRF() {
         global $CFG;
@@ -2587,122 +2718,6 @@ class LTIX {
         if ( isset($headers['x-csrf-token']) && $token == $headers['x-csrf-token'] ) return true;
         if ( isset($headers['x-csrftoken']) && $token == $headers['x-csrftoken'] ) return true;
         return false;
-    }
-
-    // Check the secure cookie and set login information appropriately
-    public static function loginSecureCookie() {
-        global $CFG, $PDOX;
-        if ( empty($CFG->enable_secure_cookie_login) ) {
-            return;
-        }
-        $pieces = false;
-        $id = false;
-
-        // Only do this if we are not already logged in...
-        if ( !empty($_SESSION['id']) || !isset($_COOKIE[$CFG->cookiename]) ||
-             !isset($CFG->cookiepad) || $CFG->cookiepad === false) {
-            return;
-        }
-
-        $ct = $_COOKIE[$CFG->cookiename];
-        // error_log("Cookie: $ct \n");
-        $pieces = SecureCookie::extract($ct);
-        if ( $pieces === false || count($pieces) != 3) {
-            error_log('Decrypt fail:'.$ct);
-            SecureCookie::delete();
-            return;
-        }
-
-        // print_r($pieces); die();
-
-        // Convert to an integer and check valid
-        $user_id = is_numeric($pieces[0])? $pieces[0] + 0 : 0;
-        $userEmail = $pieces[1];
-        $context_id = is_numeric($pieces[2]) ? $pieces[2] + 0 : 0;
-        if ( $user_id < 1 || $context_id < 1 ) {
-            $user_id = false;
-            error_log('Decrypt bad ID:'.$ct);
-            error_log(\Tsugi\UI\Output::safe_var_dump($pieces));
-            SecureCookie::delete();
-            return;
-        }
-
-        // The profile table might not even exist yet.
-        // See also login.php line 339 (ish)
-        $sql = "SELECT P.profile_id AS profile_id,
-                U.user_id AS user_id, U.user_key AS user_key,
-                U.displayname AS displayname, U.email AS email, U.image AS user_image,
-                P.displayname AS p_displayname, P.email AS p_email, P.image AS p_user_image,
-                M.membership_id AS membership_id, M.role AS role, C.context_key, C.context_id AS context_id,
-                C.title AS context_title, C.title AS resource_title,
-                K.key_id, K.key_key, K.secret, K.new_secret,
-                NULL AS nonce
-                FROM {$CFG->dbprefix}profile AS P
-                LEFT JOIN {$CFG->dbprefix}lti_user AS U
-                ON P.profile_id = U.profile_id AND user_sha256 = profile_sha256 AND
-                    P.key_id = U.key_id
-                LEFT JOIN {$CFG->dbprefix}lti_key AS K
-                    ON U.key_id = K.key_id
-                LEFT JOIN {$CFG->dbprefix}lti_context AS C
-                    ON U.key_id = C.key_id
-                LEFT JOIN {$CFG->dbprefix}lti_membership AS M
-                    ON U.user_id = M.user_id AND C.context_id = M.context_id
-                WHERE P.email = :EMAIL AND U.email = :EMAIL
-                    AND U.user_id = :UID AND C.context_id = :CID LIMIT 1";
-
-        $stmt = $PDOX->queryReturnError($sql,
-            array('EMAIL' => $userEmail, ":UID" => $user_id, ":CID" => $context_id)
-        );
-
-        // print_r($stmt); die();
-        if ( $stmt->success === false ) return;
-
-        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-        // print_r($row); die();
-        if ( $row === false ) {
-            error_log("Unable to load user_id=$user_id EMAIL=$userEmail");
-            SecureCookie::delete();
-            return;
-        }
-
-        // Coalesce from profile to user where there is missing data
-        if ( U::isEmpty($row['user_image']) ) $row['user_image'] = $row['p_user_image'];
-        if ( U::isEmpty($row['email']) ) $row['email'] = $row['p_email'];
-        if ( U::isEmpty($row['displayname']) ) $row['displayname'] = $row['p_displayname'];
-        unset($row['p_user_image']);
-        unset($row['p_email']);
-        unset($row['p_displayname']);
-
-        $_SESSION['id'] = $row['user_id'];
-        $_SESSION['email'] = $row['email'];
-        $_SESSION['displayname'] = $row['displayname'];
-        $_SESSION['profile_id'] = $row['profile_id'];
-        $_SESSION['user_key'] = $row['user_key'];
-        $_SESSION['avatar'] = $row['user_image'];
-        if ( isset($row['key_key']) ) {
-            $_SESSION['oauth_consumer_key'] = $row['key_key'];
-        }
-        if ( $row['role'] !== null ) {
-            $_SESSION['context_key'] = $row['context_key'];
-            $_SESSION['context_id'] = $row['context_id'];
-        }
-
-        if ( isset($row['secret']) ) {
-            $row['secret'] = self::encrypt_secret($row['secret']);
-            $_SESSION['secret'] = $row['secret'];
-        }
-        if ( isset($row['new_secret']) ) {
-            $row['new_secret'] = self::encrypt_secret($row['new_secret']);
-        }
-
-        $_SESSION[TSUGI_SESSION_LTI] = $row;
-
-        self::noteLoggedIn($row);
-
-        error_log('Autologin:'.$row['user_id'].','.$row['displayname'].','.
-            $row['email'].','.$row['profile_id']);
-
     }
 
     /**

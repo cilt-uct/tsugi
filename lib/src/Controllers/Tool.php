@@ -4,12 +4,20 @@ namespace Tsugi\Controllers;
 
 
 use \Tsugi\Util\U;
+use Tsugi\Util\CCFileBase;
 use Tsugi\Util\LTI;
 use Tsugi\Core\LTIX;
 use Tsugi\Core\Membership;
 use Tsugi\Grades\GradeUtil;
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\JsonResponse;
+
+use Tsugi\Core\Manifest;
+use Tsugi\Core\ReqScope;
+use Tsugi\Services\Outbound\Lti11TestLaunch;
+use Tsugi\Services\Outbound\Lti13TestLaunch;
+use Tsugi\Services\Outbound\LtiContentService;
 
 /**
  * Base class for LMS tool controllers
@@ -55,6 +63,144 @@ abstract class Tool {
     }
 
     /**
+     * Hidden CSRF_TOKEN input for cookie-session HTML forms that POST to Tsugi.
+     *
+     * Mints a session token if the current session does not have one yet
+     * (Google site login historically did not set CSRF_TOKEN; LTI launch does).
+     * Do not use this on LTI launches or signed webhooks.
+     *
+     * @return string
+     */
+    public static function csrfField() {
+        $token = LTIX::ensureCsrfToken();
+        return '<input type="hidden" name="CSRF_TOKEN" value="'.htmlspecialchars($token).'">';
+    }
+
+    /**
+     * True when POST CSRF_TOKEN (or X-CSRF-TOKEN) matches the session token,
+     * or the browser marks this POST as same-origin.
+     *
+     * Cookie-session pages (admin unlock) can lose the GET session cookie on the
+     * following POST; Chrome still sends Sec-Fetch-Site/Origin, which is enough
+     * to reject cross-site CSRF. LTI launches must not use this helper.
+     *
+     * @return bool
+     */
+    public static function csrfOk() {
+        $token = $_SESSION['CSRF_TOKEN'] ?? '';
+        if ( is_string($token) && $token !== '' ) {
+            $posted = U::get($_POST, 'CSRF_TOKEN', '');
+            if ( is_string($posted) && $posted !== '' && hash_equals($token, $posted) ) {
+                return true;
+            }
+            $header = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_SERVER['HTTP_X_CSRFTOKEN'] ?? '';
+            if ( is_string($header) && $header !== '' && hash_equals($token, $header) ) {
+                return true;
+            }
+        }
+        return self::sameOriginPost();
+    }
+
+    /**
+     * True when this request is a same-origin navigation (not a cross-site CSRF POST).
+     *
+     * @return bool
+     */
+    public static function sameOriginPost() {
+        global $CFG;
+        $site = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '';
+        if ( is_string($site) && $site === 'same-origin' ) {
+            return true;
+        }
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        if ( ! is_string($origin) || $origin === '' ) {
+            return false;
+        }
+        foreach ( array($CFG->wwwroot ?? '', $CFG->apphome ?? '') as $base ) {
+            if ( ! is_string($base) || $base === '' ) {
+                continue;
+            }
+            $parts = parse_url($base);
+            if ( ! is_array($parts) || empty($parts['host']) ) {
+                continue;
+            }
+            $scheme = $parts['scheme'] ?? 'http';
+            $expected = $scheme.'://'.$parts['host'];
+            $port = isset($parts['port']) ? (int) $parts['port'] : 0;
+            $default_port = ($scheme === 'https') ? 443 : 80;
+            if ( $port > 0 && $port !== $default_port ) {
+                $expected .= ':'.$port;
+            }
+            if ( hash_equals($expected, $origin) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when the CSRF token is valid (fail closed). Flashes on failure.
+     *
+     * @return bool
+     */
+    public static function checkCsrf() {
+        if ( self::csrfOk() ) {
+            return true;
+        }
+        U::flashError('Missing or invalid CSRF token');
+        return false;
+    }
+
+    /**
+     * Redirect back to $redirect when the CSRF token is missing or invalid.
+     *
+     * @param string $redirect
+     * @return RedirectResponse|null Null when the token is valid.
+     */
+    public static function requireCsrf($redirect) {
+        if ( self::checkCsrf() ) {
+            return null;
+        }
+        return new RedirectResponse($redirect);
+    }
+
+    /**
+     * For classic PHP tools that redirect with header('Location').
+     *
+     * @param string $url Already session-bearing Location target.
+     * @return bool True when the caller should return (token was bad).
+     */
+    public static function csrfRedirect($url) {
+        if ( self::csrfOk() ) {
+            return false;
+        }
+        U::flashError('Missing or invalid CSRF token');
+        header('Location: '.$url);
+        return true;
+    }
+
+    /**
+     * JSON 403 when the CSRF token is missing or invalid (no flash).
+     *
+     * @param array|null $payload
+     * @return JsonResponse|null Null when the token is valid.
+     */
+    public static function requireCsrfJson($payload = null) {
+        if ( self::csrfOk() ) {
+            return null;
+        }
+        if ( $payload === null ) {
+            $payload = array(
+                'success' => false,
+                'status' => 'error',
+                'error' => 'Missing or invalid CSRF token',
+                'detail' => 'Missing or invalid CSRF token',
+            );
+        }
+        return new JsonResponse($payload, 403);
+    }
+
+    /**
      * Require LTI consumer session fields needed to sign an outbound LTI 1.1 launch.
      *
      * @return RedirectResponse|null Null if session is sufficient; redirect with flash otherwise.
@@ -69,11 +215,35 @@ abstract class Tool {
     }
 
     /**
+     * Course title for an outbound LTI launch.
+     *
+     * Precedence: $_SESSION['context_title'], then the LTI session
+     * context_title, then $CFG->context_title.
+     *
+     * Sending the site default here used to overwrite lti_context.title via adjustData.
+     */
+    public static function outboundContextTitle() {
+        global $CFG;
+        $title = U::get($_SESSION, 'context_title');
+        if ( is_string($title) && trim($title) !== '' ) {
+            return $title;
+        }
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        if ( isset($_SESSION[$ltiKey]['context_title']) ) {
+            $title = $_SESSION[$ltiKey]['context_title'];
+            if ( is_string($title) && trim($title) !== '' ) {
+                return $title;
+            }
+        }
+        return isset($CFG->context_title) ? $CFG->context_title : '';
+    }
+
+    /**
      * Build and print the auto-submit HTML for an LTI 1.1 basic-lti-launch-request to a tool URL
-     * described by a lessons.json / lessons-items item (same shape as {@see \Tsugi\UI\Lessons::getLtiByRlid()}).
+     * described by a lessons.json / lessons-items item (same shape as {@see \Tsugi\Services\Lessons\LessonsService::getLtiByRlid()}).
      *
      * @param Application $app
-     * @param object $lti Must have resource_link_id, launch; optional title, custom
+     * @param object $lti Must have resource_link_id; launch is required for LTI tools (discussions POST to {wwwroot}/tool/tdiscus)
      * @param string $launch_presentation_return_url Return URL after the external tool
      * @param string $redirect_path_on_error Session addSession path for flash+redirect on failure
      * @param string $fallback_resource_link_title Used when $lti->title is missing
@@ -104,6 +274,42 @@ abstract class Tool {
             ? $lti->title
             : $fallback_resource_link_title;
 
+        $contentId = isset($lti->content_id) ? (int) $lti->content_id : 0;
+        if ( $contentId > 0 ) {
+            $row = \Tsugi\Services\Outbound\LtiContentService::find(ReqScope::currentContextIdLegacy(), $contentId);
+            if ( $row === null ) {
+                $app->tsugiFlashError(__('This tool is not provisioned.'));
+                return new RedirectResponse($redirect_path_on_error);
+            }
+            return self::sendLti11LaunchFromContent(
+                $app,
+                $row,
+                $launch_presentation_return_url,
+                $redirect_path_on_error,
+                $grade_refresh_session_key
+            );
+        }
+
+        $toolDeploymentId = isset($lti->tool_deployment_id) ? (int) $lti->tool_deployment_id : 0;
+        if ( $toolDeploymentId > 0 ) {
+            return self::sendCourseToolResourceLink(
+                $app,
+                $lti,
+                $toolDeploymentId,
+                $resource_link_title,
+                $launch_presentation_return_url,
+                $redirect_path_on_error
+            );
+        }
+
+        $launchUrl = \Tsugi\Services\Lessons\LessonsNormalize::launchUrlForItem($lti);
+        $builtInDiscussion = \Tsugi\Services\Lessons\LessonsNormalize::typeOf($lti) === \Tsugi\Services\Lessons\LessonsNormalize::TYPE_DISCUSSION
+            || \Tsugi\Services\Lessons\LessonsNormalize::isBuiltInDiscussionLaunch($launchUrl);
+        if ( Manifest::resolvedId() > 0 && ! $builtInDiscussion ) {
+            $app->tsugiFlashError(__('This tool is not provisioned.'));
+            return new RedirectResponse($redirect_path_on_error);
+        }
+
         $key = isset($_SESSION['oauth_consumer_key']) ? $_SESSION['oauth_consumer_key'] : false;
         $secret = false;
         if ( isset($_SESSION['secret']) ) {
@@ -118,14 +324,20 @@ abstract class Tool {
             'tool_consumer_info_product_family_code' => 'tsugi',
             'tool_consumer_info_version' => '1.1',
             'context_id' => $_SESSION['context_key'],
-            'context_label' => $CFG->context_title,
-            'context_title' => $CFG->context_title,
+            'context_label' => self::outboundContextTitle(),
+            'context_title' => self::outboundContextTitle(),
             'user_id' => $_SESSION['user_key'],
-            'lis_person_name_full' => $_SESSION['displayname'],
-            'lis_person_contact_email_primary' => $_SESSION['email'],
             'roles' => 'Learner',
             'launch_presentation_return_url' => $launch_presentation_return_url,
         );
+        $sendName = ! property_exists($lti, 'send_name') || $lti->send_name;
+        $sendEmail = ! property_exists($lti, 'send_email') || $lti->send_email;
+        if ( $sendName && isset($_SESSION['displayname']) && $_SESSION['displayname'] !== '' ) {
+            $parms['lis_person_name_full'] = $_SESSION['displayname'];
+        }
+        if ( $sendEmail && isset($_SESSION['email']) && $_SESSION['email'] !== '' ) {
+            $parms['lis_person_contact_email_primary'] = $_SESSION['email'];
+        }
         if ( isset($_SESSION['avatar']) ) {
             $parms['user_image'] = $_SESSION['avatar'];
         }
@@ -149,7 +361,11 @@ abstract class Tool {
         $form_id = 'tsugi_form_id_'.bin2hex(openssl_random_pseudo_bytes(4));
         $parms['ext_lti_form_id'] = $form_id;
 
-        $endpoint = \Tsugi\UI\Lessons::expandLink($lti->launch);
+        $endpoint = \Tsugi\Services\Lessons\LessonsNormalize::launchUrlForItem($lti);
+        \Tsugi\Services\Lessons\LessonsService::absolute_url_ref($endpoint);
+        if ( isset($lti->resource_link_id) && $lti->resource_link_id !== '' && $lti->resource_link_id !== null ) {
+            $endpoint = U::add_url_parm($endpoint, 'inherit', $lti->resource_link_id);
+        }
         $parms = LTI::signParameters($parms, $endpoint, 'POST', $key, $secret,
             'Finish Launch', $CFG->wwwroot, $CFG->servicename);
 
@@ -160,38 +376,311 @@ abstract class Tool {
     }
 
     /**
-     * Get the base path for this tool (e.g., '/py4e/pages' or '/py4e/12345/pages')
-     * 
-     * This method determines where the tool is actually mounted by examining
-     * the current request URI and finding the tool's route within it.
-     * 
+     * Lesson item that points at a deployment. The item is one resource link.
+     *
+     * @param Application $app
+     * @param object $lti
+     * @param int $toolDeploymentId
+     * @param string $resource_link_title
+     * @param string $launch_presentation_return_url
+     * @param string $redirect_path_on_error
+     * @return RedirectResponse|string
+     */
+    private static function sendCourseToolResourceLink(
+        Application $app,
+        $lti,
+        $toolDeploymentId,
+        $resource_link_title,
+        $launch_presentation_return_url,
+        $redirect_path_on_error
+    ) {
+        global $CFG;
+        $contextId = ReqScope::currentContextIdLegacy();
+        $userId = ReqScope::loggedInUserIdLegacy();
+        $userKey = isset($_SESSION['user_key']) ? trim((string) $_SESSION['user_key']) : '';
+        $resourceLinkId = isset($lti->resource_link_id) ? trim((string) $lti->resource_link_id) : '';
+        $sendName = property_exists($lti, 'send_name') ? (bool) $lti->send_name : null;
+        $sendEmail = property_exists($lti, 'send_email') ? (bool) $lti->send_email : null;
+        $sendGrade = property_exists($lti, 'send_grade') ? (bool) $lti->send_grade : null;
+        $launchUrl = \Tsugi\Services\Lessons\LessonsNormalize::launchUrlForItem($lti);
+        if ( $launchUrl !== '' ) {
+            \Tsugi\Services\Lessons\LessonsService::absolute_url_ref($launchUrl);
+        }
+        $lessonTarget = isset($lti->target) ? (string) $lti->target : '';
+        $elementId = Lti11TestLaunch::embedsInline($lessonTarget)
+            ? Lti11TestLaunch::parentFrameId($resourceLinkId)
+            : '';
+        try {
+            $launch = Lti11TestLaunch::courseResourceLink(
+                $contextId,
+                $toolDeploymentId,
+                $userId,
+                $resourceLinkId,
+                $resource_link_title,
+                $launch_presentation_return_url,
+                self::outboundLaunchRole(),
+                $userKey,
+                $sendName,
+                $sendEmail,
+                $launchUrl,
+                $lessonTarget !== '' ? $lessonTarget : 'iframe',
+                $elementId,
+                $sendGrade
+            );
+        } catch ( \InvalidArgumentException $ex ) {
+            $app->tsugiFlashError($ex->getMessage());
+            return new RedirectResponse($redirect_path_on_error);
+        }
+        $debug = $CFG->getExtension('launch_debug', false);
+        print(LTI::postLaunchHTML($launch['parameters'], $launch['endpoint'], $debug));
+        return '';
+    }
+
+    /**
+     * Sign a lesson launch from an lti_content row.
+     *
+     * @param Application $app
+     * @param array<string, mixed> $row
+     * @param string $launch_presentation_return_url
+     * @param string $redirect_path_on_error
+     * @param string|null $grade_refresh_session_key
+     * @return RedirectResponse|string
+     */
+    public static function sendLti11LaunchFromContent(
+        Application $app,
+        array $row,
+        $launch_presentation_return_url,
+        $redirect_path_on_error,
+        $grade_refresh_session_key = null
+    ) {
+        $sessionRedirect = self::requireOutboundLti11LaunchSession($app, $redirect_path_on_error);
+        if ( $sessionRedirect !== null ) {
+            return $sessionRedirect;
+        }
+        if ( $grade_refresh_session_key !== null ) {
+            GradeUtil::invalidateGradesCurrentUser();
+            $_SESSION[$grade_refresh_session_key] = 1;
+        }
+        global $CFG;
+        $target = isset($row['target']) ? (string) $row['target'] : 'window';
+        if ( $target === 'inline' ) {
+            $documentTarget = '';
+            $embed = true;
+        } else if ( $target === 'iframe' ) {
+            $documentTarget = 'iframe';
+            $embed = false;
+        } else {
+            $documentTarget = 'window';
+            $embed = false;
+        }
+        $resourceLinkId = isset($row['resource_link_id']) ? (string) $row['resource_link_id'] : '';
+        $sendName = array_key_exists('send_name', $row) && $row['send_name'] !== null
+            ? ((int) $row['send_name']) === 1
+            : null;
+        $sendEmail = array_key_exists('send_email', $row) && $row['send_email'] !== null
+            ? ((int) $row['send_email']) === 1
+            : null;
+        $sendGrade = array_key_exists('send_grade', $row) && $row['send_grade'] !== null
+            ? ((int) $row['send_grade']) === 1
+            : null;
+        $userKey = isset($_SESSION['user_key']) ? trim((string) $_SESSION['user_key']) : '';
+        $contextId = ReqScope::currentContextIdLegacy();
+        $launchArgs = array(
+            $contextId,
+            (int) $row['tool_deployment_id'],
+            ReqScope::loggedInUserIdLegacy(),
+            $resourceLinkId,
+            isset($row['title']) ? (string) $row['title'] : '',
+            $launch_presentation_return_url,
+            self::outboundLaunchRole(),
+            $userKey,
+            $sendName,
+            $sendEmail,
+            isset($row['launch_url']) ? (string) $row['launch_url'] : '',
+            $documentTarget,
+            $embed ? Lti11TestLaunch::parentFrameId($resourceLinkId) : '',
+            $sendGrade,
+            empty($row['link_id']),
+        );
+        try {
+            $version = LtiContentService::version($contextId, (int) $row['tool_deployment_id']);
+            if ( $version === '1.3' ) {
+                $launch = Lti13TestLaunch::courseResourceLink(...$launchArgs);
+                $protocol = '1.3';
+            } else {
+                $launch = Lti11TestLaunch::courseResourceLink(...$launchArgs);
+                $protocol = '1.1';
+            }
+        } catch ( \InvalidArgumentException $ex ) {
+            $app->tsugiFlashError($ex->getMessage());
+            return new RedirectResponse($redirect_path_on_error);
+        }
+        $debug = $CFG->getExtension('launch_debug', false);
+        print(LTI::postLaunchHTML($launch['parameters'], $launch['endpoint'], $debug, false, false, null, $protocol));
+        return '';
+    }
+
+    /**
+     * Instructor when this person teaches the current course. Otherwise Learner.
+     *
+     * @return string
+     */
+    private static function outboundLaunchRole() {
+        if ( isset($_SESSION['admin']) && $_SESSION['admin'] == 'yes' ) {
+            return 'Instructor';
+        }
+        $contextId = ReqScope::currentContextIdLegacy();
+        $userId = ReqScope::loggedInUserIdLegacy();
+        if ( $contextId && $userId ) {
+            $membership = Membership::ensureInSession($contextId, $userId);
+            if ( $membership && $membership->isInstructor() ) {
+                return 'Instructor';
+            }
+        }
+        return 'Learner';
+    }
+
+    /**
+     * Get the base path for this tool (e.g., '/py4e/pages' or '/courses/2/pages')
+     *
+     * Looks at the current request URI and finds the tool's route within it,
+     * so nested mounts keep generating nested URLs.
+     *
      * @param string $route The route constant for this tool (e.g., '/pages', '/announcements')
      * @return string The base path including the route (e.g., '/py4e/pages')
      */
     protected function toolHome($route) {
-        // Get the current request URI
-        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
-        
-        // Remove query string if present
-        $requestUri = strtok($requestUri, '?');
-        
-        // Find where the route appears in the URI
+        return self::determineToolHome($route);
+    }
+
+    /**
+     * Static form of {@see toolHome()} for launch methods that have no instance.
+     *
+     * On a course-mounted page, a sibling tool keeps `/courses/{id}` even when
+     * `$route` is not in this REQUEST_URI (Lessons → Quiz1).
+     *
+     * @param string $route The route constant (e.g., '/discussions')
+     * @return string The mounted tool path (e.g., '/courses/2/discussions')
+     */
+    public static function determineToolHome($route) {
+        $requestUri = self::requestPath();
         $routePos = strpos($requestUri, $route);
-        
         if ($routePos !== false) {
-            // Return everything up to and including the route
             return substr($requestUri, 0, $routePos + strlen($route));
         }
-        
-        // Fallback: if route not found, try using rest_path
+
+        if ( preg_match('#^(.*?/courses/\d+)(?:/|$)#', $requestUri, $m) ) {
+            return $m[1] . $route;
+        }
+
         $path = U::rest_path();
         if ($path && isset($path->parent)) {
-            return $path->parent . $route;
+            $parent = rtrim((string) $path->parent, '/');
+            return $parent . $route;
         }
-        
-        // Last resort: use apphome (for backward compatibility)
+
         global $CFG;
-        return isset($CFG->apphome) ? $CFG->apphome . $route : $route;
+        if ( isset($CFG->apphome) && is_string($CFG->apphome) ) {
+            $home = rtrim(trim($CFG->apphome), '/');
+            if ( $home !== '' ) {
+                return $home . $route;
+            }
+        }
+        return $route;
+    }
+
+    /**
+     * REQUEST_URI path with query stripped and a single leading slash.
+     *
+     * `//courses` is a protocol-relative URL (host "courses"). Apache/proxies
+     * sometimes leave a doubled slash in REQUEST_URI; collapse it so tool
+     * links stay `/courses/123` instead of `//courses/123`.
+     *
+     * @return string
+     */
+    public static function requestPath() {
+        $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        if ( ! is_string($uri) ) {
+            return '';
+        }
+        $q = strpos($uri, '?');
+        if ( $q !== false ) {
+            $uri = substr($uri, 0, $q);
+        }
+        if ( $uri === '' ) {
+            return '';
+        }
+        if ( preg_match('#^https?://#i', $uri) ) {
+            return $uri;
+        }
+        if ( str_starts_with($uri, '//') ) {
+            return '/' . ltrim($uri, '/');
+        }
+        return $uri;
+    }
+
+    /**
+     * True when this request is /courses/{id}{route}... (not the unprefixed tool URL).
+     *
+     * Nested course dispatch rewrites pathInfo to $route but leaves
+     * REQUEST_URI unchanged, so this is the reliable split between a
+     * global tool URL and a course-mounted one. Do not use
+     * ReqScope::currentContextId() here — a global visit can still have a course
+     * in session.
+     *
+     * Uses static::ROUTE unless $route is passed. Controllers without
+     * ROUTE return false unless $route is given.
+     *
+     * @param string|null $route Tool path including leading slash (e.g. '/settings')
+     */
+    public static function isCourseRoute($route = null) {
+        if ( $route === null ) {
+            if ( ! defined(static::class.'::ROUTE') ) {
+                return false;
+            }
+            $route = static::ROUTE;
+        }
+        $route = (string) $route;
+        if ( $route === '' ) {
+            return false;
+        }
+        $path = self::requestPath();
+        return (bool) preg_match('#/courses/\d+'.preg_quote($route, '#').'(?:/|$)#', $path);
+    }
+
+    /**
+     * Bounce a course-mounted URL to a global (unprefixed) URL.
+     *
+     * @param string $globalUrl Already session-bearing when the caller wants a session cookie
+     * @return RedirectResponse|null
+     */
+    protected function requireGlobalRoute($globalUrl) {
+        if ( ! static::isCourseRoute() ) {
+            return null;
+        }
+        return new RedirectResponse($globalUrl);
+    }
+
+    /**
+     * Join a mounted tool home and a suffix without producing `//path`.
+     *
+     * @param string $home toolHome() result
+     * @param string $suffix id or extra path (leading slash optional)
+     * @return string
+     */
+    public static function joinToolHome($home, $suffix) {
+        $home = rtrim((string) $home, '/');
+        if ( $home !== '' && ! preg_match('#^https?://#i', $home) && str_starts_with($home, '//') ) {
+            $home = '/' . ltrim($home, '/');
+        }
+        $suffix = ltrim((string) $suffix, '/');
+        if ( $home === '' ) {
+            return '/' . $suffix;
+        }
+        if ( $suffix === '' ) {
+            return $home;
+        }
+        return $home . '/' . $suffix;
     }
 
     /**
@@ -250,6 +739,63 @@ abstract class Tool {
     }
 
     /**
+     * Current course base URL for Common Cartridge file-base rewriting.
+     *
+     * Example: https://host/py4e or https://host/courses/2
+     *
+     * @param string $route The route constant for this tool (e.g. '/pages')
+     * @return string Course base with no trailing slash
+     */
+    protected function courseFileBaseUrl($route) {
+        global $CFG;
+        $home = '';
+        if ( isset($CFG->apphome) && is_string($CFG->apphome) && trim($CFG->apphome) !== '' ) {
+            $home = $CFG->apphome;
+        } else if ( isset($CFG->wwwroot) && is_string($CFG->wwwroot) && trim($CFG->wwwroot) !== '' ) {
+            $home = $CFG->wwwroot;
+        }
+        return CCFileBase::courseBaseUrl($this->toolParent($route), $home);
+    }
+
+    /**
+     * First path segments under the course base that are course content.
+     *
+     * Passed into {@see CCFileBase} so that util does not know about controllers.
+     * Login, logout, admin, profile, and similar non-content routes are omitted.
+     *
+     * @return string[]
+     */
+    public static function courseLocalPrefixes() {
+        $routes = array(
+            Announcements::ROUTE,
+            Assignments::ROUTE,
+            Badges::ROUTE,
+            Calendar::ROUTE,
+            Discussions::ROUTE,
+            Files::ROUTE,
+            Grades::ROUTE,
+            Home::ROUTE,
+            Labs::ROUTE,
+            LaunchController::ROUTE,
+            Lessons::ROUTE,
+            Map::ROUTE,
+            Pages::ROUTE,
+            Quiz1::ROUTE,
+            StaticFiles::ROUTE,
+            Topics::ROUTE,
+            '/lessons_launch',
+        );
+        $out = array();
+        foreach ( $routes as $route ) {
+            $seg = ltrim((string) $route, '/');
+            if ( $seg !== '' ) {
+                $out[] = $seg;
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Get link attributes for external vs same-site URLs
      *
      * Same-site links open in the current tab; external links get target="_blank"
@@ -287,8 +833,7 @@ abstract class Tool {
         global $CFG;
         
         // Get the current request URI
-        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
-        $requestUri = strtok($requestUri, '?');
+        $requestUri = self::requestPath();
         
         if ($route !== null) {
             // If route provided, find it in the URI and extract parent
@@ -301,7 +846,7 @@ abstract class Tool {
             }
         } else {
             // Try to detect by looking for common controller routes
-            $controllerRoutes = ['/announcements', '/pages', '/badges', '/grades', '/lessons', '/launch', '/assignments', '/map', '/login', '/logout'];
+            $controllerRoutes = ['/gclass', '/announcements', '/pages', '/badges', '/grades', '/home', '/lessons', '/discussions', '/topics', '/launch', '/assignments', '/files', '/map', '/login', '/logout', '/quiz1'];
             foreach ($controllerRoutes as $testRoute) {
                 $routePos = strpos($requestUri, $testRoute);
                 if ($routePos !== false) {
@@ -331,11 +876,11 @@ abstract class Tool {
      * Check if the current logged-in user is an instructor/admin for the current context
      * 
      * This method checks:
-     * 1. If user is site admin (via isAdmin())
+     * 1. If user is site admin (passphrase session)
      * 2. If user has instructor role or role_override in lti_membership table
      * 3. If user owns the context or its key
      * 
-     * Reads context via U::currentContextId(); user id via U::loggedInUserId() (session or globals).
+     * Reads context via ReqScope::currentContextId(); user id via ReqScope::loggedInUserId() (session or globals).
      * Delegates to Membership::ensureInSession(), which caches a Membership instance in
      * context-scoped session cache via Membership::ensureInSession() (single lti_membership SELECT when missing;
      * ownership query only when role must be resolved).
@@ -344,8 +889,8 @@ abstract class Tool {
      */
     protected function isInstructor() {
         // Context from session or $CONTEXT; user id from session or $USER (see lms_lib.php)
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
 
         // If context_id or user_id missing, user is not an instructor
         if ( ! $context_id || ! $user_id ) {
@@ -370,8 +915,8 @@ abstract class Tool {
      * @return bool
      */
     protected function viewDueDates() {
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
         if ( ! $context_id || ! $user_id ) {
             return false;
         }
@@ -397,10 +942,10 @@ abstract class Tool {
      * @throws \Exception If user is not logged in or context is missing
      */
     protected function requireAuth() {
-        if ( ! U::isLoggedIn() ) {
+        if ( ! ReqScope::isLoggedIn() ) {
             die('Must be logged in');
         }
-        if ( ! U::currentContextId() ) {
+        if ( ! ReqScope::currentContextId() ) {
             die('Context required');
         }
     }
@@ -554,7 +1099,7 @@ abstract class Tool {
         global $CFG, $PDOX;
 
         if ( ! isset($CFG->launchactivity) || ! $CFG->launchactivity ) return false;
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) return false;
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) return false;
         if ( $this->isInstructor() ) return false; // mirror LTIX: only learner launches are logged
 
         // Ensure DB connection
@@ -562,8 +1107,8 @@ abstract class Tool {
             LTIX::getConnection();
         }
 
-        $context_id = U::currentContextId();
-        $user_id = U::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
 
         $link_key = $this->lmsAnalyticsKey($analytics_path);
 
@@ -668,7 +1213,7 @@ abstract class Tool {
         // Derive tool_name from route (remove leading slash)
         $tool_name = ltrim($route, '/');
         
-        $context_id = U::currentContextId();
+        $context_id = ReqScope::currentContextId();
         
         // Compute analytics link
         $link_key = $this->lmsAnalyticsKey($stable_path);
@@ -690,11 +1235,11 @@ abstract class Tool {
                 <a href="<?= U::addSession($back_url) ?>" class="btn btn-default">Back</a>
             </p>
             <h1>Analytics: <?= htmlspecialchars($title) ?></h1>
-            <?= \Tsugi\UI\Analytics::graphBody() ?>
+            <?= Analytics::graphBody() ?>
         </div>
         <?php
         $OUTPUT->footerStart();
-        echo(\Tsugi\UI\Analytics::graphScript($analytics_url));
+        echo(Analytics::graphScript($analytics_url));
         $OUTPUT->footerEnd();
         
         return "";

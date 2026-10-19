@@ -170,8 +170,10 @@ class LTI {
         return $parms;
     }
 
-    public static function postLaunchHTML($newparms, $endpoint, $debug=false, $iframeattr=false, $endform=false, $iframetitle=null) {
+    public static function postLaunchHTML($newparms, $endpoint, $debug=false, $iframeattr=false, $endform=false, $iframetitle=null, $protocol='1.1', $jwt=null) {
         global $LastOAuthBodyBaseString;
+
+        $endpoint = htmlspec_utf8(is_string($endpoint) ? $endpoint : '');
 
         if ( isset($newparms["ext_lti_element_id"]) ) {
             $frame_id = $newparms["ext_lti_element_id"];
@@ -186,13 +188,23 @@ class LTI {
         $debug_id = rand(1000,9999);
         if ( $iframeattr =="_blank" ) {
             $r = "<form action=\"".$endpoint."\" name=\"".$form_id."\" id=\"".$form_id."\" method=\"post\" target=\"_blank\" encType=\"application/x-www-form-urlencoded\">\n" ;
+        } else if ( $iframeattr == "_modal" ) {
+            $r = "<form action=\"".$endpoint."\" name=\"".$form_id."\" id=\"".$form_id."\" method=\"post\" target=\"tsugi_deep_link\" encType=\"application/x-www-form-urlencoded\">\n" ;
         } else if ( $iframeattr && $iframeattr != '_pause') {
             $r = "<form action=\"".$endpoint."\" name=\"".$form_id."\" id=\"".$form_id."\" method=\"post\" target=\"".$frame_id."\" encType=\"application/x-www-form-urlencoded\">\n" ;
         } else {
             $r = "<form action=\"".$endpoint."\" name=\"".$form_id."\" id=\"".$form_id."\" method=\"post\" encType=\"application/x-www-form-urlencoded\">\n" ;
         }
+        $submit_text = isset($newparms['ext_submit']) ? $newparms['ext_submit'] : '';
+        $ltiMessageType = '';
+        if ( $protocol === '1.3' ) {
+            if ( isset($newparms['lti_message_type']) ) {
+                $ltiMessageType = (string) $newparms['lti_message_type'];
+            }
+            unset($newparms['ext_submit']);
+            unset($newparms['lti_message_type']);
+        }
         ksort($newparms);
-        $submit_text = $newparms['ext_submit'];
         foreach($newparms as $key => $value ) {
             $key = htmlspec_utf8($key);
             $value = htmlspec_utf8($value);
@@ -208,6 +220,9 @@ class LTI {
             $r .= "\" value=\"";
             $r .= $value;
             $r .= "\"/>\n";
+        }
+        if ( $protocol === '1.3' && $submit_text !== '' && $iframeattr != '_pause' ) {
+            $r .= "<input type=\"submit\" class=\"btn btn-primary\" value=\"".htmlspec_utf8($submit_text)."\"/>\n";
         }
         if ( $debug ) {
             $r .= "<script language=\"javascript\"> \n";
@@ -227,21 +242,51 @@ class LTI {
             $r .= $debug_id."_Toggle\" href=\"javascript:basicltiDebug_".$debug_id."_Toggle();\">";
             $r .= self::get_string("toggle_debug_data","basiclti")."</a>\n";
             $r .= "<div id=\"basicltiDebug_".$debug_id."_\" style=\"display:none\">\n";
-            $r .=  "<b>".self::get_string("basiclti_endpoint","basiclti")."</b><br/>\n";
+            if ( $protocol === '1.3' ) {
+                $endpointLabel = 'OIDC login endpoint';
+                $parametersLabel = 'LTI 1.3 parameters';
+            } else {
+                $endpointLabel = self::get_string("basiclti_endpoint","basiclti");
+                $parametersLabel = self::get_string("basiclti_parameters","basiclti");
+            }
+            $r .=  "<b>".htmlspec_utf8($endpointLabel)."</b><br/>\n";
             $r .= $endpoint . "<br/>\n&nbsp;<br/>\n";
-            $r .=  "<b>".self::get_string("basiclti_parameters","basiclti")."</b><br/>\n";
+            $r .=  "<b>".htmlspec_utf8($parametersLabel)."</b><br/>\n";
+            if ( $protocol === '1.3' && $ltiMessageType !== '' ) {
+                $r .= "lti_message_type = ".htmlspec_utf8($ltiMessageType)."<br/>\n";
+            }
             foreach($newparms as $key => $value ) {
                 $key = htmlspec_utf8($key);
                 $value = htmlspec_utf8($value);
                 $r .= "$key = $value<br/>\n";
             }
             $r .= "&nbsp;<br/>\n";
-            $r .= "<p><b>".self::get_string("basiclti_base_string","basiclti")."</b><br/>\n".$LastOAuthBodyBaseString."</p>\n";
+            if ( $protocol !== '1.3' ) {
+                $r .= "<p><b>".self::get_string("basiclti_base_string","basiclti")."</b><br/>\n".$LastOAuthBodyBaseString."</p>\n";
+            }
+            if ( $protocol === '1.3' && is_array($jwt) && isset($jwt['signed']) && is_string($jwt['signed']) && $jwt['signed'] !== '' ) {
+                $json = isset($jwt['json']) && is_string($jwt['json']) ? $jwt['json'] : '';
+                $r .= "<style>\n";
+                $r .= "details.tsugi-jwt-expando > summary { cursor: pointer; list-style: none; }\n";
+                $r .= "details.tsugi-jwt-expando > summary::-webkit-details-marker { display: none; }\n";
+                $r .= "details.tsugi-jwt-expando > summary::before { content: ''; display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: middle; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #333; transition: transform 0.15s ease; }\n";
+                $r .= "details.tsugi-jwt-expando[open] > summary::before { transform: rotate(90deg); }\n";
+                $r .= "</style>\n";
+                $r .= "<details class=\"tsugi-jwt-expando\">\n<summary><b>JWT before signature</b></summary>\n";
+                $r .= "<pre style=\"white-space:pre-wrap;word-break:break-all;\">".htmlspec_utf8($json)."</pre>\n";
+                $r .= "</details>\n";
+                $r .= "<details class=\"tsugi-jwt-expando\">\n<summary><b>Signed JWT (hex)</b></summary>\n";
+                $r .= "<pre style=\"white-space:pre-wrap;word-break:break-all;\">".htmlspec_utf8(bin2hex($jwt['signed']))."</pre>\n";
+                $r .= "</details>\n";
+                $jwtUrl = 'https://jwt.io/#debugger-io?token='.rawurlencode($jwt['signed']);
+                $r .= "<p><a href=\"".htmlspec_utf8($jwtUrl)."\" target=\"_blank\" rel=\"noopener\">Open this signed JWT in jwt.io</a></p>\n";
+                $r .= "<p>The tool supplies nonce when login returns, so the sent token is signed again.</p>\n";
+            }
             $r .= "</div>\n";
         }
         if ( $endform ) $r .= $endform;
         $r .= "</form>\n";
-        if ( $iframeattr && $iframeattr != '_blank' && $iframeattr != '_pause') {
+        if ( $iframeattr && $iframeattr != '_blank' && $iframeattr != '_pause' && $iframeattr != '_modal') {
             $frame_title = $iframetitle;
             if ( $frame_title === null && isset($newparms['resource_link_title']) ) {
                 $frame_title = $newparms['resource_link_title'];
@@ -250,7 +295,7 @@ class LTI {
                 $frame_title = 'LTI tool content';
             }
             $frame_title_esc = htmlspecialchars($frame_title, ENT_QUOTES, 'UTF-8');
-            $r .= "<iframe class=\"lti_frameResize\" name=\"".$frame_id."\" id=\"".$frame_id."\" src=\"\" title=\"".$frame_title_esc."\"\n";
+            $r .= "<iframe class=\"lti_frameResize\" name=\"".$frame_id."\" id=\"".$frame_id."\" src=\"about:blank\" title=\"".$frame_title_esc."\"\n";
             $r .= $iframeattr . ">\n";
             $frames_msg = self::get_string("frames_required","basiclti");
             if ( $frames_msg === 'frames_required' ) {
@@ -258,35 +303,144 @@ class LTI {
             }
             $r .= "<p>".htmlspecialchars($frames_msg)."</p>\n</iframe>\n";
         }
-        // Remove session_name (i.e. PHPSESSID) if it was added.
+        $ext_submit = $protocol === '1.3' ? '' : 'ext_submit';
+        $ext_submit_text = $protocol === '1.3' ? '' : $submit_text;
+        $do_autosubmit = ( ! $debug ) && $iframeattr != '_pause';
+        // Fresh GET (location-bar Enter) creates an empty iframe, then this
+        // script POSTs the LTI launch into it. Reload is different: the
+        // browser restores the iframe's previous POST document, that restore
+        // fails, and the frame stays about:blank. Wait until pageshow on
+        // reload, wipe the restored frame, then submit into a clean target.
         $r .= " <script type=\"text/javascript\"> \n" .
             "  //<![CDATA[ \n" .
-            "    var inputs = document.getElementById(\"".$form_id."\").childNodes;\n" .
-            "    for (var i = 0; i < inputs.length; i++)\n" .
-            "    {\n" .
-            "        var thisinput = inputs[i];\n" .
-            "        if ( thisinput.name != '".session_name()."' ) continue;\n" .
-            "        thisinput.parentNode.removeChild(thisinput);\n" .
+            "  (function() {\n" .
+            "    var fid = ".json_encode($form_id).";\n" .
+            "    var frameId = ".json_encode($frame_id).";\n" .
+            "    var sess = ".json_encode(session_name()).";\n" .
+            "    var autosubmit = ".($do_autosubmit ? 'true' : 'false').";\n" .
+            "    var extName = ".json_encode($ext_submit).";\n" .
+            "    var extVal = ".json_encode($ext_submit_text).";\n" .
+            "    var prepared = false;\n" .
+            "    var reloadLaunched = false;\n" .
+            "    function isReloadNav() {\n" .
+            "      try {\n" .
+            "        var n = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];\n" .
+            "        if ( n && n.type === 'reload' ) return true;\n" .
+            "      } catch (e) {}\n" .
+            "      try {\n" .
+            "        if ( performance.navigation && performance.navigation.type === 1 ) return true;\n" .
+            "      } catch (e) {}\n" .
+            "      return false;\n" .
             "    }\n" .
+            "    function iframeIsBlank() {\n" .
+            "      var ifr = document.getElementById(frameId);\n" .
+            "      if ( ! ifr ) return false;\n" .
+            "      try {\n" .
+            "        var href = ifr.contentWindow.location.href;\n" .
+            "        return ! href || href === 'about:blank';\n" .
+            "      } catch (e) {\n" .
+            "        return false;\n" .
+            "      }\n" .
+            "    }\n" .
+            "    function stripSessionInput(form) {\n" .
+            "      var inputs = form.childNodes;\n" .
+            "      for (var i = inputs.length - 1; i >= 0; i--) {\n" .
+            "        var thisinput = inputs[i];\n" .
+            "        if ( thisinput.name != sess ) continue;\n" .
+            "        thisinput.parentNode.removeChild(thisinput);\n" .
+            "      }\n" .
+            "    }\n" .
+            "    function prepareForm(form) {\n" .
+            "      if ( prepared ) return;\n" .
+            "      prepared = true;\n" .
+            "      stripSessionInput(form);\n" .
+            "      form.style.display = 'none';\n" .
+            "      if ( extName ) {\n" .
+            "        var nei = document.createElement('input');\n" .
+            "        nei.setAttribute('type', 'hidden');\n" .
+            "        nei.setAttribute('name', extName);\n" .
+            "        nei.setAttribute('value', extVal);\n" .
+            "        form.appendChild(nei);\n" .
+            "      }\n" .
+            "    }\n" .
+            "    function tsugiLaunchForm() {\n" .
+            "      var form = document.getElementById(fid);\n" .
+            "      if ( ! form || form.getAttribute('data-tsugi-submitted') ) return;\n" .
+            "      if ( ! autosubmit ) {\n" .
+            "        stripSessionInput(form);\n" .
+            "        return;\n" .
+            "      }\n" .
+            "      prepareForm(form);\n" .
+            "      form.setAttribute('data-tsugi-submitted', '1');\n" .
+            "      var ifr = document.getElementById(frameId);\n" .
+            "      var go = function() {\n" .
+            "        form.submit();\n" .
+            "        console.log('Autosubmitted ' + fid);\n" .
+            "      };\n" .
+            "      function submitAfterPrelaunch(go) {\n" .
+            "        if ( window.parent === window ) { go(); return; }\n" .
+            "        var launched = false;\n" .
+            "        var plTimeOut = false;\n" .
+            "        function once() {\n" .
+            "          if ( launched ) return;\n" .
+            "          launched = true;\n" .
+            "          if ( plTimeOut ) clearTimeout(plTimeOut);\n" .
+            "          window.removeEventListener('message', onPrelaunch);\n" .
+            "          go();\n" .
+            "        }\n" .
+            "        function onPrelaunch(event) {\n" .
+            "          var message = event.data;\n" .
+            "          try {\n" .
+            "            if ( typeof message == 'string' ) message = JSON.parse(message);\n" .
+            "          } catch (e) { return; }\n" .
+            "          if ( ! message || message.subject != 'org.tsugi.lti.prelaunch.response' ) return;\n" .
+            "          console.log('submitting based on org.tsugi.lti.prelaunch.response');\n" .
+            "          once();\n" .
+            "        }\n" .
+            "        window.addEventListener('message', onPrelaunch);\n" .
+            "        parent.postMessage({ subject: 'org.sakailms.lti.prelaunch' }, '*');\n" .
+            "        console.log('Sending prelaunch request');\n" .
+            "        plTimeOut = setTimeout(function() {\n" .
+            "          console.warn('Submitting after prelaunch timeout');\n" .
+            "          once();\n" .
+            "        }, 2000);\n" .
+            "      }\n" .
+            "      if ( ! ifr ) { submitAfterPrelaunch(go); return; }\n" .
+            "      var fired = false;\n" .
+            "      var once = function() {\n" .
+            "        if ( fired ) return;\n" .
+            "        fired = true;\n" .
+            "        ifr.removeEventListener('load', once);\n" .
+            "        go();\n" .
+            "      };\n" .
+            "      ifr.addEventListener('load', once);\n" .
+            "      try { ifr.contentWindow.location.replace('about:blank'); }\n" .
+            "      catch (e) { ifr.src = 'about:blank'; }\n" .
+            "      setTimeout(once, 50);\n" .
+            "    }\n" .
+            "    if ( isReloadNav() && document.getElementById(frameId) ) {\n" .
+            "      window.addEventListener('pageshow', function() {\n" .
+            "        reloadLaunched = false;\n" .
+            "        if ( ! iframeIsBlank() ) return;\n" .
+            "        var form = document.getElementById(fid);\n" .
+            "        if ( form ) form.removeAttribute('data-tsugi-submitted');\n" .
+            "        reloadLaunched = true;\n" .
+            "        tsugiLaunchForm();\n" .
+            "      });\n" .
+            "    } else if ( document.readyState === 'loading' ) {\n" .
+            "      document.addEventListener('DOMContentLoaded', tsugiLaunchForm);\n" .
+            "    } else {\n" .
+            "      tsugiLaunchForm();\n" .
+            "    }\n" .
+            "    window.addEventListener('pageshow', function(ev) {\n" .
+            "      if ( ! autosubmit || ! ev.persisted || reloadLaunched ) return;\n" .
+            "      var form = document.getElementById(fid);\n" .
+            "      if ( form ) form.removeAttribute('data-tsugi-submitted');\n" .
+            "      tsugiLaunchForm();\n" .
+            "    });\n" .
+            "  })();\n" .
             "  //]]> \n" .
             " </script> \n";
-
-        if ( ( ! $debug ) && $iframeattr != '_pause' ) {
-            $ext_submit = "ext_submit";
-            $ext_submit_text = $submit_text;
-            $r .= " <script type=\"text/javascript\"> \n" .
-                "  //<![CDATA[ \n" .
-                "    document.getElementById(\"".$form_id."\").style.display = \"none\";\n" .
-                "    nei = document.createElement('input');\n" .
-                "    nei.setAttribute('type', 'hidden');\n" .
-                "    nei.setAttribute('name', '".$ext_submit."');\n" .
-                "    nei.setAttribute('value', '".$ext_submit_text."');\n" .
-                "    document.getElementById(\"".$form_id."\").appendChild(nei);\n" .
-                "    document.getElementById(\"".$form_id."\").submit(); \n" .
-                "    console.log('Autosubmitted ".$form_id."'); \n" .
-                "  //]]> \n" .
-                " </script> \n";
-        }
         return $r;
     }
 
@@ -365,18 +519,13 @@ class LTI {
     public static function getAuthorizationHeader()
     {
         $request_headers = OAuthUtil::get_headers();
-        $auth = isset($request_headers['Authorization']) ? $request_headers['Authorization'] : null;
-        if ( ! $auth ) $auth = isset($request_headers['authorization']) ? $request_headers['authorization'] : null;
-        return $auth;
+        return U::getIgnoreCase($request_headers, 'Authorization', null);
     }
 
     public static function getContentTypeHeader()
     {
         $request_headers = OAuthUtil::get_headers();
-        $ctype = isset($request_headers['Content-Type']) ? $request_headers['Content-Type'] : null;
-        if ( ! $ctype ) $ctype = isset($request_headers['Content-type']) ? $request_headers['Content-type'] : null;
-        if ( ! $ctype ) $ctype = isset($request_headers['content-type']) ? $request_headers['content-type'] : null;
-        return $ctype;
+        return U::getIgnoreCase($request_headers, 'Content-Type', null);
     }
 
     public static function getOAuthKeyFromHeaders()

@@ -5,10 +5,13 @@ namespace Tsugi\Controllers;
 
 use \Tsugi\Util\U;
 use Tsugi\Core\LTIX;
-use Tsugi\Lumen\Application;
+use Tsugi\Core\Manifest;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Tsugi\Grades\GradeUtil;
+
+use Tsugi\Core\ReqScope;
 
 class Calendar extends Tool {
 
@@ -74,7 +77,7 @@ class Calendar extends Tool {
                 $byDate[$dateKey] = array();
             }
             $participates = ! isset($it['participates_in_grades']) || $it['participates_in_grades'];
-            $dueMod = \Tsugi\UI\Lessons::assignmentsDueBadgeModifier($lk, $end, self::gradesMapForDueModifier($allgrades, $lk, $participates));
+            $dueMod = \Tsugi\Services\Lessons\LessonsService::assignmentsDueBadgeModifier($lk, $end, self::gradesMapForDueModifier($allgrades, $lk, $participates));
             $byDate[$dateKey][] = array(
                 'title' => $it['item_title'],
                 'href' => $href,
@@ -106,7 +109,7 @@ class Calendar extends Tool {
                 continue;
             }
             $participates = ! isset($it['participates_in_grades']) || $it['participates_in_grades'];
-            $mod = \Tsugi\UI\Lessons::assignmentsDueBadgeModifier($lk, $end, self::gradesMapForDueModifier($allgrades, $lk, $participates));
+            $mod = \Tsugi\Services\Lessons\LessonsService::assignmentsDueBadgeModifier($lk, $end, self::gradesMapForDueModifier($allgrades, $lk, $participates));
             if ( $mod === 'tsugi-assignments-due-soon' ) {
                 $dueSoon++;
             } elseif ( $mod === 'tsugi-assignments-due-past' ) {
@@ -123,13 +126,14 @@ class Calendar extends Tool {
     {
         global $CFG;
 
-        if ( ! isset($CFG->lessons) ) {
+        $l = Manifest::currentLessons();
+        if ( ! $l ) {
             return new JsonResponse(
                 array('status' => 'error', 'detail' => 'Lessons not configured'),
                 500
             );
         }
-        if ( ! U::isLoggedIn() || ! U::currentContextId() ) {
+        if ( ! ReqScope::isLoggedIn() || ! ReqScope::currentContextId() ) {
             return new JsonResponse(
                 array('status' => 'error', 'detail' => 'Authentication and course context required'),
                 401
@@ -138,9 +142,8 @@ class Calendar extends Tool {
 
         LTIX::getConnection();
 
-        $l = new \Tsugi\UI\Lessons($CFG->lessons);
         $items = $l->enumerateLtiAssignmentItems();
-        $dueMap = GradeUtil::loadDueDatesForDisplay(U::currentContextId());
+        $dueMap = GradeUtil::loadDueDatesForDisplay(ReqScope::currentContextId());
 
         $allgrades = array();
         $rows = GradeUtil::loadGradesCurrentUser();
@@ -161,10 +164,7 @@ class Calendar extends Tool {
     {
         global $CFG, $OUTPUT;
 
-        if ( ! isset($CFG->lessons) ) {
-            die_with_error_log('Cannot find lessons.json ($CFG->lessons)');
-        }
-
+        $l = Manifest::requireCurrentLessons();
         $nowY = (int) date('Y');
         $nowM = (int) date('n');
         $nowD = (int) date('j');
@@ -187,11 +187,10 @@ class Calendar extends Tool {
         $daysInMonth = (int) date('t', $firstTs);
         $startDow = (int) date('w', $firstTs);
 
-        $l = new \Tsugi\UI\Lessons($CFG->lessons);
         $items = $l->enumerateLtiAssignmentItems();
         $dueMap = array();
-        if ( U::currentContextId() !== 0 ) {
-            $dueMap = GradeUtil::loadDueDatesForDisplay(U::currentContextId());
+        if ( ReqScope::currentContextId() !== 0 ) {
+            $dueMap = GradeUtil::loadDueDatesForDisplay(ReqScope::currentContextId());
         }
         $allgrades = array();
         $rows = GradeUtil::loadGradesCurrentUser();
@@ -275,7 +274,7 @@ class Calendar extends Tool {
                         $full = $ev['title'];
                         $moduleTitle = $ev['module_title'];
                         $dueMod = $ev['due_mod'];
-                        $stateText = \Tsugi\UI\Lessons::assignmentsDueStateVisibleLabel($dueMod);
+                        $stateText = \Tsugi\Controllers\Lessons::assignmentsDueStateVisibleLabel($dueMod);
                         $aria = $full . ' — ' . $moduleTitle . ' (' . $stateText . ')';
                         $classes = 'tsugi-cal-event-link ' . $dueMod;
                         echo('<li><a class="'.htmlspecialchars($classes).'" href="'.htmlspecialchars(U::addSession($ev['href'])).'" aria-label="'.htmlspecialchars($aria).'">'.htmlspecialchars($full).'</a></li>' . "\n");

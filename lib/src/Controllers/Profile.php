@@ -4,8 +4,8 @@ namespace Tsugi\Controllers;
 
 use Tsugi\Core\Profile as UserProfile;
 use Tsugi\UI\Supporter;
-use Tsugi\Lumen\Controller;
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Controller;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
@@ -54,11 +54,11 @@ class Profile extends Controller {
         if ( ! is_object($profile) ) $profile = new \stdClass();
 
         $themeId = 0;
-        // Load data from the profile, if it exists
         if (isset($profile->theme_override)) {
-            if ($profile->theme_override == 'light') {
+            $themeKey = \Tsugi\Core\Manifest::profileThemeKey($profile->theme_override);
+            if ( $themeKey === 'hc-bow' ) {
                 $themeId = 1;
-            } else if ($profile->theme_override == 'dark') {
+            } else if ( $themeKey === 'hc-wob' ) {
                 $themeId = 2;
             }
         }
@@ -126,22 +126,23 @@ echo(' ('.htmlentities($_SESSION['email']).")</h1>\n");
         ?>
 
         <form method="POST">
+            <?= \Tsugi\Controllers\Tool::csrfField() ?>
             <div style="display: flex; justify-content: space-between;">
                 <fieldset class="control-group">
                     <legend>Would you like to set a theme override?</legend>
-                    <p><em>Overrides will only show if theme information is set in the launch data (such as from an LMS) or configured.</em></p>
+                    <p><em>A high-contrast choice overrides the site or course theme on every page. Default uses the site or course theme.</em></p>
                     <div class="controls">
                         <label class="radio">
                             <?php self::radio('theme',0,$themeId); ?>
-                            Use the default configuration
+                            Use default theme for site
                         </label>
                         <label class="radio">
                             <?php self::radio('theme',1,$themeId); ?>
-                            Use light theme
+                            Use high contrast black on white theme
                         </label>
                         <label class="radio">
                             <?php self::radio('theme',2,$themeId); ?>
-                            Use dark theme
+                            Use high contrast white on black theme
                         </label>
                     </div>
                 </fieldset>
@@ -250,6 +251,10 @@ Send me notification mail for important things like my assignment was graded.
         if ( ! isset($_SESSION['profile_id']) ) {
             return new RedirectResponse($home);
         }
+        $csrf = Tool::requireCsrf($home);
+        if ( $csrf ) {
+            return $csrf;
+        }
 
         $stmt = $PDOX->queryDie(
             "SELECT json FROM {$CFG->dbprefix}profile WHERE profile_id = :PID",
@@ -265,14 +270,18 @@ Send me notification mail for important things like my assignment was graded.
         $profile = json_decode($json_string);
         if ( ! is_object($profile) ) $profile = new \stdClass();
 
-        $profile->subscribe = $_POST['subscribe']+0 ;
+        if ( isset($_POST['subscribe']) ) {
+            $profile->subscribe = $_POST['subscribe']+0 ;
+        }
 
-        if ($_POST['theme'] == 1) {
-            $profile->theme_override = 'light';
-        } else if ($_POST['theme'] == 2) {
-            $profile->theme_override = 'dark';
-        } else {
-            $profile->theme_override = null;
+        if ( isset($_POST['theme']) ) {
+            if ($_POST['theme'] == 1) {
+                $profile->theme_override = 'hc-bow';
+            } else if ($_POST['theme'] == 2) {
+                $profile->theme_override = 'hc-wob';
+            } else {
+                $profile->theme_override = null;
+            }
         }
 
         if ( isset($_POST['map']) ) {

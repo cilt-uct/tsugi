@@ -2,11 +2,11 @@
 
 require_once "src/Controllers/Tsugi.php";
 require_once "src/Config/ConfigInfo.php";
-require_once "src/Lumen/Application.php";
-require_once "src/Lumen/Router.php";
+require_once "src/Lumos/Application.php";
+require_once "src/Lumos/Router.php";
 
 use \Tsugi\Controllers\Tsugi;
-use \Tsugi\Lumen\Application;
+use \Tsugi\Lumos\Application;
 
 class TsugiTest extends \PHPUnit\Framework\TestCase
 {
@@ -103,7 +103,7 @@ class TsugiTest extends \PHPUnit\Framework\TestCase
         
         // Verify router exists and is configured
         $this->assertNotNull($app->router);
-        $this->assertInstanceOf(\Tsugi\Lumen\Router::class, $app->router);
+        $this->assertInstanceOf(\Tsugi\Lumos\Router::class, $app->router);
     }
     
     /**
@@ -131,6 +131,15 @@ class TsugiTest extends \PHPUnit\Framework\TestCase
             $uris[] = $route['uri'];
         }
         
+        $hasAnalyticsRoute = false;
+        foreach ($uris as $uri) {
+            if ($uri === '/analytics' || $uri === '/analytics/') {
+                $hasAnalyticsRoute = true;
+                break;
+            }
+        }
+        $this->assertTrue($hasAnalyticsRoute, 'Analytics route should be registered');
+
         // Lessons controller should register /lessons route
         $hasLessonsRoute = false;
         foreach ($uris as $uri) {
@@ -184,14 +193,41 @@ class TsugiTest extends \PHPUnit\Framework\TestCase
         }
         $this->assertTrue($hasBadgesRoute, 'Badges route should be registered');
         
-        // Login controller should register /login route
+        // Login controller should register /login and legacy /login.php
         $hasLoginRoute = false;
+        $hasLoginPhpRoute = false;
+        $hasLogoutRoute = false;
+        $hasLogoutPhpRoute = false;
         foreach ($uris as $uri) {
-            if (strpos($uri, '/login') === 0) {
+            if ($uri === '/login' || $uri === '/login/') {
                 $hasLoginRoute = true;
-                break;
+            }
+            if ($uri === '/login.php') {
+                $hasLoginPhpRoute = true;
+            }
+            if ($uri === '/logout' || $uri === '/logout/') {
+                $hasLogoutRoute = true;
+            }
+            if ($uri === '/logout.php') {
+                $hasLogoutPhpRoute = true;
             }
         }
         $this->assertTrue($hasLoginRoute, 'Login route should be registered');
+        $this->assertTrue($hasLoginPhpRoute, 'Legacy login.php route should be registered');
+        $this->assertTrue($hasLogoutRoute, 'Logout route should be registered');
+        $this->assertTrue($hasLogoutPhpRoute, 'Legacy logout.php route should be registered');
+
+        $hasSettingsRoute = false;
+        $hasSettingsExportRoute = false;
+        foreach ($uris as $uri) {
+            if ($uri === '/settings' || $uri === '/settings/') {
+                $hasSettingsRoute = true;
+            }
+            if ($uri === '/settings/export' || $uri === '/settings/export/') {
+                $hasSettingsExportRoute = true;
+            }
+        }
+        $this->assertTrue($hasSettingsRoute, 'Settings route should be registered');
+        $this->assertTrue($hasSettingsExportRoute, 'Course Settings export route should be registered');
     }
 }

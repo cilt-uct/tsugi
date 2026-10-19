@@ -1,6 +1,5 @@
 <?php
 require_once "../../config.php";
-require_once $CFG->dirroot."/admin/admin_util.php";
 
 use \Tsugi\Core\Settings;
 use \Tsugi\Core\LTIX;
@@ -10,6 +9,7 @@ use \Tsugi\Util\SakaiCustom;
 use \Tsugi\Util\U;
 use \Tsugi\Util\LTI;
 use \Tsugi\Util\LTI13;
+use \Tsugi\Core\Manifest;
 use \Tsugi\UI\Lessons;
 use \Tsugi\Util\LTIConstants;
 
@@ -254,20 +254,22 @@ $l = false;
 $assignments = false;
 $links = false;
 $import = false;
-if ( ($allow_lti || $allow_link || $allow_import) && isset($CFG->lessons) && file_exists($CFG->lessons) ) {
-    $l = new Lessons($CFG->lessons);
-    if ( $allow_link ) $links = true;
-    if ( $allow_import ) $import = true;
-    foreach($l->lessons->modules as $module) {
-        if ( isset($module->lti) ) {
-            if ( $allow_lti ) $assignments = true;
+if ( $allow_lti || $allow_link || $allow_import ) {
+    $l = Manifest::currentLessons();
+    if ( $l ) {
+        if ( $allow_link ) $links = true;
+        if ( $allow_import ) $import = true;
+        foreach($l->lessons->modules as $module) {
+            if ( isset($module->lti) || isset($module->items) ) {
+                if ( $allow_lti ) $assignments = true;
+            }
         }
     }
 }
 
 // Load Tool Registrations
 if ( $allow_lti ) {
-    $registrations = findAllRegistrations(false, true);
+    $registrations = \Tsugi\Services\Admin\AdminService::findAllRegistrations(false, true);
 
     // Filter the registrations
     if ( isset($CFG->storehide) && is_string($CFG->storehide) && ! $USER->admin ) {
@@ -571,9 +573,6 @@ if ( $l && isset($_GET['import']) ) {
     else if ( $LAUNCH->isCanvas() ) $url .= '?tsugi_lms=canvas';
     if ( U::get($_GET, 'anchors') ) {
         $url = U::add_url_parm($url, 'anchors',  U::get($_GET, 'anchors'));
-    }
-    if ( U::get($_GET, 'youtube') ) {
-        $url = U::add_url_parm($url, 'youtube', U::get($_GET, 'youtube') );
     }
     if ( U::get($_GET, 'topic') ) {
         $url = U::add_url_parm($url, 'topic', U::get($_GET, 'topic') );
@@ -911,28 +910,17 @@ combination of the modules.</p>
 <form>
 <?php if ( $discussion_count > 0 && isset($CFG->tdiscus) ) { ?>
 <p>
-<label for="topic_select_full">How would you like to import discussions/topics?</label>
+<label for="topic_select_full">How would you like to export discussions/topics?</label>
 <select name="topic" id="topic_select_full">
-  <option value="none">Do not import discussion topics</option>
+  <option value="lms" selected>Use the LMS Discussion Tool</option>
+  <option value="none">Do not export discussion topics</option>
   <option value="lti">Use discussion tool on this server (LTI)</option>
-  <option value="lms">Use the LMS Discussion Tool</option>
   <option value="lti_grade">Use discussion tool on this server (LTI) with grade passback</option>
 </select>
 </p>
 <?php } ?>
-<?php if ( isset($CFG->youtube_url) ) { ?>
-<p>
-<label for="youtube_select_full">Would you like YouTube Tracked URLs?</label>
-<select name="youtube" id="youtube_select_full">
-  <option value="no">No - Launch directly to YouTube</option>
-  <option value="track">Use LTI launch to track access</option>
-  <option value="track_grade">Use LTI launch to track access and send grades</option>
-</select>
-</p>
-<?php 
-    $active = '';
-} ?>
 <?php
+    $active = '';
     echo("<p>Course: ".htmlentities($l->lessons->title)."</p>\n");
     echo("<p>Modules: ".count($l->lessons->modules)."</p>\n");
     echo("<p>Resources: $resource_count </p>\n");
@@ -943,14 +931,6 @@ combination of the modules.</p>
 <input type="submit" class="btn btn-primary" value="Import modules" name="import"/>
 </p>
 </form>
-<?php     if ( isset($CFG->youtube_url) ) { ?>
-<p>
-If you select YouTube tracked URLs, each YouTube URL will be launched via LTI
-to a YouTube tracking tool on this server so you can get analytics on who
-watches your YouTube videos through the LMS.  Some LMS's do not do well with
-tracked URLs because they treat every LTI link as a gradable link.
-</p>
-<?php } ?>
 </div>
 <div class="tab-pane fade" id="select">
 <p>Select the modules to include, and download below.  You must select at least one module.</p>
@@ -961,22 +941,12 @@ echo('<form id="void">'."\n");
 ?>
 <?php if ( $discussion_count > 0 && isset($CFG->tdiscus) ) { ?>
 <p>
-<label for="topic_select_partial">How would you like to import discussions/topics?</label>
+<label for="topic_select_partial">How would you like to export discussions/topics?</label>
 <select name="topic" id="topic_select_partial">
-  <option value="none">Do not import discussion topics</option>
+  <option value="lms" selected>Use the LMS Discussion Tool</option>
+  <option value="none">Do not export discussion topics</option>
   <option value="lti">Use discussion tool on this server (LTI)</option>
-  <option value="lms">Use the LMS Discussion Tool</option>
   <option value="lti_grade">Use discussion tool on this server (LTI) with grade passback</option>
-</select>
-</p>
-<?php } ?>
-<?php if ( isset($CFG->youtube_url) ) { ?>
-<p>
-<label for="youtube_select_partial">Would you like YouTube Tracked URLs?</label>
-<select name="youtube" id="youtube_select_partial">
-  <option value="no">No - Launch directly to YouTube</option>
-  <option value="track">Use LTI launch to track access</option>
-  <option value="track_grade">Use LTI launch to track access and send grades</option>
 </select>
 </p>
 <?php } ?>
@@ -1004,7 +974,6 @@ if ( $l ) foreach($l->lessons->modules as $module) {
 </p>
 </form>
 <form id="real">
-<input id="youtube_real" type="hidden" name="youtube"/>
 <input id="topic_real" type="hidden" name="topic"/>
 <input id="res" type="hidden" name="anchors" value=""/>
 <input type="hidden" name="import" value="import"/>
@@ -1104,11 +1073,9 @@ function myfunc(){
 
     });
 
-    var youtube = $("#youtube_select_partial").val();
-    $("#youtube_real").val(youtube);
     var topic = $("#topic_select_partial").val();
     $("#topic_real").val(topic);
-    console.log('topic',topic,'youtube',youtube);
+    console.log('topic',topic);
     var stuff = $("#res").val();
     if ( stuff.length < 1 ) {
         alert('<?= _m("Please select at least one module") ?>');

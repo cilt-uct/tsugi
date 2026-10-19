@@ -6,10 +6,12 @@ namespace Tsugi\Controllers;
 use \Tsugi\Util\U;
 use Tsugi\Util\NotificationsService;
 use Tsugi\Core\LTIX;
-use Tsugi\Lumen\Application;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+
+use Tsugi\Core\ReqScope;
 
 class Notifications extends Tool {
 
@@ -43,7 +45,7 @@ class Notifications extends Tool {
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
 
         // Record analytics
         $this->lmsRecordLaunchAnalytics(self::ROUTE, self::NAME);
@@ -333,6 +335,7 @@ class Notifications extends Tool {
                     
                     fetch(url, {
                         method: 'POST',
+                        headers: tsugiCsrfHeaders(),
                         body: formData
                     })
                     .then(response => response.json())
@@ -442,7 +445,8 @@ class Notifications extends Tool {
                     var url = this.getAttribute('data-url');
                     
                     fetch(url, {
-                        method: 'POST'
+                        method: 'POST',
+                        headers: tsugiCsrfHeaders()
                     })
                     .then(response => response.json())
                     .then(data => {
@@ -481,7 +485,7 @@ class Notifications extends Tool {
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
 
         // Record analytics
         $this->lmsRecordLaunchAnalytics(self::ROUTE . '/configure-push', self::NAME . ' - Configure Push');
@@ -661,6 +665,10 @@ class Notifications extends Tool {
         global $PDOX, $CFG;
 
         $this->requireAuth();
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
@@ -670,7 +678,7 @@ class Notifications extends Tool {
             return new JsonResponse(['error' => 'Service worker is not enabled'], 403);
         }
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
 
         // Get subscription data from request
         $subscription_json = $request->getContent();
@@ -748,6 +756,10 @@ class Notifications extends Tool {
         global $PDOX, $CFG;
 
         $this->requireAuth();
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
@@ -757,7 +769,7 @@ class Notifications extends Tool {
             return new JsonResponse(['error' => 'Service worker is not enabled'], 403);
         }
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         
         // Check if we should unsubscribe just current browser or all
         $unsubscribe_all = $request->get('all', 'false') === 'true';
@@ -815,6 +827,10 @@ class Notifications extends Tool {
 
         try {
             $this->requireAuth();
+            $csrf = self::requireCsrfJson();
+            if ( $csrf ) {
+                return $csrf;
+            }
             
             LTIX::getConnection();
             
@@ -828,7 +844,7 @@ class Notifications extends Tool {
                 return new JsonResponse(['error' => 'Service worker is not enabled'], 403);
             }
 
-            $user_id = U::loggedInUserId();
+            $user_id = ReqScope::loggedInUserId();
             $subscriptions = $this->getUserSubscriptions($user_id);
 
             if (empty($subscriptions)) {
@@ -923,7 +939,7 @@ class Notifications extends Tool {
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
 
         // Record analytics
         $this->lmsRecordLaunchAnalytics(self::ROUTE . '/send', self::NAME . ' - Test Notification');
@@ -948,6 +964,7 @@ class Notifications extends Tool {
                     <p class="text-muted">This will send a notification to your account. Useful for testing or reminders.</p>
                     
                     <form method="POST" action="<?= htmlspecialchars($send_url) ?>">
+                        <?= self::csrfField() ?>
                         <div class="form-group">
                             <label for="title">Title *</label>
                             <input type="text" class="form-control" id="title" name="title" 
@@ -987,13 +1004,16 @@ class Notifications extends Tool {
         global $CFG;
 
         $this->requireAuth();
+        $tool_home = $this->toolHome(self::ROUTE);
+        $send_url = $tool_home . '/send';
+        $csrf = self::requireCsrf($send_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
-        
-        $tool_home = $this->toolHome(self::ROUTE);
-        $send_url = $tool_home . '/send';
+        $user_id = ReqScope::loggedInUserId();
         $back_url = $tool_home;
         
         $title = trim(U::get($_POST, 'title'));
@@ -1046,8 +1066,8 @@ class Notifications extends Tool {
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
-        $context_id = U::currentContextId();
+        $user_id = ReqScope::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
 
         // Record analytics
         $this->lmsRecordLaunchAnalytics(self::ROUTE . '/send-to-student', self::NAME . ' - Send to Student');
@@ -1092,6 +1112,7 @@ class Notifications extends Tool {
                         <p class="text-muted">Select a student and compose a notification to send to them.</p>
                         
                         <form method="POST" action="<?= htmlspecialchars($send_url) ?>">
+                            <?= self::csrfField() ?>
                             <div class="form-group">
                                 <label for="student_id">Student *</label>
                                 <select class="form-control" id="student_id" name="student_id" required>
@@ -1149,13 +1170,17 @@ class Notifications extends Tool {
 
         $this->requireInstructor('/notifications');
         
-        LTIX::getConnection();
-        
-        $user_id = U::loggedInUserId();
-        $context_id = U::currentContextId();
-        
         $tool_home = $this->toolHome(self::ROUTE);
         $send_url = $tool_home . '/send-to-student';
+        $csrf = self::requireCsrf($send_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        
+        LTIX::getConnection();
+        
+        $user_id = ReqScope::loggedInUserId();
+        $context_id = ReqScope::currentContextId();
         $back_url = $tool_home;
         
         $student_id = U::get($_POST, 'student_id');
@@ -1233,7 +1258,7 @@ class Notifications extends Tool {
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         
         $notifications = NotificationsService::getForUser($user_id, false, 50); // Limit to 50 most recent
         $unread_count = NotificationsService::getUnreadCount($user_id);
@@ -1273,10 +1298,14 @@ class Notifications extends Tool {
      */
     public function markRead(Request $request) {
         $this->requireAuth();
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         $notification_id = U::get($_POST, 'notification_id');
         
         if (!$notification_id || !is_numeric($notification_id)) {
@@ -1297,10 +1326,14 @@ class Notifications extends Tool {
      */
     public function markAllRead(Request $request) {
         $this->requireAuth();
+        $csrf = self::requireCsrfJson();
+        if ( $csrf ) {
+            return $csrf;
+        }
         
         LTIX::getConnection();
         
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserId();
         
         $success = NotificationsService::markAllAsRead($user_id);
         

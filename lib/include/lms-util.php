@@ -2,34 +2,32 @@
 
 use \Tsugi\Core\LTIX;
 use \Tsugi\Core\Membership;
+use \Tsugi\Core\ReqScope;
 use \Tsugi\Util\U;
-
-// Require admin_util.php for isAdmin() function
-require_once(__DIR__ . '/../../admin/admin_util.php');
 
 /**
  * Check if the current logged-in user is an instructor/admin for the current context
  *
  * This function checks:
- * 1. If user is site admin (via isAdmin())
+ * 1. If user is site admin (passphrase session)
  * 2. If user has instructor role or role_override in lti_membership table
  * 3. If user owns the context or its key
  *
- * Reads context_id from session; user id from session or $USER (see loggedInUserId()).
+ * Reads context_id from session; user id from session or $USER (see ReqScope::loggedInUserIdLegacy()).
  * Caches a Membership instance via Membership::ensureInSession() (context-scoped session cache).
  *
  * @return bool True if user is instructor/admin for the context, false otherwise
  */
 function isInstructor() {
-    $context_id = currentContextId();
-    $user_id = loggedInUserId();
+    $context_id = ReqScope::currentContextIdLegacy();
+    $user_id = ReqScope::loggedInUserIdLegacy();
 
     if ( ! $context_id || ! $user_id ) {
         return false;
     }
 
     // Check if user is site admin (always true for admins, no need to cache)
-    if ( isAdmin() ) {
+    if ( \Tsugi\Services\Admin\AdminService::isAdmin() ) {
         return true;
     }
 
@@ -166,7 +164,7 @@ function lmsRecordLaunchAnalytics($analytics_path, $title=null) {
     global $CFG, $PDOX;
 
     if ( ! isset($CFG->launchactivity) || ! $CFG->launchactivity ) return false;
-    if ( ! isLoggedIn() || ! currentContextId() ) return false;
+    if ( ! ReqScope::isLoggedInLegacy() || ! ReqScope::currentContextIdLegacy() ) return false;
     if ( isInstructor() ) return false; // mirror LTIX: only learner launches are logged
 
     // Ensure DB connection
@@ -174,8 +172,8 @@ function lmsRecordLaunchAnalytics($analytics_path, $title=null) {
         LTIX::getConnection();
     }
 
-    $context_id = currentContextId();
-    $user_id = loggedInUserId();
+    $context_id = ReqScope::currentContextIdLegacy();
+    $user_id = ReqScope::loggedInUserIdLegacy();
 
     $link_key = lmsAnalyticsKey($analytics_path);
 

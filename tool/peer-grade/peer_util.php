@@ -35,8 +35,8 @@ function loadAssignment()
         }
     }
 
-    if ( ( ! $custom || U::isEmpty($custom) ) && isset($_GET["inherit"]) && isset($CFG->lessons) ) {
-        $l = new Lessons($CFG->lessons);
+    if ( ( ! $custom || U::isEmpty($custom) ) && isset($_GET["inherit"]) ) {
+        $l = \Tsugi\Core\Manifest::currentLessons();
         if ( $l ) {
             $lti = $l->getLtiByRlid($_GET['inherit']);
             if ( isset($lti->custom) ) foreach($lti->custom as $c ) {
@@ -146,6 +146,18 @@ function loadUngraded($assn_id)
         array(":AID" => $assn_id, ":UID" => $USER->id)
     );
     return $stmt->fetchAll();
+}
+
+// Other students who have submitted this assignment
+function countOtherSubmissions($assn_id, $user_id)
+{
+    global $CFG, $PDOX;
+    $row = $PDOX->rowDie(
+        "SELECT COUNT(*) AS c FROM {$CFG->dbprefix}peer_submit
+            WHERE assn_id = :AID AND user_id != :UID",
+        array(":AID" => $assn_id, ":UID" => $user_id)
+    );
+    return is_array($row) ? ($row['c'] + 0) : 0;
 }
 
 function showSubmission($assn_json, $submit_json, $assn_id, $user_id)
@@ -347,7 +359,7 @@ function computeGrade($assn_id, $assn_json, $user_id)
              S.submit_id as submit_id, S.created_at AS created_at,
             MAX(points) as max_points, COUNT(points) as count_points
         FROM {$CFG->dbprefix}peer_submit as S
-        JOIN {$CFG->dbprefix}peer_grade AS G
+        LEFT JOIN {$CFG->dbprefix}peer_grade AS G
             ON S.submit_id = G.submit_id
         JOIN {$CFG->dbprefix}lti_user AS U
             ON S.user_id = U.user_id
@@ -371,14 +383,16 @@ function computeGrade($assn_id, $assn_json, $user_id)
     // Compute the overall points
     $inst_points = $row['inst_points'] + 0;
     $assnpoints = $row['max_points']+0;
+    $other_submits = countOtherSubmissions($assn_id, $user_id);
 
-    // Handle when the student has waited "long enough" for a peer-grade
+    // Full peer points immediately if no one else has submitted. Timed autopeer still
+    // requires autopeer > 0 when classmates exist.
     $created_at = strtotime($row['created_at']." UTC");
     $diff = time() - $created_at;
-    if ( isset($assn_json->autopeer) && $assn_json->autopeer > 0 &&
-        $diff > $assn_json->autopeer && $assnpoints < $assn_json->peerpoints) {
-	// TODO: Turn this into an event
-        error_log('Auto-peer '.time().' '.$diff.' '.$row['displayname']);
+    if ( $assnpoints < $assn_json->peerpoints && $assn_json->peerpoints > 0 &&
+        ( $other_submits == 0 ||
+            ( isset($assn_json->autopeer) && $assn_json->autopeer > 0 && $diff > $assn_json->autopeer ) ) ) {
+        error_log('Auto-peer '.time().' '.$diff.' others='.$other_submits.' '.$displayname);
         $assnpoints = $assn_json->peerpoints;
     }
 
@@ -409,11 +423,46 @@ function computeGrade($assn_id, $assn_json, $user_id)
     if ( $submit_json && isset($submit_json->peer_exempt) ) {
         $gradepoints = $assn_json->minassess * $assn_json->assesspoints;
         error_log('Accessible override '.time().' '.$displayname.' points='.$gradepoints);
+    } else if ( $assn_json->minassess > 0 && $assn_json->assesspoints > 0 &&
+        $other_submits < $assn_json->minassess ) {
+        // Not enough other submissions to complete minassess reviews — grant the full
+        // review slice. If more peers submit later, this recomputes from real grades.
+        $gradepoints = $assn_json->minassess * $assn_json->assesspoints;
+        error_log('Empty-pool assess '.time().' others='.$other_submits.' '.$displayname.' points='.$gradepoints);
     }
 
     $retval = ($inst_points + $assnpoints + $gradepoints) / $assn_json->totalpoints;
     if ( $retval > 1.0 ) $retval = 1.0;
     return $retval;
+}
+
+// When the local lti_result row was last written (grade send, launch insert, etc.)
+function loadResultUpdatedAt($user_id)
+{
+    global $CFG, $PDOX, $LINK;
+    if ( ! $LINK || ! $user_id ) return false;
+    $row = $PDOX->rowDie(
+        "SELECT updated_at FROM {$CFG->dbprefix}lti_result
+            WHERE link_id = :LID AND user_id = :UID",
+        array(":LID" => $LINK->id, ":UID" => $user_id)
+    );
+    if ( ! is_array($row) ) return false;
+    $updated_at = $row['updated_at'] ?? null;
+    if ( U::isEmpty($updated_at) ) return false;
+    return $updated_at;
+}
+
+// Close the PHP session during LMS passback so a slow gradeSend cannot hold the lock.
+function gradeSendReleaseSession($grade, $result = false, &$debug_log = false)
+{
+    if ( session_status() === PHP_SESSION_ACTIVE ) {
+        session_write_close();
+    }
+    $status = \Tsugi\Core\LTIX::gradeSend($grade, $result, $debug_log);
+    if ( session_status() !== PHP_SESSION_ACTIVE ) {
+        session_start();
+    }
+    return $status;
 }
 
 // Load the count of grades for this user for an assignment
@@ -538,7 +587,7 @@ function mailDeleteSubmit($user_id, $assn_json, $note)
     );
 
     // echo $to, $subject, $message, $user_id, $token;
-    $retval = Mail::send($to, $subject, $message, $user_id, $token);
+    $retval = Mail::sendTransactional($to, $subject, $message, $user_id, $token);
     return $retval;
 }
 

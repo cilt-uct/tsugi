@@ -57,6 +57,16 @@ class ConfigInfo {
     public $author_allow = false;
 
     /**
+     * Allow an LTI token grant to fetch a tool key set from loopback or a private address.
+     *
+     * QA back door for local testing. The fetch is HTTPS-only either way.
+     * Leave this false on a public platform. Set it true only on a development
+     * machine, where a local tool such as https://local.py4e.com publishes its
+     * key set on this host.
+     */
+    public $qa_allow_local_jwks = false;
+
+    /**
      * This is how the system will refer to itself.
      */
     public $servicename = 'TSUGI (dev)';
@@ -211,6 +221,18 @@ class ConfigInfo {
     public $adminpw = 'warning:please-change-adminpw-89b543!';
 
     /**
+     * Optional list of Google emails allowed to unlock the Administration console.
+     *
+     * false (default) keeps legacy behavior: any logged-in user who knows
+     * $adminpw can unlock admin. Set to an array of emails to restrict unlock
+     * to those accounts (comparison is case-insensitive). A single string is
+     * treated as a one-element list.
+     *
+     *     $CFG->adminemails = array('you@umich.edu', 'other@umich.edu');
+     */
+    public $adminemails = false;
+
+    /**
      * Prefix for tool registration codes.
      *
      * For LTI 2.0 registrations: This is a prefix applied to the tool registration
@@ -297,7 +319,7 @@ class ConfigInfo {
      * Tsugi stores the blob path in the blob_file table.  Data uploaded to a blob
      * will stay there and data uploaded to a path will stay there regardless of
      * this setting.  There will are separate migration processes to move blob data
-     * from the database to dataroot.  See tsugi/admin/blob for more detail.
+     * from the database to dataroot.  See tsugi/admin/blob-maint for more detail.
      *
      * You can set dataroot to a temporary folder for dev but never for production
      */
@@ -325,20 +347,14 @@ class ConfigInfo {
     public $testblobs = false; // array('12345');
 
     /**
-     * Configure the long-term login cookie encryption values.
+     * Shared secret used to encrypt LTI secrets in the session, sign OIDC state
+     * JWTs, and related tokens. cookiepad is mixed into a few of those constructions.
      *
-     * These values configure the cookie used to record the overall
-     * login in a long-lived encrypted cookie.   Look at the library
-     * code SecureCookie::create() for more detail on how these operate.
-     *
-     * When enable_secure_cookie_login is false (the default), Tsugi does not
-     * set or process that auto-login cookie; set it true to restore the
-     * long-lived encrypted login behavior.
+     * These are not login cookies. The old TSUGIAUTO auto-login cookie is gone;
+     * see the legacy enable_secure_cookie_login / cookiename properties.
      */
     public $cookiesecret = 'warning:please-change-cookie-secret-a289b543';
-    public $cookiename = 'TSUGIAUTO';
     public $cookiepad = '390b246ea9';
-    public $enable_secure_cookie_login = false;
 
     /**
      * Configure mail sending.
@@ -346,11 +362,46 @@ class ConfigInfo {
      * If you leave maildomain false, mail will not be sent.  If you set
      * maildomain to a real domain, best practice is for it to be a
      * real address with a wildcard box that you check periodially.
+     *
+     * Optional Amazon SES (async-aws/ses): when ses_region is set, outbound
+     * mail uses SES; otherwise PHP mail() is used. See docs/ses.md.
      */
     public $maildomain = false;  // Don't send mail
     // public $maildomain = 'mail.example.com';
     public $mailsecret = 'warning:please-change-mailsecret-92ds29';
     public $maileol = "\n";  // Depends on your mailer - may need to be \r\n
+
+    /** @var string|false AWS region for SES, e.g. 'us-east-1' */
+    public $ses_region = false;
+    /** @var string|false Optional access key; omit for IAM role / default chain */
+    public $ses_key = false;
+    /** @var string|false Optional secret key paired with ses_key */
+    public $ses_secret = false;
+    /**
+     * From address for all mail transports (SES and PHP mail()).
+     * Defaults to no-reply@$maildomain. May include a display name:
+     * 'Course Name <no-reply@example.com>'.
+     * @var string|false
+     */
+    public $mail_from = false;
+    /**
+     * Optional Reply-To for all transports (inbox humans should reply to).
+     * @var string|false
+     */
+    public $mail_reply_to = false;
+    /**
+     * Optional SES Configuration Set for transactional mail (and bulk fallback).
+     * When set, SendEmail attaches it so bounce/complaint events can be published
+     * to SNS (see docs/ses.md).
+     * @var string|false
+     */
+    public $ses_configuration_set = false;
+    /**
+     * Optional SES Configuration Set for sendBulk() only. Falls back to
+     * ses_configuration_set when unset.
+     * @var string|false
+     */
+    public $ses_configuration_set_bulk = false;
 
     /**
      * Configure the security for constructing LTI Launch session IDs
@@ -435,7 +486,7 @@ class ConfigInfo {
      * Indicate which folder to install new modules into.
      *
      * By default we use the built-in admin tools, and
-     * install new tools (see /admin/install/) into mod.  If this is left to
+     * install new tools (see /admin/modules/) into mod.  If this is left to
      * false, it will suppress automatic tool installation in Tsugi admin.
      *
      * $CFG->install_folder = $CFG->dirroot.'/mod';
@@ -627,8 +678,45 @@ class ConfigInfo {
      * the "local" students that log in through Google.
      *
      * $CFG->context_title = "Web Applications for Everybody";
+     *
+     * This property defaults to false, so isset($CFG->context_title) is always true.
+     * Use hasSiteContextTitle() when deciding whether a Google-wide home course exists.
      */
     public $context_title = false;
+
+    /**
+     * Site-menu courses waffle (tsugi-courses). Off by default.
+     *
+     * Leave false in production until there is more than one course to
+     * switch between. Course-nav editing is separate.
+     *
+     * Legacy configs may still call setExtension('show_courses_widget', true);
+     * that writes this property as well so sites can migrate slowly.
+     */
+    public $show_courses_widget = false;
+
+    /**
+     * Course catalog link in the courses waffle footer. Off by default.
+     *
+     * The /catalog page itself is public. Legacy configs may still call
+     * setExtension('show_course_catalog', true); that writes this property too.
+     */
+    public $show_course_catalog = false;
+
+    /**
+     * URL for the site Home brand and Exit course. Any URL.
+     *
+     * When false/empty, Home is apphome if that is a non-empty string,
+     * otherwise wwwroot.
+     *
+     *     $CFG->home_path = $CFG->apphome;
+     *     $CFG->home_path = $CFG->wwwroot;
+     *     $CFG->home_path = 'https://example.com/';
+     *
+     * Legacy configs may still call setExtension('home_path', ...); that
+     * writes this property too.
+     */
+    public $home_path = false;
 
     /**
      * Path (on disk) to the gift quiz content.
@@ -699,6 +787,10 @@ class ConfigInfo {
      * create and point to a lessons.json file
      *
      * $CFG->lessons = $CFG->dirroot.'/../lessons.json';
+     *
+     * This property defaults to false, so isset($CFG->lessons) is always true.
+     * Use hasSiteLessons() when deciding whether to show site Lessons navigation.
+     * Site Lessons also require hasSiteContextTitle() — no Google-wide course, no top-level Lessons.
      */
     public $lessons = false;
 
@@ -709,15 +801,6 @@ class ConfigInfo {
      * $CFG->topics = $CFG->dirroot.'/../topics.json';
      */
     public $topics = false;
-
-    /**
-     * Storage location for Lumen Application.
-     *
-     * Needed for log files, by default dirroot."/storage/". This needs
-     * to be a location on your server that has write access.
-     *
-     */
-    public $lumen_storage;
 
     /*
      * Whether or not to track launch activity
@@ -756,6 +839,44 @@ class ConfigInfo {
     public $google_client_id = false;
     public $google_client_secret = false;
     public $google_map_api_key = false;
+
+    /**
+     * Simulated Google site login at /login/simulate for local testing.
+     *
+     * QA back door. Never enable in production. Any request to /login/simulate
+     * is HTTP 403 unless this is boolean true and $qa_demo_secret is a non-empty string.
+     */
+    public $qa_demo_login = false;
+
+    /**
+     * Secret typed into the /login/simulate form.
+     *
+     * QA back door. Plaintext or sha256:... (same pattern as $adminpw). Required
+     * when $qa_demo_login is true; an empty/false value keeps the route at 403.
+     */
+    public $qa_demo_secret = false;
+
+    /**
+     * QA setting names that are turned on.
+     *
+     * Boolean true counts. A non-empty string counts, so a QA secret is listed
+     * without its value. False, null, and an empty string do not.
+     *
+     * @return array<int, string>
+     */
+    public function enabledQaSettings() {
+        $enabled = array();
+        foreach ( get_object_vars($this) as $name => $value ) {
+            if ( ! is_string($name) || strncmp($name, 'qa_', 3) !== 0 ) {
+                continue;
+            }
+            if ( $value === true || (is_string($value) && $value !== '') ) {
+                $enabled[] = $name;
+            }
+        }
+        sort($enabled, SORT_STRING);
+        return $enabled;
+    }
 
     /**
      * Enable service worker for push notifications and offline support
@@ -845,16 +966,16 @@ class ConfigInfo {
      * If set to false our login comes back to "login.php".
      *
      * The login return is part of your OAuth 2.0 configuration
-     * in Google.  And some old integrations used login.php.
-     * New integrations should use "/login" and leave this true.
-     * This is here to for old integrations.
+     * in Google.  Some old integrations used login.php; that URL
+     * is still served by the Login controller. New integrations
+     * should use "/login" and leave this true.
      *
      * Note: This is ignored if $google_login_redirect is set.
      */
     public $google_login_new = true;
 
     /*
-     * This allows you to force login.php to always go to the same
+     * This allows you to force login to always go to the same
      * page after login success.  Tsugi looks at the session for a
      * "go back after login" URL, and will go to apphome or wwwroot.
      *
@@ -869,24 +990,6 @@ class ConfigInfo {
      * Defaults to $CFG->apphome if defined and $CFG->wwwroot if that is not defined or false
      */
     public $logout_return_url;
-
-    /**
-     * If we have a web socket server, put its URL here
-     * Do not add a path here - just the host and port
-     * Make sure the port is open on your server
-     *
-     * $CFG->websocket_secret = 'changeme';
-     * $CFG->websocket_url = 'ws://localhost:2021'; // Local dev test
-     * $CFG->websocket_url = 'wss://socket.tsugicloud.org:443'; // Production
-     *
-     * If you are running a reverse proxy (proxy_wstunnel) set this to the port
-     * you will forward to in your apache config
-     *
-     * $CFG->websocket_proxyport = 8080;
-    */
-    public $websocket_secret = false;
-    public $websocket_url = false;
-    public $websocket_proxyport = false;
 
     /**
      * If the web server is NOT behind a reverse proxy, you may optionally wish
@@ -945,6 +1048,15 @@ class ConfigInfo {
     public $analytics_key = false;
     public $analytics_name = false;
     public $universal_analytics = false;
+
+    /**
+     * Deprecated: long-lived TSUGIAUTO auto-login (loginSecureCookie).
+     *
+     * Ignored. The cookie is no longer set or read. These properties remain so
+     * existing config.php assignments do not warn. Setting either has no effect.
+     */
+    public $enable_secure_cookie_login = false;
+    public $cookiename = 'TSUGIAUTO';
 
     /**
      * Badge generation settings - once you start issuing badges - don't change these
@@ -1097,18 +1209,45 @@ class ConfigInfo {
         $this->wwwroot = $wwwroot;
         $this->extensions = array();
         $this->staticroot = 'https://static.tsugi.org';
-        $this->lumen_storage = sprintf("%s/storage/", $dirroot);
     }
 
     function getExtension($key, $default=null) {
-	    return $this->extensions[$key] ?? $default;
+        $prop = self::promotedExtensionProperty($key);
+        if ( $prop !== null ) {
+            return $this->{$prop};
+        }
+        return $this->extensions[$key] ?? $default;
     }
 
     /**
      * Set an extension value
+     *
+     * For show_courses_widget, show_course_catalog, and home_path, also
+     * writes the matching ConfigInfo property so old setExtension() configs
+     * keep working.
      */
     function setExtension($key, $value) {
-	    $this->extensions[$key] = $value;
+        $this->extensions[$key] = $value;
+        $prop = self::promotedExtensionProperty($key);
+        if ( $prop !== null ) {
+            $this->{$prop} = $value;
+        }
+    }
+
+    /**
+     * Extension keys that are now first-class ConfigInfo properties.
+     *
+     * TODO: Delete this compatibility shim (and the promoted branches in
+     * getExtension / setExtension) once sites have migrated to the ConfigInfo
+     * properties. Revisit 1 November 2026.
+     *
+     * @return string|null
+     */
+    private static function promotedExtensionProperty($key) {
+        if ( $key === 'show_courses_widget' || $key === 'show_course_catalog' || $key === 'home_path' ) {
+            return $key;
+        }
+        return null;
     }
 
     function getCurrentFile($file) {
@@ -1140,6 +1279,58 @@ class ConfigInfo {
 
     function getLoginUrl() {
         return \Tsugi\Controllers\Login::loginUrl();
+    }
+
+    /**
+     * URL for the site Home brand and Exit course.
+     *
+     * Set $CFG->home_path to any URL. When it is empty, Home is apphome if
+     * that is a non-empty string, otherwise wwwroot.
+     *
+     * Legacy configs may still call setExtension('home_path', ...).
+     */
+    public function getHomeUrl() {
+        $path = $this->home_path;
+        if ( is_string($path) ) {
+            $normalized = self::normalizeHomeUrl($path);
+            if ( $normalized !== '' ) {
+                return $normalized;
+            }
+        }
+        if ( is_string($this->apphome) ) {
+            $normalized = self::normalizeHomeUrl($this->apphome);
+            if ( $normalized !== '' ) {
+                return $normalized;
+            }
+        }
+        return self::normalizeHomeUrl((string) $this->wwwroot);
+    }
+
+    /**
+     * True when Home/Exit have an enclosing-site URL (home_path or apphome).
+     *
+     * Standalone Tsugi (wwwroot only) returns false so Exit course stays hidden.
+     */
+    public function hasHomeUrl() {
+        $path = $this->home_path;
+        if ( is_string($path) && self::normalizeHomeUrl($path) !== '' ) {
+            return true;
+        }
+        return is_string($this->apphome) && self::normalizeHomeUrl($this->apphome) !== '';
+    }
+
+    /**
+     * @param mixed $url
+     */
+    private static function normalizeHomeUrl($url) {
+        $url = trim((string) $url);
+        if ( $url === '' ) {
+            return '';
+        }
+        if ( $url === '/' ) {
+            return '/';
+        }
+        return rtrim($url, '/');
     }
 
     /**
@@ -1232,6 +1423,26 @@ class ConfigInfo {
         if ( strpos($this->wwwroot,'://localhost') !== false ) return true;
         if ( strpos($this->wwwroot,'://127.0.0.1') !== false ) return true;
         return false;
+    }
+
+    /**
+     * Is a Google-wide site course configured?
+     *
+     * $CFG->context_title defaults to false, so isset($CFG->context_title) is always true.
+     */
+    public function hasSiteContextTitle() {
+        return is_string($this->context_title) && strlen(trim($this->context_title)) > 0;
+    }
+
+    /**
+     * Is a site-level lessons.json configured for the Google-wide course?
+     *
+     * Requires both a lessons path and hasSiteContextTitle(). Course manifests can
+     * still provide Lessons under /courses/{id}/ even when this returns false.
+     */
+    public function hasSiteLessons() {
+        return $this->hasSiteContextTitle()
+            && is_string($this->lessons) && strlen(trim($this->lessons)) > 0;
     }
 
     /**

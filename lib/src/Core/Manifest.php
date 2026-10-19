@@ -1,0 +1,1328 @@
+<?php
+
+namespace Tsugi\Core;
+
+use \Tsugi\Util\MCache;
+use \Tsugi\Util\U;
+use \Tsugi\Services\Lessons\LessonsService;
+use \Tsugi\Services\Lessons\LessonsNormalize;
+
+/**
+ * Versioned course manifest, keyed by immutable manifest_id.
+ *
+ * File-based $CFG->lessons sites are unchanged: a context with no
+ * manifest_id keeps using the file. New courses get a manifest row;
+ * each save inserts a new row and points lti_context.manifest_id at it.
+ *
+ * The lessons JSON (column `manifest`) is the course outline. New courses
+ * start as Lessons JSON v2 (`lessons_json_version: 2`). File-backed
+ * $CFG->lessons sites stay classic and are not authored. Do not grow that
+ * blob with new course-setup features. New course-settings fields are independent
+ * columns on this row (theme is a VARCHAR key; navigation is JSON).
+ *
+ * The PHP session holds only the integer manifest_id. The immutable row
+ * (lessons JSON plus sibling columns) is loaded on demand and cached in
+ * Memcached (MCache) under a key derived from manifest_id, not context_id.
+ * Tsugi\Core\Cache is session-based and must not be used for this document.
+ * Older cache entries that stored a JSON string only are still accepted.
+ *
+ * A resource-link read (store install, peer-grade inherit, Autograder,
+ * Google Classroom rlid) uses {@see currentLessons()}: the course manifest
+ * when this context has one, otherwise $CFG->lessons. CC export and admin
+ * install repos stay on the site file. Discussion items in the lessons
+ * page open the discussions controller for that resource_link_id.
+ *
+ * Every new version is test-loaded with LessonsService::tryFromJson() before insert.
+ * Authoring can export/import a lessons.json file; import is the same save path.
+ *
+ * Outbound LTI launches from the lessons/discussions catalog (file vs manifest
+ * resource_link_id, custom, launch URL) are a later pass. Do not mix those
+ * behaviors in casually; parent-site launches and new-course launches will
+ * need an explicit design.
+ */
+class Manifest {
+
+    /** Memcached TTL in seconds; 0 means no expiry. Rows are immutable. */
+    const CACHE_TTL = 86400;
+
+    /** @var array<int, string> Request-local JSON strings keyed by manifest_id. */
+    private static $requestJson = array();
+
+    /** @var array<int, array<string, mixed>> Request-local manifest rows keyed by manifest_id. */
+    private static $requestRows = array();
+
+    /** @var MCache|object|null Injected or lazy MCache; false means "constructed empty". */
+    private static $mcache = null;
+
+    /**
+     * Drop request-local memoization (tests / identity switch).
+     */
+    public static function resetRequestCache() {
+        self::$requestJson = array();
+        self::$requestRows = array();
+    }
+
+    /**
+     * Replace the MCache used by loadJson (tests). Pass null to rebuild from $CFG.
+     *
+     * @param MCache|object|null $mcache
+     */
+    public static function setMCache($mcache) {
+        self::$mcache = $mcache;
+    }
+
+    /**
+     * Memcached key for an immutable manifest row.
+     */
+    public static function cacheKey($manifest_id) {
+        global $CFG;
+        $id = (int) $manifest_id;
+        $prefix = 'tsugi';
+        if ( is_object($CFG) && method_exists($CFG, 'serverPrefix') ) {
+            $p = $CFG->serverPrefix();
+            if ( is_string($p) && strlen($p) > 0 ) {
+                $prefix = $p;
+            }
+        }
+        return $prefix . ':manifest:' . $id;
+    }
+
+    /**
+     * Minimal Lessons JSON v2 document for a newly created course.
+     *
+     * @return array<string, mixed>
+     */
+    public static function starter($title) {
+        $title = is_string($title) ? trim($title) : '';
+        if ( $title === '' ) {
+            $title = 'Untitled Course';
+        }
+        return array(
+            'lessons_json_version' => LessonsNormalize::FORMAT_VERSION,
+            'title' => $title,
+            'description' => '',
+            'count' => true,
+            'required_modules' => array(),
+            'discussions' => array(),
+            'badges' => array(),
+            'modules' => array(),
+        );
+    }
+
+    /**
+     * True when the decoded document is Lessons JSON v2.
+     *
+     * @param mixed $decoded
+     * @return bool
+     */
+    public static function documentIsV2($decoded) {
+        return LessonsNormalize::isV2Document($decoded);
+    }
+
+    /**
+     * True when the active course manifest is Lessons JSON v2 in the database.
+     * File-backed $CFG->lessons and classic/v1 manifests are never authorable.
+     */
+    public static function currentIsV2() {
+        if ( self::resolvedId() < 1 ) {
+            return false;
+        }
+        $doc = self::currentDocument();
+        if ( ! $doc || ! isset($doc['json']) || ! is_string($doc['json']) ) {
+            return false;
+        }
+        $decoded = json_decode($doc['json'], true);
+        return self::documentIsV2($decoded);
+    }
+
+    /**
+     * Authoring is only for a database-backed v2 course created via Courses.
+     */
+    public static function canAuthorCurrent() {
+        return self::currentIsV2();
+    }
+
+    /**
+     * Named course palettes (legacy $CFG->theme shape).
+     *
+     * Keys are stored in manifest.theme. NULL / empty means the site $CFG->theme.
+     * Samples taken from peer tsugi_settings.php files (DJ4E, PG4E/CC4E, WS2),
+     * PY4E-AI ($CFG->theme_base / --ai-accent), plus the Tsugi default primary
+     * from Theme::defaults().
+     *
+     * @return array<string, array<string, string>>
+     */
+    public static function palettes() {
+        return array(
+            'tsugi' => array(
+                'label' => 'Tsugi Blue',
+                'primary' => '#0D47A1',
+                'secondary' => '#EEEEEE',
+                'text' => '#111111',
+                'text-light' => '#5E5E5E',
+                'font-family' => 'sans-serif',
+                'font-size' => '14px',
+            ),
+            'django' => array(
+                'label' => 'Django Green',
+                'primary' => '#0a4b33',
+                'secondary' => '#EEEEEE',
+                'text' => '#111111',
+                'text-light' => '#5E5E5E',
+                'font-url' => 'https://fonts.googleapis.com/css?family=Roboto:400',
+                'font-family' => "'Roboto', Corbel, Avenir, 'Lucida Grande', 'Lucida Sans', sans-serif",
+                'font-size' => '14px',
+            ),
+            'postgres' => array(
+                'label' => 'Postgres Blue',
+                'primary' => '#336791',
+                'secondary' => '#EEEEEE',
+                'text' => '#111111',
+                'text-light' => '#5E5E5E',
+                'font-url' => 'https://fonts.googleapis.com/css2?family=Open+Sans',
+                'font-family' => "'Open Sans', Corbel, Avenir, 'Lucida Grande', 'Lucida Sans', sans-serif",
+                'font-size' => '14px',
+            ),
+            'navy' => array(
+                'label' => 'Navy',
+                'primary' => '#000060',
+                'secondary' => '#EEEEEE',
+                'text' => '#111111',
+                'text-light' => '#5E5E5E',
+                'font-url' => 'https://fonts.googleapis.com/css?family=Roboto:400',
+                'font-family' => "'Roboto', Corbel, Avenir, 'Lucida Grande', 'Lucida Sans', sans-serif",
+                'font-size' => '14px',
+            ),
+            'electric' => array(
+                'label' => 'Electric',
+                'primary' => '#7c3aed',
+                'secondary' => '#EEEEEE',
+                'text' => '#1e1b4b',
+                'text-light' => '#4338ca',
+                'font-family' => 'sans-serif',
+                'font-size' => '14px',
+            ),
+            'grey' => array(
+                'label' => 'Light Grey',
+                'primary' => '#D0D0D0',
+                'secondary' => '#111111',
+                'text' => '#111111',
+                'text-light' => '#5E5E5E',
+                'font-family' => 'sans-serif',
+                'font-size' => '14px',
+            ),
+            'hc-bow' => array(
+                'label' => 'High contrast black on white',
+                'primary' => '#000000',
+                'primary-menu' => '#000000',
+                'primary-border' => '#000000',
+                'primary-darker' => '#000000',
+                'primary-darkest' => '#000000',
+                'background-color' => '#FFFFFF',
+                'background-focus' => '#FFFFFF',
+                'background-accent' => '#000000',
+                'secondary' => '#FFFFFF',
+                'secondary-menu' => '#FFFFFF',
+                'text' => '#000000',
+                'text-light' => '#000000',
+                'font-family' => 'sans-serif',
+                'font-size' => '14px',
+            ),
+            'hc-wob' => array(
+                'label' => 'High contrast white on black',
+                'primary' => '#FFFFFF',
+                'primary-menu' => '#FFFFFF',
+                'primary-border' => '#FFFFFF',
+                'primary-darker' => '#FFFFFF',
+                'primary-darkest' => '#FFFFFF',
+                'background-color' => '#000000',
+                'background-focus' => '#000000',
+                'background-accent' => '#FFFFFF',
+                'secondary' => '#000000',
+                'secondary-menu' => '#000000',
+                'text' => '#FFFFFF',
+                'text-light' => '#FFFFFF',
+                'font-family' => 'sans-serif',
+                'font-size' => '14px',
+            ),
+        );
+    }
+
+    /**
+     * Palette key from a profile theme_override, or null to keep site/course theme.
+     *
+     * Maps legacy light/dark overrides to the high-contrast palettes.
+     *
+     * @return string|null
+     */
+    public static function profileThemeKey($override) {
+        if ( $override === 'light' ) {
+            $override = 'hc-bow';
+        } else if ( $override === 'dark' ) {
+            $override = 'hc-wob';
+        }
+        $norm = self::normalizeThemeKey($override);
+        if ( $norm === 'hc-bow' || $norm === 'hc-wob' ) {
+            return $norm;
+        }
+        return null;
+    }
+
+    /**
+     * Palette array for a theme key, without the display label. Null if unknown or site default.
+     *
+     * @return array<string, string>|null
+     */
+    public static function palette($key) {
+        $norm = self::normalizeThemeKey($key);
+        if ( ! is_string($norm) ) {
+            return null;
+        }
+        $all = self::palettes();
+        if ( ! isset($all[$norm]) || ! is_array($all[$norm]) ) {
+            return null;
+        }
+        $p = $all[$norm];
+        unset($p['label'], $p['swatch']);
+        return $p;
+    }
+
+    /**
+     * Validate a posted theme key.
+     *
+     * @return string|null|false Named key, null for site default, false if unknown.
+     */
+    public static function normalizeThemeKey($key) {
+        if ( $key === null ) {
+            return null;
+        }
+        if ( ! is_string($key) ) {
+            return false;
+        }
+        $key = strtolower(trim($key));
+        if ( $key === '' || $key === 'default' || $key === 'site' ) {
+            return null;
+        }
+        $all = self::palettes();
+        if ( ! isset($all[$key]) ) {
+            return false;
+        }
+        return $key;
+    }
+
+    /**
+     * Nav primary color for the site default (no named course theme).
+     *
+     * Matches Output::get_theme() when manifest.theme is NULL: theme_base,
+     * then $CFG->theme primary, then the Tsugi default.
+     */
+    public static function siteDefaultPrimary() {
+        global $CFG;
+        if ( is_object($CFG) && isset($CFG->theme_base) && is_string($CFG->theme_base)
+                && U::isValidCSSColor($CFG->theme_base) ) {
+            return $CFG->theme_base;
+        }
+        if ( is_object($CFG) && isset($CFG->theme) && is_array($CFG->theme)
+                && isset($CFG->theme['primary']) && is_string($CFG->theme['primary'])
+                && U::isValidCSSColor($CFG->theme['primary']) ) {
+            return $CFG->theme['primary'];
+        }
+        return '#0D47A1';
+    }
+
+    /**
+     * Theme key stored on the active manifest row (empty string = site default).
+     */
+    public static function currentThemeKey() {
+        $id = self::resolvedId();
+        if ( $id < 1 ) {
+            return '';
+        }
+        $row = self::loadRow($id);
+        if ( ! is_array($row) ) {
+            return '';
+        }
+        $key = $row['theme'] ?? '';
+        return is_string($key) ? $key : '';
+    }
+
+    /**
+     * Raw palette for the active named theme, or null to keep $CFG->theme.
+     *
+     * @return array<string, string>|null
+     */
+    public static function currentThemeArray() {
+        $key = self::currentThemeKey();
+        if ( $key === '' ) {
+            return null;
+        }
+        return self::palette($key);
+    }
+
+    /**
+     * Theme key currently pointed at by a context, or null.
+     *
+     * @return string|null
+     */
+    public static function themeKeyForContext($context_id) {
+        global $CFG;
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return null;
+        }
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+        $row = $PDOX->rowDie(
+            "SELECT m.theme AS theme
+             FROM {$p}lti_context c
+             LEFT JOIN {$p}manifest m ON m.manifest_id = c.manifest_id
+             WHERE c.context_id = :CID",
+            array(':CID' => $cid)
+        );
+        if ( ! is_array($row) ) {
+            return null;
+        }
+        $key = $row['theme'] ?? null;
+        if ( ! is_string($key) || $key === '' ) {
+            return null;
+        }
+        $norm = self::normalizeThemeKey($key);
+        return is_string($norm) ? $norm : null;
+    }
+
+    /**
+     * Raw navigation JSON for a context's active manifest, or null if missing.
+     *
+     * Empty string and whitespace are treated as missing. A stored
+     * `{"items":[]}` is returned as-is (teacher turned optional items off).
+     *
+     * @return string|null
+     */
+    public static function navigationJsonForContext($context_id) {
+        global $CFG, $PDOX;
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return null;
+        }
+        if ( ! isset($PDOX) || ! is_object($PDOX) ) {
+            return null;
+        }
+        $p = $CFG->dbprefix;
+        $row = $PDOX->rowDie(
+            "SELECT m.navigation AS navigation
+             FROM {$p}lti_context c
+             LEFT JOIN {$p}manifest m ON m.manifest_id = c.manifest_id
+             WHERE c.context_id = :CID",
+            array(':CID' => $cid)
+        );
+        if ( ! is_array($row) ) {
+            return null;
+        }
+        $raw = $row['navigation'] ?? null;
+        if ( ! is_string($raw) || trim($raw) === '' ) {
+            return null;
+        }
+        return $raw;
+    }
+
+    /**
+     * Decoded navigation document for a context (CourseNav default if missing).
+     *
+     * @return array<string, mixed>
+     */
+    public static function navigationDocumentForContext($context_id) {
+        return \Tsugi\Services\CourseNav\CourseNav::documentFromJson(
+            self::navigationJsonForContext($context_id)
+        );
+    }
+
+    /**
+     * Encode manifest JSON the same way file authoring does.
+     *
+     * @param array<string, mixed>|object $data
+     */
+    public static function encode($data) {
+        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Test-load a JSON string as Lessons. Returns an error message, or null if valid.
+     *
+     * @return string|null
+     */
+    public static function validateJson($json) {
+        if ( ! is_string($json) || trim($json) === '' ) {
+            return 'Document is empty';
+        }
+        $loaded = LessonsService::tryFromJson($json);
+        if ( $loaded instanceof LessonsService ) {
+            $decoded = json_decode($json, true);
+            if ( is_array($decoded) && self::hasDuplicateResourceLinkIds($decoded) ) {
+                return 'Duplicate resource_link_id';
+            }
+            if ( is_array($decoded) ) {
+                $quizErr = LessonsNormalize::invalidQuizIdError($decoded);
+                if ( $quizErr !== null ) {
+                    return $quizErr;
+                }
+            }
+            return null;
+        }
+        if ( is_string($loaded) && strlen($loaded) > 0 ) {
+            return $loaded;
+        }
+        return 'Invalid lessons document';
+    }
+
+    /**
+     * Download filename for an exported lessons.json.
+     *
+     * Includes V{n} when a manifest version is known, and the export date.
+     */
+    public static function exportFilename($title, $version = 0, $date = null) {
+        $title = is_string($title) ? $title : '';
+        $slug = preg_replace('/[^A-Za-z0-9]+/', '-', $title);
+        $slug = trim($slug, '-');
+        $version = (int) $version;
+        if ( ! is_string($date) || $date === '' ) {
+            $date = date('Y-m-d');
+        }
+        $date = preg_replace('/[^0-9-]/', '', $date);
+        $parts = array();
+        if ( $slug !== '' ) {
+            $parts[] = $slug;
+        } else {
+            $parts[] = 'lessons';
+        }
+        if ( $version > 0 ) {
+            $parts[] = 'V' . $version;
+        }
+        if ( $date !== '' ) {
+            $parts[] = $date;
+        }
+        if ( $slug !== '' ) {
+            return implode('-', $parts) . '-lessons.json';
+        }
+        return implode('-', $parts) . '.json';
+    }
+
+    /**
+     * Append a course-level discussion to a decoded lessons document.
+     *
+     * @param array<string, mixed> $data
+     * @return array{data: array<string, mixed>, resource_link_id: string}
+     */
+    public static function appendDiscussion($data, $title, $launch = null) {
+        if ( ! is_array($data) ) {
+            throw new \InvalidArgumentException('Document must be an array');
+        }
+        $title = is_string($title) ? trim($title) : '';
+        if ( $title === '' ) {
+            throw new \InvalidArgumentException('Title is required');
+        }
+        if ( ! isset($data['discussions']) || ! is_array($data['discussions']) ) {
+            $data['discussions'] = array();
+        }
+        $used = self::collectResourceLinkIds($data);
+        $rlid = LessonsNormalize::allocateDiscussionRlid($title, $used);
+        $entry = array(
+            'type' => LessonsNormalize::TYPE_DISCUSSION,
+            'title' => $title,
+            'resource_link_id' => $rlid,
+        );
+        if ( is_string($launch) && trim($launch) !== ''
+            && ! LessonsNormalize::isBuiltInDiscussionLaunch($launch) ) {
+            $entry['launch'] = trim($launch);
+        }
+        $data['discussions'][] = $entry;
+        if ( isset($data['discussion_order']) && is_array($data['discussion_order']) ) {
+            $data['discussion_order'][] = $rlid;
+        }
+        return array('data' => $data, 'resource_link_id' => $rlid);
+    }
+
+    /**
+     * Reorder course discussions to match a list of resource_link_id values.
+     *
+     * Sets discussion_order (catalog display) and permutes the top-level
+     * discussions array. Unknown ids are ignored; discussions not in the
+     * list keep their relative order at the end.
+     *
+     * @param array<string, mixed> $data
+     * @param array<int, mixed> $ordered_rlids
+     * @return array<string, mixed>
+     */
+    public static function reorderDiscussions($data, $ordered_rlids) {
+        if ( ! is_array($data) ) {
+            throw new \InvalidArgumentException('Document must be an array');
+        }
+        if ( ! is_array($ordered_rlids) ) {
+            throw new \InvalidArgumentException('Order is required');
+        }
+        $seen = array();
+        $order = array();
+        foreach ( $ordered_rlids as $id ) {
+            if ( is_int($id) || is_float($id) ) {
+                $id = (string) $id;
+            }
+            if ( ! is_string($id) ) {
+                continue;
+            }
+            $id = trim($id);
+            if ( $id === '' || isset($seen[$id]) ) {
+                continue;
+            }
+            $seen[$id] = true;
+            $order[] = $id;
+        }
+        if ( count($order) < 1 ) {
+            throw new \InvalidArgumentException('Order is required');
+        }
+        $data['discussion_order'] = $order;
+
+        if ( isset($data['discussions']) && is_array($data['discussions']) ) {
+            $by_id = array();
+            $no_id = array();
+            foreach ( $data['discussions'] as $d ) {
+                if ( ! is_array($d) ) {
+                    continue;
+                }
+                $rid = isset($d['resource_link_id']) && is_string($d['resource_link_id'])
+                    ? $d['resource_link_id'] : '';
+                if ( $rid === '' ) {
+                    $no_id[] = $d;
+                    continue;
+                }
+                if ( ! isset($by_id[$rid]) ) {
+                    $by_id[$rid] = $d;
+                }
+            }
+            $new = array();
+            foreach ( $order as $rid ) {
+                if ( isset($by_id[$rid]) ) {
+                    $new[] = $by_id[$rid];
+                    unset($by_id[$rid]);
+                }
+            }
+            foreach ( $by_id as $d ) {
+                $new[] = $d;
+            }
+            foreach ( $no_id as $d ) {
+                $new[] = $d;
+            }
+            $data['discussions'] = $new;
+        }
+        return $data;
+    }
+
+    /**
+     * resource_link_id values already used in a decoded lessons document.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, true>
+     */
+    public static function collectResourceLinkIds($data) {
+        $ids = array();
+        if ( ! is_array($data) ) {
+            return $ids;
+        }
+        self::collectRlidsFromList(isset($data['discussions']) ? $data['discussions'] : null, $ids);
+        self::collectRlidsFromList(isset($data['launches']) ? $data['launches'] : null, $ids);
+        if ( isset($data['modules']) && is_array($data['modules']) ) {
+            foreach ( $data['modules'] as $mod ) {
+                if ( ! is_array($mod) ) {
+                    continue;
+                }
+                self::collectRlidsFromList(isset($mod['lti']) ? $mod['lti'] : null, $ids);
+                self::collectRlidsFromList(isset($mod['discussions']) ? $mod['discussions'] : null, $ids);
+                self::collectRlidsFromList(isset($mod['items']) ? $mod['items'] : null, $ids);
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return bool
+     */
+    private static function hasDuplicateResourceLinkIds(array $data) {
+        $ids = array();
+        $duplicate = false;
+        self::collectRlidsFromList(isset($data['discussions']) ? $data['discussions'] : null, $ids, $duplicate);
+        self::collectRlidsFromList(isset($data['launches']) ? $data['launches'] : null, $ids, $duplicate);
+        if ( isset($data['modules']) && is_array($data['modules']) ) {
+            foreach ( $data['modules'] as $mod ) {
+                if ( ! is_array($mod) ) {
+                    continue;
+                }
+                self::collectRlidsFromList(isset($mod['lti']) ? $mod['lti'] : null, $ids, $duplicate);
+                self::collectRlidsFromList(isset($mod['discussions']) ? $mod['discussions'] : null, $ids, $duplicate);
+                self::collectRlidsFromList(isset($mod['items']) ? $mod['items'] : null, $ids, $duplicate);
+            }
+        }
+        return $duplicate;
+    }
+
+    /**
+     * @param mixed $list
+     * @param array<string, true> $ids
+     */
+    private static function collectRlidsFromList($list, &$ids, &$duplicate = false) {
+        if ( ! is_array($list) ) {
+            return;
+        }
+        foreach ( $list as $item ) {
+            if ( ! is_array($item) ) {
+                continue;
+            }
+            if ( isset($item['resource_link_id'])
+                    && is_string($item['resource_link_id']) && $item['resource_link_id'] !== '' ) {
+                if ( isset($ids[$item['resource_link_id']]) ) {
+                    $duplicate = true;
+                }
+                $ids[$item['resource_link_id']] = true;
+            }
+            if ( isset($item['items']) && is_array($item['items']) ) {
+                self::collectRlidsFromList($item['items'], $ids, $duplicate);
+            }
+        }
+    }
+
+    private static function discussionRlidBase($title) {
+        return LessonsNormalize::discussionRlidBase($title);
+    }
+
+    /**
+     * Active manifest_id for this request (session only; 0 if file-backed or none).
+     *
+     * Use {@see resolvedId()} for the course document. This stays session-only
+     * so restoreSiteLoginContext() can tell a leftover sandbox from none.
+     */
+    public static function activeId() {
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        if ( isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey]) ) {
+            $id = self::positiveId($_SESSION[$ltiKey]['manifest_id'] ?? 0);
+            if ( $id > 0 ) {
+                return $id;
+            }
+        }
+        return self::positiveId($_SESSION['manifest_id'] ?? 0);
+    }
+
+    /**
+     * lti_context.manifest_id for a course, or 0.
+     *
+     * Does not open a database connection. Callers that already have $PDOX
+     * (nested /courses/{id}, LTIX setup) get a lookup; unit tests do not.
+     */
+    public static function idForContext($context_id) {
+        global $CFG, $PDOX;
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return 0;
+        }
+        if ( ! isset($PDOX) || ! is_object($PDOX) || ! method_exists($PDOX, 'rowDie') ) {
+            return 0;
+        }
+        $p = $CFG->dbprefix;
+        $row = $PDOX->rowDie(
+            "SELECT manifest_id FROM {$p}lti_context WHERE context_id = :CID LIMIT 1",
+            array(':CID' => $cid)
+        );
+        if ( ! is_array($row) ) {
+            return 0;
+        }
+        return self::positiveId($row['manifest_id'] ?? 0);
+    }
+
+    /**
+     * Manifest id for the current course: session, else lti_context.manifest_id.
+     *
+     * Hydrates the session so later activeId() calls match. Nested /courses/{id}
+     * can already have the right context_id (Pages/Files work) while the
+     * session still has no manifest_id from Google login.
+     */
+    public static function resolvedId() {
+        $id = self::activeId();
+        if ( $id > 0 ) {
+            return $id;
+        }
+        $id = self::idForContext(ReqScope::currentContextIdLegacy());
+        if ( $id > 0 ) {
+            self::rememberInSession($id);
+        }
+        return $id;
+    }
+
+    /**
+     * Copy manifest_id into the session LTI blob (integer only).
+     */
+    public static function rememberInSession($manifest_id) {
+        $id = (int) $manifest_id;
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        if ( $id < 1 ) {
+            unset($_SESSION['manifest_id']);
+            if ( isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey]) ) {
+                unset($_SESSION[$ltiKey]['manifest_id']);
+            }
+            return;
+        }
+        $_SESSION['manifest_id'] = $id;
+        if ( ! isset($_SESSION[$ltiKey]) || ! is_array($_SESSION[$ltiKey]) ) {
+            $_SESSION[$ltiKey] = array();
+        }
+        $_SESSION[$ltiKey]['manifest_id'] = $id;
+    }
+
+    /**
+     * JSON string for a manifest_id, or false if missing.
+     *
+     * Lookup: request memo, then MCache, then database. Does not parse into Lessons.
+     *
+     * @return string|false
+     */
+    public static function loadJson($manifest_id) {
+        $id = (int) $manifest_id;
+        if ( $id < 1 ) {
+            return false;
+        }
+        if ( isset(self::$requestJson[$id]) && is_string(self::$requestJson[$id]) ) {
+            return self::$requestJson[$id];
+        }
+        if ( isset(self::$requestRows[$id]) ) {
+            $json = self::$requestRows[$id]['manifest'] ?? '';
+            if ( is_string($json) && $json !== '' ) {
+                self::$requestJson[$id] = $json;
+                return $json;
+            }
+        }
+
+        $cache = self::mcache();
+        if ( $cache && method_exists($cache, 'isEnabled') && $cache->isEnabled()
+                && method_exists($cache, 'get') ) {
+            $cached = $cache->get(self::cacheKey($id));
+            $row = self::rowFromCacheValue($cached);
+            if ( is_array($row) ) {
+                if ( ! isset($row['manifest_id']) ) {
+                    $row['manifest_id'] = $id;
+                }
+                self::rememberRequest($id, $row);
+                return $row['manifest'];
+            }
+            if ( is_string($cached) && strlen($cached) > 0 ) {
+                self::$requestJson[$id] = $cached;
+                return $cached;
+            }
+        }
+
+        return self::loadJsonFromDatabase($id);
+    }
+
+    /**
+     * True if this request has a course document (active manifest or readable $CFG->lessons).
+     */
+    public static function hasCurrent() {
+        if ( self::resolvedId() > 0 ) {
+            return true;
+        }
+        global $CFG;
+        return isset($CFG->lessons) && is_string($CFG->lessons) && strlen($CFG->lessons) > 0
+            && is_readable($CFG->lessons);
+    }
+
+    /**
+     * Like {@see currentLessons()} but dies if neither a manifest nor a file is available.
+     *
+     * @return LessonsService
+     */
+    public static function requireCurrentLessons($anchor = null) {
+        $l = self::currentLessons($anchor);
+        if ( ! $l ) {
+            die_with_error_log('Cannot find lessons.json ($CFG->lessons) or an active course manifest');
+        }
+        return $l;
+    }
+
+    /**
+     * Lessons for the current context: manifest JSON if active, else $CFG->lessons file.
+     *
+     * @return LessonsService|false
+     */
+    public static function currentLessons($anchor = null) {
+        $id = self::resolvedId();
+        if ( $id > 0 ) {
+            $json = self::loadJson($id);
+            if ( is_string($json) ) {
+                return LessonsService::fromJson($json, $anchor);
+            }
+            return false;
+        }
+        global $CFG;
+        if ( isset($CFG->lessons) && is_string($CFG->lessons) && strlen($CFG->lessons) > 0
+                && is_readable($CFG->lessons) ) {
+            return new LessonsService($CFG->lessons, $anchor);
+        }
+        return false;
+    }
+
+    /**
+     * Raw JSON for authoring: manifest row or $CFG->lessons file.
+     *
+     * @return array{json: string, label: string, manifest_id: int, version: int}|false
+     */
+    public static function currentDocument() {
+        $id = self::resolvedId();
+        if ( $id > 0 ) {
+            $json = self::loadJson($id);
+            if ( ! is_string($json) ) {
+                return false;
+            }
+            $row = self::loadRow($id);
+            $ver = is_array($row) && isset($row['version']) ? (int) $row['version'] : 0;
+            $label = 'manifest #' . $id;
+            if ( $ver > 0 ) {
+                $label .= ' (v' . $ver . ')';
+            }
+            return array('json' => $json, 'label' => $label, 'manifest_id' => $id, 'version' => $ver);
+        }
+        global $CFG;
+        if ( isset($CFG->lessons) && is_string($CFG->lessons) && is_readable($CFG->lessons) ) {
+            $json = file_get_contents($CFG->lessons);
+            if ( $json === false ) {
+                return false;
+            }
+            return array('json' => $json, 'label' => $CFG->lessons, 'manifest_id' => 0, 'version' => 0);
+        }
+        return false;
+    }
+
+    /**
+     * Insert an immutable new version and point lti_context.manifest_id at it.
+     *
+     * @param array<string, mixed>|object|string $data Decoded document or JSON string
+     * @param string|null $theme Theme key. Null copies the previous version for this
+     *        context. Empty string stores NULL (site $CFG->theme).
+     * @param mixed $navigation Navigation document or JSON. Null copies the previous
+     *        version (or the CourseNav default when the previous value is empty).
+     * @return int New manifest_id
+     */
+    public static function saveNewVersion($context_id, $data, $user_id = null, $comment = null, $theme = null, $navigation = null) {
+        global $CFG;
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            throw new \InvalidArgumentException('saveNewVersion requires a context_id');
+        }
+        if ( is_string($data) ) {
+            $decoded = json_decode($data, true);
+            if ( ! is_array($decoded) ) {
+                throw new \InvalidArgumentException('saveNewVersion: invalid JSON');
+            }
+            $data = $decoded;
+        } elseif ( is_object($data) ) {
+            $data = json_decode(json_encode($data), true);
+            if ( ! is_array($data) ) {
+                throw new \InvalidArgumentException('saveNewVersion: invalid document');
+            }
+        }
+        if ( ! is_array($data) ) {
+            throw new \InvalidArgumentException('saveNewVersion: expected array or JSON');
+        }
+
+        $json = self::encode($data);
+        if ( ! is_string($json) ) {
+            throw new \InvalidArgumentException('saveNewVersion: JSON encode failed');
+        }
+        $loadError = self::validateJson($json);
+        if ( $loadError !== null ) {
+            throw new \InvalidArgumentException($loadError);
+        }
+        $title = isset($data['title']) && is_string($data['title']) ? $data['title'] : null;
+        $uid = $user_id === null ? null : (int) $user_id;
+        if ( $uid !== null && $uid < 1 ) {
+            $uid = null;
+        }
+        $comment = is_string($comment) && strlen(trim($comment)) > 0 ? trim($comment) : null;
+
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+
+        if ( $theme === null ) {
+            $themeToStore = self::themeKeyForContext($cid);
+        } else {
+            $norm = self::normalizeThemeKey($theme);
+            if ( $norm === false ) {
+                throw new \InvalidArgumentException('Unknown theme');
+            }
+            $themeToStore = $norm;
+        }
+
+        if ( $navigation === null ) {
+            $navigationToStore = self::navigationJsonForContext($cid);
+            if ( $navigationToStore === null ) {
+                $navigationToStore = \Tsugi\Services\CourseNav\CourseNav::encode(
+                    \Tsugi\Services\CourseNav\CourseNav::defaultDocument()
+                );
+            }
+        } else {
+            $navigationToStore = \Tsugi\Services\CourseNav\CourseNav::encode(
+                \Tsugi\Services\CourseNav\CourseNav::normalize($navigation)
+            );
+        }
+
+        $next = $PDOX->rowDie(
+            "SELECT COALESCE(MAX(version), 0) + 1 AS next_version
+             FROM {$p}manifest WHERE context_id = :CID",
+            array(':CID' => $cid)
+        );
+        $version = is_array($next) ? (int) $next['next_version'] : 1;
+        if ( $version < 1 ) {
+            $version = 1;
+        }
+
+        $PDOX->queryDie(
+            "INSERT INTO {$p}manifest
+                (context_id, version, title, theme, navigation, manifest, comment, user_id, created_at)
+             VALUES
+                (:context_id, :version, :title, :theme, :navigation, :manifest, :comment, :user_id, NOW())",
+            array(
+                ':context_id' => $cid,
+                ':version' => $version,
+                ':title' => $title,
+                ':theme' => $themeToStore,
+                ':navigation' => $navigationToStore,
+                ':manifest' => $json,
+                ':comment' => $comment,
+                ':user_id' => $uid,
+            )
+        );
+        $manifest_id = (int) $PDOX->lastInsertId();
+        self::setActive($cid, $manifest_id);
+        if ( is_string($title) && $title !== '' ) {
+            self::syncContextTitle($cid, $title);
+        }
+        self::rememberCachedRow(array(
+            'manifest_id' => $manifest_id,
+            'context_id' => $cid,
+            'version' => $version,
+            'title' => $title,
+            'theme' => $themeToStore,
+            'navigation' => $navigationToStore,
+            'manifest' => $json,
+            'comment' => $comment,
+            'user_id' => $uid,
+        ));
+        return $manifest_id;
+    }
+
+    /**
+     * Point a context at an existing manifest row (must belong to that context).
+     */
+    public static function setActive($context_id, $manifest_id) {
+        global $CFG;
+        $cid = (int) $context_id;
+        $mid = (int) $manifest_id;
+        if ( $cid < 1 || $mid < 1 ) {
+            throw new \InvalidArgumentException('setActive requires context_id and manifest_id');
+        }
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+        $row = $PDOX->rowDie(
+            "SELECT manifest_id FROM {$p}manifest
+             WHERE manifest_id = :MID AND context_id = :CID",
+            array(':MID' => $mid, ':CID' => $cid)
+        );
+        if ( ! $row ) {
+            throw new \InvalidArgumentException('manifest does not belong to this context');
+        }
+        $PDOX->queryDie(
+            "UPDATE {$p}lti_context SET manifest_id = :MID, updated_at = NOW()
+             WHERE context_id = :CID",
+            array(':MID' => $mid, ':CID' => $cid)
+        );
+        if ( ReqScope::currentContextIdLegacy() === $cid ) {
+            self::rememberInSession($mid);
+        }
+    }
+
+    /**
+     * Copy a course title onto lti_context.title (/courses reads this column).
+     * When $context_id is the active context, also refresh session titles
+     * used by Tool::outboundContextTitle().
+     *
+     * PDOX rewrites INSERT into ON DUPLICATE KEY UPDATE and only refreshes
+     * the primary key, so a colliding insert can leave the old title in place.
+     */
+    public static function syncContextTitle($context_id, $title) {
+        global $CFG;
+        $cid = (int) $context_id;
+        $title = is_string($title) ? trim($title) : '';
+        if ( $cid < 1 || $title === '' ) {
+            return;
+        }
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+        $PDOX->queryDie(
+            "UPDATE {$p}lti_context SET title = :title, updated_at = NOW()
+             WHERE context_id = :CID",
+            array(':title' => $title, ':CID' => $cid)
+        );
+        if ( ReqScope::currentContextIdLegacy() === $cid ) {
+            $_SESSION['context_title'] = $title;
+            $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+            if ( isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey]) ) {
+                $_SESSION[$ltiKey]['context_title'] = $title;
+            }
+        }
+    }
+
+    /** Stored length of lti_context.short_title. */
+    const SHORT_TITLE_MAX = 64;
+
+    /**
+     * Trim a short title. Null when absent. False when longer than SHORT_TITLE_MAX.
+     *
+     * @param mixed $short_title
+     * @return string|null|false
+     */
+    public static function normalizeShortTitle($short_title) {
+        if ( ! is_string($short_title) ) {
+            return null;
+        }
+        $collapsed = preg_replace('/\s+/', ' ', $short_title);
+        if ( ! is_string($collapsed) ) {
+            return null;
+        }
+        $short_title = trim($collapsed);
+        if ( $short_title === '' ) {
+            return null;
+        }
+        $len = function_exists('mb_strlen') ? mb_strlen($short_title) : strlen($short_title);
+        if ( $len > self::SHORT_TITLE_MAX ) {
+            return false;
+        }
+        return $short_title;
+    }
+
+    /**
+     * Create an LTI context, instructor membership, and a v2 starter manifest.
+     *
+     * When $short_title is set, the first six characters become the course
+     * navigation home label.
+     *
+     * @param mixed $short_title
+     * @return array{ok: bool, context_id?: int, manifest_id?: int, error?: string}
+     */
+    public static function createCourse($title, $user_id, $key_id, $short_title = null) {
+        global $CFG;
+        $title = is_string($title) ? trim($title) : '';
+        if ( $title === '' ) {
+            return array('ok' => false, 'error' => 'Title is required.');
+        }
+        $short = self::normalizeShortTitle($short_title);
+        if ( $short === false ) {
+            return array('ok' => false, 'error' => 'Short title must be '.self::SHORT_TITLE_MAX.' characters or fewer.');
+        }
+        $user_id = (int) $user_id;
+        $key_id = (int) $key_id;
+        if ( $user_id < 1 ) {
+            return array('ok' => false, 'error' => 'Must be logged in.');
+        }
+        if ( $key_id < 1 ) {
+            return array('ok' => false, 'error' => 'Missing consumer key.');
+        }
+
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+        $context_key = 'course:' . bin2hex(random_bytes(16));
+
+        $context_sha = lti_sha256($context_key);
+        $PDOX->queryDie(
+            "INSERT INTO {$p}lti_context
+                (context_key, context_sha256, title, short_title, key_id, user_id, created_at, updated_at)
+             VALUES
+                (:context_key, :context_sha256, :title, :short_title, :key_id, :user_id, NOW(), NOW())",
+            array(
+                ':context_key' => $context_key,
+                ':context_sha256' => $context_sha,
+                ':title' => $title,
+                ':short_title' => $short,
+                ':key_id' => $key_id,
+                ':user_id' => $user_id,
+            )
+        );
+        $row = $PDOX->rowDie(
+            "SELECT context_id FROM {$p}lti_context
+             WHERE context_sha256 = :SHA AND key_id = :KID LIMIT 1",
+            array(':SHA' => $context_sha, ':KID' => $key_id)
+        );
+        $context_id = is_array($row) ? (int) $row['context_id'] : (int) $PDOX->lastInsertId();
+        if ( $context_id < 1 ) {
+            return array('ok' => false, 'error' => 'Could not create course.');
+        }
+        self::syncContextTitle($context_id, $title);
+        $PDOX->queryDie(
+            "UPDATE {$p}lti_context SET short_title = :short, updated_at = NOW()
+             WHERE context_id = :CID",
+            array(':short' => $short, ':CID' => $context_id)
+        );
+
+        $PDOX->queryDie(
+            "INSERT INTO {$p}lti_membership
+                (context_id, user_id, role, created_at, updated_at)
+             VALUES
+                (:context_id, :user_id, :role, NOW(), NOW())",
+            array(
+                ':context_id' => $context_id,
+                ':user_id' => $user_id,
+                ':role' => LTIX::ROLE_INSTRUCTOR,
+            )
+        );
+
+        $navigation = \Tsugi\Services\CourseNav\CourseNav::defaultDocument();
+        $home = \Tsugi\Services\CourseNav\CourseNav::homeLabelFromShortTitle($short);
+        if ( $home !== null ) {
+            $navigation['home'] = $home;
+        }
+        $manifest_id = self::saveNewVersion(
+            $context_id,
+            self::starter($title),
+            $user_id,
+            'Created course',
+            null,
+            $navigation
+        );
+        return array(
+            'ok' => true,
+            'context_id' => $context_id,
+            'manifest_id' => $manifest_id,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|false
+     */
+    public static function loadRow($manifest_id) {
+        global $CFG;
+        $id = (int) $manifest_id;
+        if ( $id < 1 ) {
+            return false;
+        }
+        if ( isset(self::$requestRows[$id]) ) {
+            return self::$requestRows[$id];
+        }
+
+        $cache = self::mcache();
+        if ( $cache && method_exists($cache, 'isEnabled') && $cache->isEnabled()
+                && method_exists($cache, 'get') ) {
+            $cached = $cache->get(self::cacheKey($id));
+            $row = self::rowFromCacheValue($cached);
+            if ( is_array($row) ) {
+                if ( ! isset($row['manifest_id']) ) {
+                    $row['manifest_id'] = $id;
+                }
+                self::rememberRequest($id, $row);
+                return $row;
+            }
+        }
+
+        $PDOX = LTIX::getConnection();
+        $p = $CFG->dbprefix;
+        $row = $PDOX->rowDie(
+            "SELECT manifest_id, context_id, version, title, theme, navigation, manifest, comment, user_id, created_at
+             FROM {$p}manifest WHERE manifest_id = :MID",
+            array(':MID' => $id)
+        );
+        if ( ! is_array($row) ) {
+            return false;
+        }
+        self::rememberCachedRow($row);
+        return $row;
+    }
+
+    /**
+     * Cached MCache payload is a row array; older entries were a JSON string.
+     *
+     * @param mixed $cached
+     * @return array<string, mixed>|false
+     */
+    private static function rowFromCacheValue($cached) {
+        if ( ! is_array($cached) ) {
+            return false;
+        }
+        $json = $cached['manifest'] ?? '';
+        if ( ! is_string($json) || $json === '' ) {
+            return false;
+        }
+        return $cached;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function rememberRequest($id, $row) {
+        self::$requestRows[$id] = $row;
+        $json = $row['manifest'] ?? '';
+        if ( is_string($json) && $json !== '' ) {
+            self::$requestJson[$id] = $json;
+        }
+    }
+
+    /**
+     * Request memo plus MCache. Payload is the immutable row (JSON + theme).
+     *
+     * @param array<string, mixed> $row
+     */
+    private static function rememberCachedRow($row) {
+        $id = (int) ($row['manifest_id'] ?? 0);
+        if ( $id < 1 ) {
+            return;
+        }
+        self::rememberRequest($id, $row);
+        $cache = self::mcache();
+        if ( $cache && method_exists($cache, 'isEnabled') && $cache->isEnabled()
+                && method_exists($cache, 'set') ) {
+            $cache->set(self::cacheKey($id), $row, self::CACHE_TTL);
+        }
+    }
+
+    /**
+     * @return string|false
+     */
+    private static function loadJsonFromDatabase($manifest_id) {
+        $row = self::loadRow($manifest_id);
+        if ( ! is_array($row) ) {
+            return false;
+        }
+        $json = $row['manifest'] ?? '';
+        return is_string($json) && strlen($json) > 0 ? $json : false;
+    }
+
+    /**
+     * @return int
+     */
+    private static function positiveId($value) {
+        if ( $value === null || $value === false || $value === '' || is_bool($value) ) {
+            return 0;
+        }
+        if ( ! is_numeric($value) ) {
+            return 0;
+        }
+        $intval = (int) $value;
+        return $intval > 0 ? $intval : 0;
+    }
+
+    /**
+     * @return MCache|object|null
+     */
+    private static function mcache() {
+        global $CFG;
+        if ( self::$mcache !== null ) {
+            return self::$mcache;
+        }
+        if ( ! is_object($CFG) ) {
+            return null;
+        }
+        self::$mcache = new MCache($CFG);
+        return self::$mcache;
+    }
+}

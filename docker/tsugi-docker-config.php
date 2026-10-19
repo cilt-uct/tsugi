@@ -77,8 +77,18 @@ $CFG->dbprefix  = '';
 // or a sha256 hash of the admin password.  Please don't use either
 // the 'tsugi' or the sha256 of 'tsugi' example values below.
 $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
+
+// Simulated Google login for the Panther QA stack. Off unless both are set.
+// Env names stay TSUGI_DEMO_*; the config keys are the qa_ back doors.
+$demoLogin = getenv('TSUGI_DEMO_LOGIN');
+$CFG->qa_demo_login = ($demoLogin === '1' || strcasecmp((string) $demoLogin, 'true') === 0);
+$demoSecret = getenv('TSUGI_DEMO_SECRET');
+$CFG->qa_demo_secret = (is_string($demoSecret) && $demoSecret !== '') ? $demoSecret : false;
 // $CFG->adminpw = 'tsugi';
 // $CFG->adminpw = 'sha256:9c0ccb0d53dd71b896cde69c78cf977acbcb36546c96bedec1619406145b5e9e';
+
+// Optional: only these Google emails may unlock admin (default false = any email).
+// $CFG->adminemails = array('you@umich.edu');
 
 // Theme Tsugi to your institutions colors. If not set, default colors will be used.
 /*$CFG->theme = array(
@@ -93,14 +103,17 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // $CFG->theme_base = "#0d47a1"; // Tsugi Blue
 // $CFG->theme_dark_mode = false;
 
-// If we are running Embedded Tsugi we need to set the
-// "course title" for the course that represents
-// the "local" students that log in through Google.
-// $CFG->context_title = "Web Applications for Everybody";
+// Site-menu course flyout. The Panther course-create test needs this on.
+$CFG->show_courses_widget = true;
 
 // If we are going to use the lessons tool and/or badges, we need to
 // create and point to a lessons.json file
 // $CFG->lessons = $CFG->dirroot.'/../lessons.json';
+
+// Lessons discussion links. Unset (production) opens the discussions controller.
+// Panther keeps this on so a lessons click LTI-launches tool/tdiscus and the
+// equivalence test can exercise both paths.
+$CFG->setExtension('discussion_lti_launch', true);
 
 // If we are going to use the Topics section, we need to create and
 // point to the topics.json file
@@ -152,7 +165,8 @@ $CFG->google_client_secret = false; // '6Q7w_x4ESrl29a';
 
 // This is a legacy backwards compatibility.   In the round-trip to Google it used to
 // come back login.php after login was successful - If this is true, we come back
-// to login (without the php) - set this to false to restore the old pattern
+// to /login. Set this to false if Google's Authorized redirect URI is still login.php.
+// Both URLs are served by the Login controller.
 // Note: This is ignored if $google_login_redirect is set above.
 $CFG->google_login_new = true;
 $CFG->login_return_url = false;
@@ -213,7 +227,7 @@ $CFG->google_translate = false;
     // $CFG->defaultmenu = buildMenu();
 // }
 
-// If these are not set, the auto expiration scripts in admin/expire
+// If these are not set, the auto expiration scripts in admin/expire-maint
 // do nothing.  You can still manually expire data in the admin UI without
 // these values. There are software enforced mimimums for these values so you don't
 // inadvertently wipe out your whole database using either the auto expire
@@ -303,7 +317,7 @@ $CFG->DEVELOPER = true;
 // Tsugi stores the blob path in the blob_file table.  Data uploaded to a blob
 // will stay there and data uploaded to a path will stay there regardless of
 // this setting.  There will are separate migration processes to move data
-// between stores - see tsugi/admin/blob for more detail.
+// between stores - see tsugi/admin/blob-maint for more detail.
 
 // This turns on auto-migration as blobs are accessed
 // $CFG->migrateblobs = true;
@@ -317,20 +331,27 @@ if ( $CFG->DEVELOPER && ! isset($CFG->dataroot) ) {
 }
 */
 
-// These values configure the cookie used to record the overall
-// login in a long-lived encrypted cookie.   Look at the library
-// code createSecureCookie() for more detail on how these operate.
+// Shared secret for encrypting LTI secrets in the session, signing OIDC state,
+// and related tokens. Not a login cookie.
 $CFG->cookiesecret = 'warning:please-change-cookie-secret-a289b543';
-$CFG->cookiename = 'TSUGIAUTO';
 $CFG->cookiepad = '390b246ea9';
-// Long-lived encrypted auto-login cookie (Google login + LTIX::loginSecureCookie).
-// Default false; set true to enable setting and reading the cookie.
-$CFG->enable_secure_cookie_login = false;
 
 // Where the bulk mail comes from - should be a real address with a wildcard box you check
 $CFG->maildomain = false; // 'mail.example.com';
 $CFG->mailsecret = 'warning:please-change-mailsecret-92ds29';
 $CFG->maileol = "\n";  // Depends on your mailer - may need to be \r\n
+
+// Optional Amazon SES (async-aws/ses). When ses_region is set, use SES; else PHP mail().
+// See docs/ses.md for setup. From address must be a verified SES identity.
+$CFG->ses_region = false; // 'us-east-1'
+$CFG->ses_key = false;    // optional; omit for IAM role / default credential chain
+$CFG->ses_secret = false;
+$CFG->mail_from = false;      // From for SES and PHP mail(); defaults to no-reply@$CFG->maildomain
+$CFG->mail_reply_to = false;  // optional Reply-To inbox you monitor
+// Configuration Set name so bounce/complaint events reach SNS → {apphome}/ses/sns
+$CFG->ses_configuration_set = false; // 'tsugi-mail' (used for transactional; bulk falls back here)
+// Optional separate Configuration Set for sendBulk() traffic
+$CFG->ses_configuration_set_bulk = false; // 'tsugi-mail-bulk'
 
 // Set the nonce clearing factor and expiry time
 $CFG->noncecheck = 100;
@@ -478,8 +499,6 @@ if ( isset($CFG->sessions_in_db) && $CFG->sessions_in_db ) {
         )
     );
 }
-
-$CFG->lumen_storage = $CFG->dirroot."/storage/";
 
 // Leave these here
 require_once $CFG->dirroot."/lib/include/setup.php";

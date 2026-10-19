@@ -8,6 +8,8 @@ use \Tsugi\Core\LTIX;
 use \Tsugi\Core\Cache;
 use \Tsugi\Core\Membership;
 
+use \Tsugi\Core\ReqScope;
+
 class GradeUtil {
 
     /** @internal Session cache location for {@see Cache::setContext} */
@@ -34,7 +36,7 @@ class GradeUtil {
         // Get basic grade data
         $stmt = $PDOX->queryDie(
             "SELECT R.result_id AS result_id, R.user_id AS user_id,
-                grade, note, R.json AS json, R.note as note, R.updated_at AS updated_at, R.created_at AS created_at, displayname, email
+                grade, comment, R.json AS json, R.comment as comment, R.updated_at AS updated_at, R.created_at AS created_at, displayname, email
             FROM {$p}lti_result AS R
             JOIN {$p}lti_user AS U ON R.user_id = U.user_id
             WHERE R.link_id = :LID
@@ -75,7 +77,8 @@ class GradeUtil {
         // Get basic grade data
         $stmt = $PDOX->queryDie(
             "SELECT R.result_id AS result_id, R.user_id AS user_id,
-                grade, note, R.json AS json, R.note as note, R.updated_at AS updated_at, R.created_at AS created_at, displayname, email
+                grade, comment, R.json AS json, R.comment as comment, R.updated_at AS updated_at, R.created_at AS created_at,
+                R.attempts AS attempts, R.attempted_at AS attempted_at, displayname, email
             FROM {$p}lti_result AS R
             JOIN {$p}lti_user AS U ON R.user_id = U.user_id
             WHERE R.link_id = :LID AND R.user_id = :UID
@@ -97,6 +100,12 @@ class GradeUtil {
         echo("Started at: ".htmlent_utf8($row['created_at'])."<br/>\n");
         echo("Last Submission: ".htmlent_utf8($row['updated_at'])."<br/>\n");
         echo("Score: ".htmlent_utf8($row['grade'])."<br/>\n");
+        if ( isset($row['attempts']) && is_numeric($row['attempts']) && $row['attempts'] > 0 ) {
+            echo("Attempts: ".htmlent_utf8($row['attempts'])."<br/>\n");
+        }
+        if ( ! empty($row['attempted_at']) ) {
+            echo("Last attempt: ".htmlent_utf8($row['attempted_at'])."<br/>\n");
+        }
         echo("</p>\n");
     }
 
@@ -143,7 +152,7 @@ class GradeUtil {
         $p = $CFG->dbprefix;
         $sql =
         "SELECT R.result_id AS result_id, L.link_id AS link_id, L.title as title, L.link_key AS resource_link_id,
-            R.grade AS grade, R.note AS note, R.updated_at AS updated_at, R.created_at AS created_at
+            R.grade AS grade, R.comment AS comment, R.updated_at AS updated_at, R.created_at AS created_at
         FROM {$p}lti_result AS R
         JOIN {$p}lti_link as L ON R.link_id = L.link_id
         LEFT JOIN {$p}lti_service AS S ON R.service_id = S.service_id
@@ -153,15 +162,15 @@ class GradeUtil {
     }
 
     /**
-     * Grades for the logged-in user in the current course (uses U::loggedInUserId() and U::currentContextId()).
+     * Grades for the logged-in user in the current course (uses ReqScope::loggedInUserIdLegacy() and ReqScope::currentContextIdLegacy()).
      * Cached per context via {@see Cache::setContext} for {@see self::GRADES_CURRENT_USER_CACHE_TTL} seconds;
      * on miss loads via {@see loadGradesForCourse}.
      *
      * @return array<int,array<string,mixed>>
      */
     public static function loadGradesCurrentUser() {
-        $uid = U::loggedInUserId();
-        $cid = U::currentContextId();
+        $uid = ReqScope::loggedInUserIdLegacy();
+        $cid = ReqScope::currentContextIdLegacy();
         if ( $uid < 1 || $cid < 1 ) {
             return array();
         }
@@ -236,6 +245,55 @@ class GradeUtil {
         Cache::setContext(self::LINK_IDS_CACHE_LOC, $cid, $map, self::LINK_IDS_CACHE_TTL);
 
         return $map;
+    }
+
+    /**
+     * Calendar day for a date input. Empty when the link has no due date.
+     *
+     * @param mixed $mysql
+     */
+    public static function dueDateInputValue($mysql) {
+        if ( $mysql === null || $mysql === '' ) {
+            return '';
+        }
+        if ( preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $mysql, $m) ) {
+            return $m[1];
+        }
+        return '';
+    }
+
+    /**
+     * Parse a due date from the UI (calendar day only). Stored as 11:59:59 PM that day.
+     * An empty value clears the due date. Any other value that is not a real YYYY-MM-DD day is invalid.
+     *
+     * @param mixed $s
+     * @return string|null MySQL datetime, or null when the field is empty
+     */
+    public static function parseDueDateEndOfDay($s) {
+        $s = trim((string) $s);
+        if ( $s === '' ) {
+            return null;
+        }
+        $day = self::dueDay($s);
+        if ( $day === null ) {
+            return null;
+        }
+        return $day . ' 23:59:59';
+    }
+
+    /**
+     * A real calendar day as YYYY-MM-DD, or null.
+     *
+     * @param mixed $value
+     * @return string|null
+     */
+    public static function dueDay($value) {
+        $s = trim((string) $value);
+        if ( preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)
+                && checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ) {
+            return $s;
+        }
+        return null;
     }
 
     /**
@@ -322,7 +380,7 @@ class GradeUtil {
         if ( ! self::dueMapHasScheduledEnd($map) ) {
             return array();
         }
-        $user_id = U::loggedInUserId();
+        $user_id = ReqScope::loggedInUserIdLegacy();
         if ( $user_id < 1 ) {
             return array();
         }

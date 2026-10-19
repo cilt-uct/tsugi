@@ -8,6 +8,8 @@ use Tsugi\Core\LTIX;
 use Tsugi\Crypt\AesOpenSSL;
 
 
+use Tsugi\Core\ReqScope;
+
 class Topics {
 
     /**
@@ -46,6 +48,11 @@ class Topics {
      */
     public $resource_links;
 
+    /**
+     * Mounted topics path (e.g. /topics or /courses/2/topics).
+     */
+    public $toolHome = '';
+
     public function __construct($name='topics.json', $anchor=null, $index=null)
     {
         global $CFG;
@@ -78,7 +85,7 @@ class Topics {
         }
 
         // Filter topics based on login
-        if ( ! U::isLoggedIn() ) {
+        if ( ! ReqScope::isLoggedInLegacy() ) {
             $filtered_topics = array();
             $filtered = false;
             foreach($course->topics as $topic) {
@@ -379,6 +386,17 @@ class Topics {
         return null;
     }
 
+    private function topicsHome() {
+        if ( is_string($this->toolHome) && $this->toolHome !== '' ) {
+            return $this->toolHome;
+        }
+        return \Tsugi\Controllers\Tool::determineToolHome('/topics');
+    }
+
+    private function topicsLaunchPath($resource_link_id) {
+        return $this->topicsHome() . '_launch/' . $resource_link_id;
+    }
+
     public function render($buffer=false) {
         if ( $this->isSingle() ) {
             return $this->renderSingle($buffer);
@@ -490,8 +508,7 @@ class Topics {
                     foreach($ltis as $lti ) {
                         $resource_link_title = isset($lti->title) ? $lti->title : $topic->title;
 
-                        $rest_path = U::rest_path();
-                        $launch_path = $rest_path->parent . '/' . $rest_path->controller . '_launch/' . $lti->resource_link_id;
+                        $launch_path = $this->topicsLaunchPath($lti->resource_link_id);
                         $title = isset($lti->title) ? $lti->title : $topic->title;
                         ?>
                         <div class="videoWrapper">

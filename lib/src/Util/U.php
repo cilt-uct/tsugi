@@ -31,22 +31,6 @@ class U {
         $_SESSION = [];
     }
 
-
-    /**
-     * Thin wrappers to keep lms_lib.php as the single source of truth.
-     */
-    public static function loggedInUserId() {
-        return (int) \loggedInUserId();
-    }
-
-    public static function currentContextId() {
-        return (int) \currentContextId();
-    }
-
-    public static function isLoggedIn() {
-        return \isLoggedIn();
-    }
-
     /** Session key for error flash messages (must match Output::FLASH_ERROR) */
     const FLASH_ERROR = 'error';
     /** Session key for success flash messages (must match Output::FLASH_SUCCESS) */
@@ -83,6 +67,25 @@ class U {
         if ( !isset($key) ) return $default;
         if ( !isset($arr[$key]) ) return $default;
         return $arr[$key];
+    }
+
+    /**
+     * Like get(), but match array keys without regard to case.
+     *
+     * HTTP header names are case-insensitive (RFC 7230). HTTP/2 requires
+     * names to be lowercase, so LMS responses (e.g. Canvas) may use 'link'
+     * instead of 'Link'. Exact match is preferred when present.
+     */
+    public static function getIgnoreCase($arr, $key, $default=null) {
+        if ( !is_array($arr) ) return $default;
+        if ( !isset($key) ) return $default;
+        if ( is_array($key) || is_object($key) ) return $default;
+        if ( isset($arr[$key]) ) return $arr[$key];
+        $keyLower = strtolower((string)$key);
+        foreach ($arr as $k => $v) {
+            if ( strtolower((string)$k) === $keyLower ) return $v;
+        }
+        return $default;
     }
 
     public static function htmlpre_utf8($string) {

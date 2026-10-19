@@ -4,6 +4,8 @@ namespace Tsugi\UI;
 
 use \Tsugi\Util\U;
 
+use \Tsugi\Core\ReqScope;
+
 /**
  * This is a class that supports the creation of simple CRUD forms.
  *
@@ -57,6 +59,7 @@ class CrudForm {
      */
     public static function insertForm($fields, $from_location, $titles=false, $fields_defaults=false) {
         echo('<form method="post" autocomplete="off">'."\n");
+        echo(\Tsugi\Controllers\Tool::csrfField()."\n");
 
         for($i=0; $i < count($fields); $i++ ) {
             $field = $fields[$i];
@@ -97,6 +100,9 @@ class CrudForm {
     public static function handleInsert($tablename, $fields) {
         global $PDOX;
         if ( isset($_POST['doSave']) && count($_POST) > 0 ) {
+            if ( ! \Tsugi\Controllers\Tool::checkCsrf() ) {
+                return self::CRUD_FAIL;
+            }
             $names = '';
             $values = '';
             $parms = array();
@@ -169,7 +175,7 @@ class CrudForm {
      *
      *     $from_location = "keys.php";
      *     $fields = array("key_key", "key_sha256", "secret", "created_at", "updated_at");
-     *     $current = getCurrentFileUrl(__FILE__);
+     *     $current = \Tsugi\Core\LTIX::curPageUrlNoQuery();
      *     $retval = CrudForm::updateForm($row, $fields, $current, $from_location, true, true);
      *
      * @param $row The existing data for the fields.
@@ -192,6 +198,7 @@ class CrudForm {
         $do_edit = isset($_REQUEST['edit']) && $_REQUEST['edit'] == 'yes';
 
         echo('<form method="post" autocomplete="off">'."\n");
+        echo(\Tsugi\Controllers\Tool::csrfField()."\n");
         if ( is_string($from_location) ) echo('<a href="'.$from_location.'" class="btn btn-default">'._m('Exit').'</a>'."\n");
         if ( $allow_edit ) {
             if ( $do_edit ) {
@@ -271,7 +278,7 @@ class CrudForm {
      *     $tablename = "tsugi_lti_key";
      *     $fields = array("key_id", "key_key", "secret", "created_at", "updated_at");
      *     $where_clause .= "user_id = :UID";
-     *     $query_fields = array(":UID" => U::loggedInUserId()); // lib/include/lms_lib.php (via config.php)
+     *     $query_fields = array(":UID" => ReqScope::loggedInUserIdLegacy()); // lib/include/lms_lib.php (via config.php)
      *     $row =  CrudForm::handleUpdate($tablename, $fields, $where_clause, $query_fields, true, true);
      *
      * This code very much depends on the $_POST data being generated from the
@@ -286,7 +293,7 @@ class CrudForm {
      * example, the ultimate WHERE clause will effectively be as follows:
      *
      *     UPDATE ... WHERE key_id = $_POST['key_id'] AND user_id = :UID
-     *     (with :UID bound to U::loggedInUserId() from lms_lib.php)
+     *     (with :UID bound to ReqScope::loggedInUserIdLegacy() from lms_lib.php)
      *
      * This way, even if the user forges the key_id data to be one that does
      * not belong to them, the AND clause will stop the UPDATE from happening.
@@ -295,7 +302,7 @@ class CrudForm {
      * array.
      *
      * If we were editing some context-wide data as instructor, we might add
-     * U::currentContextId() (see lms_lib.php) to the WHERE clause.
+     * ReqScope::currentContextIdLegacy() (see lms_lib.php) to the WHERE clause.
      *
      * @param $fields An array of fields to be updated.  These items must be
      * in the $_POST data as well.  The primary key should be the first field
@@ -338,6 +345,13 @@ class CrudForm {
         }
 
         // We know we are OK because we already retrieved the row
+        if ( ( $allow_delete && isset($_POST['doDelete']) ) ||
+             ( $allow_edit && $do_edit && isset($_POST['doUpdate']) ) ) {
+            if ( ! \Tsugi\Controllers\Tool::checkCsrf() ) {
+                return self::CRUD_FAIL;
+            }
+        }
+
         if ( $allow_delete && isset($_POST['doDelete']) ) {
             $sql = "DELETE FROM $tablename WHERE $where_clause";
             $stmt = $PDOX->queryDie($sql, $query_parms);

@@ -63,17 +63,6 @@ if ( $apphome ) {
 }
 unset($apphome);
 
-// If we have a web socket server, put its URL here
-// Do not add a path here - just the host and port
-// Make sure the port is open on your server
-// $CFG->websocket_secret = 'changeme';
-// $CFG->websocket_url = 'ws://localhost:2021'; // Local dev test
-// $CFG->websocket_url = 'wss://socket.tsugicloud.org:443'; // Production
-
-// If you are running a reverse proxy (proxy_wstunnel) set this to the port
-// you will forward to in your apache config
-// $CFG->websocket_proxyport = 8080;
-
 // If the web server is NOT behind a reverse proxy, you may optionally wish
 // to ignore forwarded IP headers such as x-forwarded-for and variations by
 // setting this to false. This will help to preserve authenticity of IPs by
@@ -144,6 +133,9 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // $CFG->adminpw = 'tsugi';
 // $CFG->adminpw = 'sha256:9c0ccb0d53dd71b896cde69c78cf977acbcb36546c96bedec1619406145b5e9e';
 
+// Optional: only these Google emails may unlock admin (default false = any email).
+// $CFG->adminemails = array('you@umich.edu');
+
 // Theme Tsugi to your institutions colors. If not set, default colors will be used.
 /*$CFG->theme = array(
     "primary" => "#0D47A1", //default color for nav background, splash background, buttons, text of tool menu
@@ -162,9 +154,31 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // the "local" students that log in through Google.
 // $CFG->context_title = "Web Applications for Everybody";
 
+// Site-menu waffle (tsugi-courses). Leave false in production until there is
+// more than one course to switch between. Course-nav editing is separate.
+// $CFG->show_courses_widget = true;
+// Legacy: $CFG->setExtension('show_courses_widget', true);
+
+// Course catalog link in the courses waffle footer. Catalog itself is public.
+// $CFG->show_course_catalog = true;
+// Legacy: $CFG->setExtension('show_course_catalog', true);
+
+// Where the Home brand (and Exit course) go. Any URL. Unset = apphome, then wwwroot.
+// $CFG->home_path = $CFG->apphome;
+// $CFG->home_path = $CFG->wwwroot;
+// $CFG->home_path = 'https://example.com/';
+// Legacy: $CFG->setExtension('home_path', $CFG->apphome);
+
+// Temporary ReqScope dump at /reqscope and tool/reqscope. Remove around December 2026.
+// $CFG->setExtension('reqscope_debug', true);
+
 // If we are going to use the lessons tool and/or badges, we need to
 // create and point to a lessons.json file
 // $CFG->lessons = $CFG->dirroot.'/../lessons.json';
+
+// Lessons discussion links open the discussions controller.
+// Set true in dev to send those links through an LTI launch of tool/tdiscus instead.
+// $CFG->setExtension('discussion_lti_launch', true);
 
 // If we are going to use the Topics section, we need to create and
 // point to the topics.json file
@@ -219,6 +233,20 @@ $CFG->autoapprovekeys = false; // A regex like - '/.+@gmail\\.com/'
 $CFG->google_client_id = false; // '96041-nljpjj8jlv4.apps.googleusercontent.com';
 $CFG->google_client_secret = false; // '6Q7w_x4ESrl29a';
 
+// QA back doors. Names start with qa_. Never enable these on a production
+// system. /admin shows a warning when any of them are on.
+//
+// Simulated Google site login (no Google account).
+// /login/simulate is always HTTP 403 unless qa_demo_login is true AND
+// qa_demo_secret is a non-empty string.
+$CFG->qa_demo_login = false;
+$CFG->qa_demo_secret = false; // 'a-long-random-string' or 'sha256:...';
+
+// LTI Advantage token grants fetch the tool jwks_uri over HTTPS and refuse
+// loopback, private, and reserved addresses. Set true only on a development
+// machine so a local tool can publish its key set on this host.
+$CFG->qa_allow_local_jwks = false;
+
 // Google OAuth redirect URI configuration
 // If you want explicit control over the redirect URI, set this to match exactly
 // what you configure in Google's OAuth console (Authorized redirect URIs).
@@ -229,7 +257,8 @@ $CFG->google_client_secret = false; // '6Q7w_x4ESrl29a';
 
 // This is a legacy backwards compatibility.   In the round-trip to Google it used to
 // come back login.php after login was successful - If this is true, we come back
-// to login (without the php) - set this to false to restore the old pattern
+// to /login. Set this to false if Google's Authorized redirect URI is still login.php.
+// Both URLs are served by the Login controller.
 // Note: This is ignored if $google_login_redirect is set above.
 $CFG->google_login_new = true;
 $CFG->login_return_url = false;
@@ -313,7 +342,7 @@ $CFG->google_translate = false;
 // from these options and towards $CFG->top_menu_callback to insure the top
 // menu works across lti launches, login/logout etc.
 
-// If these are not set, the auto expiration scripts in admin/expire
+// If these are not set, the auto expiration scripts in admin/expire-maint
 // do nothing.  You can still manually expire data in the admin UI without
 // these values. There are software enforced mimimums for these values so you don't
 // inadvertently wipe out your whole database using either the auto expire
@@ -403,7 +432,7 @@ $CFG->DEVELOPER = true;
 // Tsugi stores the blob path in the blob_file table.  Data uploaded to a blob
 // will stay there and data uploaded to a path will stay there regardless of
 // this setting.  There will are separate migration processes to move data
-// between stores - see tsugi/admin/blob for more detail.
+// between stores - see tsugi/admin/blob-maint for more detail.
 
 // This turns on auto-migration as blobs are accessed
 // $CFG->migrateblobs = true;
@@ -417,20 +446,32 @@ if ( $CFG->DEVELOPER && ! isset($CFG->dataroot) ) {
 }
 */
 
-// These values configure the cookie used to record the overall
-// login in a long-lived encrypted cookie.   Look at the library
-// code createSecureCookie() for more detail on how these operate.
+// Shared secret for encrypting LTI secrets in the session, signing OIDC state,
+// and related tokens. Not a login cookie.
 $CFG->cookiesecret = 'warning:please-change-cookie-secret-a289b543';
-$CFG->cookiename = 'TSUGIAUTO';
 $CFG->cookiepad = '390b246ea9';
-// Long-lived encrypted auto-login cookie (Google login + LTIX::loginSecureCookie).
-// Default false; set true to enable setting and reading the cookie.
-$CFG->enable_secure_cookie_login = false;
 
 // Where the bulk mail comes from - should be a real address with a wildcard box you check
 $CFG->maildomain = false; // 'mail.example.com';
 $CFG->mailsecret = 'warning:please-change-mailsecret-92ds29';
 $CFG->maileol = "\n";  // Depends on your mailer - may need to be \r\n
+
+// Optional Amazon SES (async-aws/ses). When ses_region is set, use SES; else PHP mail().
+// See docs/ses.md for setup. From address must be a verified SES identity.
+$CFG->ses_region = false; // 'us-east-1'
+$CFG->ses_key = false;    // optional; omit for IAM role / default credential chain
+$CFG->ses_secret = false;
+// From / Reply-To for all transports (SES and PHP mail()). From must be a
+// verified SES identity when using SES. Reply-To can be any inbox you monitor.
+$CFG->mail_from = false;      // defaults to no-reply@$CFG->maildomain
+$CFG->mail_reply_to = false;  // optional
+// Example:
+// $CFG->mail_from = 'C Programming for Everybody <no-reply@cc4e.com>';
+// $CFG->mail_reply_to = 'cc4e@dr-chuck.com';
+// Configuration Set name so bounce/complaint events reach SNS → {apphome}/ses/sns
+$CFG->ses_configuration_set = false; // 'tsugi-mail' (used for transactional; bulk falls back here)
+// Optional separate Configuration Set for sendBulk() traffic
+$CFG->ses_configuration_set_bulk = false; // 'tsugi-mail-bulk'
 
 // Set the nonce clearing factor and expiry time
 $CFG->noncecheck = 100;
@@ -523,9 +564,15 @@ $CFG->eventtime = 7*24*60*60;  // Length in seconds of the event buffer
 $CFG->eventpushcount = 50;     // Set to zero to suspend event push
 $CFG->eventpushtime = 2;       // Maximum length in seconds to push events
 
-// See if our apphome folder has any opinions about settings
+// See if our apphome folder has any opinions about settings and fall back to this
+// folder's version
 if ( isset($CFG->apphome) && $CFG->apphome ) {
     $tsugi_settings = $CFG->dirroot."/../tsugi_settings.php";
+    if ( file_exists($tsugi_settings) ) {
+        require_once $tsugi_settings;
+    }
+} else { 
+    $tsugi_settings = $CFG->dirroot."/tsugi_settings.php";
     if ( file_exists($tsugi_settings) ) {
         require_once $tsugi_settings;
     }
@@ -578,8 +625,6 @@ if ( isset($CFG->sessions_in_db) && $CFG->sessions_in_db ) {
         )
     );
 }
-
-$CFG->lumen_storage = $CFG->dirroot."/storage/";
 
 // Leave these here
 require_once $CFG->dirroot."/lib/include/setup.php";

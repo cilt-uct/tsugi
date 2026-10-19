@@ -3,6 +3,7 @@
 require_once "src/Util/TsugiDOM.php";
 require_once "src/Util/CC.php";
 require_once "src/Util/CanvasModuleMeta.php";
+require_once "src/Util/CanvasAssessmentMeta.php";
 
 use \Tsugi\Util\CC;
 
@@ -50,7 +51,7 @@ class CCTest extends \PHPUnit\Framework\TestCase
         $this->assertStringContainsString('<title>Video: Introducting SQL</title>', $save);
         $this->assertStringContainsString('<item identifier="' . $ltiLinkId . '" identifierref="' . $ltiLinkIdRef . '">', $save);
         $this->assertStringContainsString('<title>Autograder: Single Table SQL</title>', $save);
-        $this->assertStringContainsString('<resource identifier="' . $webLinkIdRef . '" type="imswl_xmlv1p1">', $save);
+        $this->assertStringContainsString('<resource identifier="' . $webLinkIdRef . '" type="'.CC::WEB_LINK_TYPE.'">', $save);
         $this->assertStringContainsString('<resource identifier="' . $ltiLinkIdRef . '" type="imsbasiclti_xmlv1p0">', $save);
         $this->assertStringContainsString('<file href="' . $file1 . '"/>', $save);
         $this->assertStringContainsString('<file href="' . $file2 . '"/>', $save);
@@ -177,12 +178,11 @@ class CCTest extends \PHPUnit\Framework\TestCase
         
         $this->assertStringContainsString('<item identifier="' . $topicId . '" identifierref="' . $topicIdRef . '">', $save);
         $this->assertStringContainsString('<title>Discuss: Single Table SQL</title>', $save);
-        $this->assertStringContainsString('<resource identifier="' . $webLinkIdRef . '" type="imswl_xmlv1p1">', $save);
+        $this->assertStringContainsString('<resource identifier="' . $webLinkIdRef . '" type="'.CC::WEB_LINK_TYPE.'">', $save);
         $this->assertStringContainsString('<resource identifier="' . $ltiLinkIdRef . '" type="imsbasiclti_xmlv1p0">', $save);
         // zip_add_lti_outcome_to_module creates an assignment resource (not directly an LTI resource)
-        // The assignment resource type is 'associatedcontent/imscc_xmlv1p1/learning-application-resource'
-        $this->assertStringContainsString('<resource identifier="' . $assignmentIdRef . '" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">', $save);
-        $this->assertStringContainsString('<resource identifier="' . $topicIdRef . '" type="imsdt_v1p1">', $save);
+        $this->assertStringContainsString('<resource identifier="' . $assignmentIdRef . '" type="'.CC::ASSOCIATED_CONTENT_TYPE.'">', $save);
+        $this->assertStringContainsString('<resource identifier="' . $topicIdRef . '" type="'.CC::TOPIC_TYPE.'">', $save);
 
         // Test canvas compatibility
         $meta = $cc_dom->canvas_module_meta->prettyXML();
@@ -225,5 +225,93 @@ class CCTest extends \PHPUnit\Framework\TestCase
             $CFG = $originalCFG;
         }
 
+    }
+
+    public function testQtiAssessmentResource() {
+        $cc_dom = new CC();
+        $cc_dom->set_title('Web Applications for Everybody');
+        $module = $cc_dom->add_module('Week 1');
+        $file = $cc_dom->add_qti_assessment($module, 'Week 1 Quiz', 7);
+        $qtiId = $cc_dom->last_identifier;
+        $qtiIdRef = $cc_dom->last_identifierref;
+        $this->assertStringStartsWith('Q1_', $qtiId);
+        $this->assertEquals($qtiId . '_R', $qtiIdRef);
+        $this->assertStringStartsWith('xml/Q1_', $file);
+        $save = $cc_dom->saveXML();
+        $this->assertStringContainsString('type="'.CC::QTI_ASSESSMENT_TYPE.'"', $save);
+        $this->assertStringContainsString('<schemaversion>'.CC::VERSION.'</schemaversion>', $save);
+        $this->assertStringContainsString('imsccv1p2', $save);
+        $this->assertStringNotContainsString('imsccv1p1', $save);
+        $this->assertStringNotContainsString('imscc_xmlv1p1', $save);
+        $this->assertStringContainsString('<title>Week 1 Quiz</title>', $save);
+        $this->assertStringContainsString('<file href="' . $file . '"/>', $save);
+    }
+
+    public function testHeaderItemHasNoIdentifierref() {
+        $cc_dom = new CC();
+        $cc_dom->set_title('Web Applications for Everybody');
+        $module = $cc_dom->add_module('Week 1');
+        $cc_dom->add_header_item($module, 'Start here');
+        $headerId = $cc_dom->last_identifier;
+        $this->assertStringStartsWith('H_', $headerId);
+        $save = $cc_dom->saveXML();
+        $this->assertMatchesRegularExpression(
+            '/<item identifier="'.$headerId.'">\s*<title>Start here<\/title>\s*<\/item>/',
+            $save
+        );
+        $this->assertStringNotContainsString('identifierref="'.$headerId, $save);
+    }
+
+    public function testCanvasQuizWrapperPathsAndDependency() {
+        $cc_dom = new CC();
+        $cc_dom->canvas_quiz_wrapper = true;
+        $cc_dom->set_title('Web Applications for Everybody');
+        $module = $cc_dom->add_module('Week 1');
+        $file = $cc_dom->add_qti_assessment($module, 'Week 1 Quiz', 7);
+        $id = $cc_dom->last_identifier;
+        $this->assertSame($id.'/assessment_qti.xml', $file);
+
+        $filename = tempnam(sys_get_temp_dir(), 'ccwrap');
+        unlink($filename);
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($filename, \ZipArchive::CREATE) === true);
+        $cc_dom->zip_finish_qti_assessment($zip, $file, 'Week 1 Quiz', '<questestinterop/>');
+        $zip->close();
+
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($filename) === true);
+        $this->assertNotFalse($zip->getFromName($file));
+        $this->assertNotFalse($zip->getFromName($id.'/assessment_meta.xml'));
+        $this->assertSame($zip->getFromName($file), $zip->getFromName('non_cc_assessments/'.$id.'.xml.qti'));
+        $zip->close();
+        @unlink($filename);
+
+        $save = $cc_dom->saveXML();
+        $this->assertStringContainsString('<dependency identifierref="'.$id.'_meta"/>', $save);
+        $this->assertStringContainsString($id.'/assessment_meta.xml', $save);
+        $this->assertStringContainsString('non_cc_assessments/'.$id.'.xml.qti', $save);
+        $this->assertStringContainsString('type="'.CC::ASSOCIATED_CONTENT_TYPE.'"', $save);
+    }
+
+    public function testCc11ManifestUses11Namespaces() {
+        $cc_dom = new CC(CC::PROFILE_11);
+        $cc_dom->set_title('Moodle Course');
+        $cc_dom->set_description('CC 1.1 cartridge');
+        $module = $cc_dom->add_module('Week 1');
+        $file = $cc_dom->add_web_link($module, 'Example', 'https://example.com/');
+        $save = $cc_dom->saveXML();
+
+        $this->assertTrue($cc_dom->isCc11());
+        $this->assertSame(CC::VERSION_11, $cc_dom->schemaVersion());
+        $this->assertSame(CC::PROFILE_11, CC::profileForFlavor('moodle'));
+        $this->assertSame(CC::PROFILE_11, CC::profileForFlavor('generic11'));
+        $this->assertSame(CC::PROFILE_12, CC::profileForFlavor('canvas'));
+        $this->assertStringContainsString('<schemaversion>1.1.0</schemaversion>', $save);
+        $this->assertStringContainsString(CC::CC_11_NS, $save);
+        $this->assertStringContainsString('type="'.CC::WEB_LINK_TYPE_11.'"', $save);
+        $this->assertStringNotContainsString('imsccv1p2', $save);
+        $this->assertStringNotContainsString('type="'.CC::WEB_LINK_TYPE.'"', $save);
+        $this->assertStringContainsString('<file href="'.$file.'"/>', $save);
+        $this->assertStringContainsString('Moodle Course', $save);
     }
 }

@@ -20,6 +20,12 @@ if ( SettingsForm::handleSettingsPost() ) {
     return;
 }
 
+if ( count($_POST) > 0 ) {
+    if ( \Tsugi\Controllers\Tool::csrfRedirect(addSession('index')) ) {
+        return;
+    }
+}
+
 // Grab the due date information
 $dueDate = SettingsForm::getDueDate();
 
@@ -387,6 +393,7 @@ if ( $submit_row == false ) {
     echo("<p><b>Please Upload Your Submission:</b></p>\n");
     echo('<form name="myform" enctype="multipart/form-data" method="post" action="'.
          addSession('index').'">');
+    echo(\Tsugi\Controllers\Tool::csrfField());
 
     $partno = 0;
     $content_items = array();
@@ -862,17 +869,30 @@ if ( $assn_json->maxassess > 0 ) {
         }
 
         // Add a done button if needed
-        echo("<p> You have reviewed ".$grade_count." other student submissions.
-            You must review at least ".$assn_json->minassess." submissions for
+        $other_submits = countOtherSubmissions($assn_id, $USER->id);
+        echo("<p> You have reviewed ".$grade_count." other student submissions.\n");
+        if ( $other_submits < $assn_json->minassess ) {
+            echo("There are not enough other submissions to complete ".$assn_json->minassess.
+                " reviews, so you have full credit for the review portion. You can still review if more students submit.\n");
+        } else {
+            echo("You must review at least ".$assn_json->minassess." submissions for
             full credit on this assignment.\n");
-        if ( $assn_json->maxassess < 100 ) {
-            echo("You <i>can</i> review up to ".$assn_json->maxassess." submissions if you like.\n");
+            if ( $assn_json->maxassess < 100 ) {
+                echo("You <i>can</i> review up to ".$assn_json->maxassess." submissions if you like.\n");
+            }
         }
         echo("</p>\n");
     } else if ( count($to_grade) > 0 ) {
         echo('<p>You have reviewed the maximum number of submissions. Congratulations!<p>');
     } else {
         echo('<p>There are no submisions ready to be reviewed. Please check back later.</p>');
+        if ( $assn_json->minassess > 0 ) {
+            $other_submits = countOtherSubmissions($assn_id, $USER->id);
+            if ( $other_submits < $assn_json->minassess ) {
+                echo("<p>There are not enough other submissions to complete ".$assn_json->minassess.
+                    " reviews, so you have full credit for the review portion.</p>\n");
+            }
+        }
     }
 }
 
@@ -930,6 +950,7 @@ if ( $assn_json->maxassess < 1 ) {
 
 if ( isset($assn_json->resubmit) && $assn_json->resubmit == 'always' && $dueDate->dayspastdue <= 0 ) {
     echo('<p><form method = "post">
+        '.\Tsugi\Controllers\Tool::csrfField().'
         <input type="submit" name="deleteSubmit" value="Delete Your Submission" class="btn btn-danger"
             onclick="return confirm(\'Are you sure you want to delete your submission?\');">
         </form></p>
@@ -939,6 +960,7 @@ if ( isset($assn_json->resubmit) && $assn_json->resubmit == 'always' && $dueDate
 $OUTPUT->exitButton();
 ?>
 <form method="post" id="flagform" style="display:none">
+<?= \Tsugi\Controllers\Tool::csrfField() ?>
 <p>&nbsp;</p>
 <p>Please be considerate when flagging an item.  It does not mean
 that something is inappropriate - it simply brings the item to the
@@ -954,20 +976,32 @@ attention of the instructor.</p>
 <input type="submit" name="doCancel" onclick="$('#flagform').toggle(); return false;" value="Cancel Flag" class="btn btn-default">
 </form>
 <p>
-<?php if ( $assn_json->totalpoints > 0 ) { ?>
+<?php if ( $assn_json->totalpoints > 0 ) {
+    $grade_updated_at = loadResultUpdatedAt($USER->id);
+?>
 <div id="gradeinfo">Calculating grade....</div>
+<div id="gradeupdated"><?php
+    if ( U::isNotEmpty($grade_updated_at) ) {
+        echo('Last grade update: '.htmlentities($grade_updated_at));
+    }
+?></div>
 </p>
 <script type="text/javascript">
 function gradeLoad() {
     window.console && console.log('Loading and updating your grade...');
     $.getJSON('<?php echo(addSession('update_grade.php')); ?>', function(data) {
         window.console && console.log(data);
-        if ( data.grade ) {
+        if ( typeof data.grade === 'number' ) {
             $("#gradeinfo").html('Your current grade is '+data.grade*100.0+'%');
+            if ( data.updated_at ) {
+                $("#gradeupdated").text('Last grade update: '+data.updated_at);
+            }
         } else {
             $("#gradeinfo").html('You do not have a grade.');
             window.console && console.log('Take a screen shot of the console output and send to support...');
         }
+    }).fail(function() {
+        $("#gradeinfo").html('You do not have a grade.');
     });
 }
 </script>

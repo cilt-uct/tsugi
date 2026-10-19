@@ -61,7 +61,7 @@ The `lti_issuer` table is unused at runtime once keys are migrated and this code
 
 ## Phase 1: Automatic migration (shipped)
 
-Implemented in `admin/lti/database.php` inside `$DATABASE_UPGRADE`. Runs during the
+Implemented in `lib/src/Services/Lti/database.php` inside `$DATABASE_UPGRADE`. Runs during the
 normal database upgrade (`admin/upgrade.php`).
 
 ### What it does
@@ -146,7 +146,7 @@ registration already does via `initiate_login_uri`).
 - Removed issuer admin UI (`issuers.php`, `issuer-detail.php`, `issuer-add.php`,
   `issuer-maint.php`, and related helpers).
 - Removed issuer dropdown from admin key add/edit forms.
-- Removed `$CFG->autoissuer` legacy path in `settings/key/auto_common.php`.
+- Removed `$CFG->autoissuer` legacy path in `Tsugi\Services\Settings\DynamicRegistration`.
 - Removed deprecation messaging from `admin/admin_util.php`, `admin/index.php`, and
   `admin/upgrade.php`.
 
@@ -157,7 +157,7 @@ Sites with remaining `issuer_id` links will fail LTI 1.3 launch until upgraded.
 
 ## Phase 3: Schema cleanup (shipped, date-gated)
 
-Implemented in `admin/lti/database.php`. Fresh installs no longer create `lti_issuer`
+Implemented in `lib/src/Services/Lti/database.php`. Fresh installs no longer create `lti_issuer`
 or `lti_key.issuer_id`. Existing installations drop the legacy schema during upgrade
 **on or after 1 October 2026 UTC**.
 
@@ -173,13 +173,17 @@ When `time() >= 2026-10-01 00:00:00 UTC`, `$DATABASE_UPGRADE`:
 
 1. Warns if any non-deleted `lti_key` rows still have `issuer_id` set (phase 1 should
    have cleared these).
-2. Drops FK `lti_key_ibfk_1` if present.
+2. Drops every foreign key on `lti_key` that references `lti_issuer` (normally
+   `lti_key_ibfk_1`). InnoDB reuses unique index `lti_key_const_2` as that
+   key’s supporting index, so the constraint name does not appear in `SHOW INDEX`.
 3. Drops unique index `lti_key_const_2` if present.
 4. Drops column `lti_key.issuer_id` if present.
 5. Drops table `lti_issuer` if present.
 
 Phase 1 (copy data off issuers) still runs on every upgrade while the table exists,
-including before the October 2026 cutoff.
+including before the October 2026 cutoff. Later upgrades see whether `lti_issuer`
+exists in `information_schema`, so a dropped table does not produce a
+`SHOW COLUMNS` error.
 
 ### Verification (after cutoff upgrade)
 
@@ -207,7 +211,7 @@ Database version bumped to `202610010000`.
 
 | File | Role |
 |------|------|
-| `admin/lti/database.php` | Phase 1 data migration; phase 3 schema drop (date-gated) |
+| `lib/src/Services/Lti/database.php` | Phase 1 data migration; phase 3 schema drop (date-gated) |
 | `lib/src/Core/LTIX.php` | Launch data load; key-only `lms_*` path |
 | `lti/oidc_login.php` | OIDC login; key-only by `key_id` |
-| `settings/key/auto_common.php` | Dynamic registration; writes `lti_key.lms_*` |
+| `lib/src/Services/Settings/DynamicRegistration.php` | Dynamic registration; writes `lti_key.lms_*` |

@@ -1,5 +1,31 @@
+# mod_fastcgi does not pass the Authorization header to PHP. Copy it into
+# the CGI environment. SetEnvIf still applies in api/, store/, and admin/.
+# Do not use RewriteOptions InheritDown: a child RewriteEngine on would also
+# inherit "RewriteRule ^ tsugi.php" and Apache 404s those routes.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
 <IfModule mod_rewrite.c>
     RewriteEngine on
+    # config.php has secrets; FileRouter would also map /config and /config-dist
+    RewriteRule ^config(-dist)?(\.php)?(/.*)?$ - [R=404,L,NS]
+    # Cookieless LTI launch for the ReqScope controller. A real file, so it
+    # does not enter tsugi.php (which would select a cookie session).
+    RewriteRule ^reqscope/launch/?$ tool/reqscope/launch.php [L,QSA]
+    # Admin is a controller. Subfolders such as admin/key/ are real directories
+    # (shared libraries), so this has to run before the "skip real directories" rule.
+    RewriteRule ^admin/route\.php$ - [L]
+    RewriteRule ^admin(?:/|$) admin/route.php [L,QSA]
+    # LTI Advantage services are cookieless controllers. A browser session
+    # must not start, so these never fall through to tsugi.php.
+    RewriteRule ^ims/nrps/route\.php$ - [L]
+    RewriteRule ^ims/nrps(?:/|$) ims/nrps/route.php [L,QSA]
+    RewriteRule ^ims/ags/route\.php$ - [L]
+    RewriteRule ^ims/ags(?:/|$) ims/ags/route.php [L,QSA]
+    # A directory named token would 301 and drop a POST body. This is a file.
+    RewriteRule ^ims/token\.php$ - [L]
+    RewriteRule ^ims/token/?$ ims/token.php [L,QSA]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !=/favicon.ico
@@ -10,3 +36,8 @@
 <IfModule !mod_rewrite.c>
     FallbackResource tsugi.php
 </IfModule>
+
+# Default POST body cap (DDoS): reject oversized bodies before PHP.
+# Needs AllowOverride Limit (or All). Dedicated folders raise this
+# (lib/src/Controllers/util/upload/.htaccess is 128M for thick cartridges).
+LimitRequestBody 8388608

@@ -32,6 +32,11 @@ class Supporter {
         $supporter_label = $CFG->supporterLabel();
         $premium_until = self::premiumUntil($userProfile);
 
+        $until_label = '';
+        if ( is_string($premium_until) && strlen($premium_until) > 0 ) {
+            $until_label = self::formatUntil($premium_until, $CFG);
+        }
+
         return array(
             'userProfile' => $userProfile,
             'supporter_url' => $supporter_raw ? htmlspecialchars($supporter_raw) : '',
@@ -41,8 +46,36 @@ class Supporter {
             'price_label' => $CFG->supporterPriceLabel(),
             'price_phrase' => $CFG->supporterPricePhrase(),
             'premium_until' => $premium_until,
+            'premium_until_label' => $until_label,
             'is_active' => self::isActive($userProfile, $premium_until),
         );
+    }
+
+    /**
+     * Logged-in profile support status, or null when no profile is in the session.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function currentSupport($CFG) {
+        if ( ! isset($_SESSION['profile_id']) || ! is_numeric($_SESSION['profile_id']) || (int) $_SESSION['profile_id'] < 1 ) {
+            return null;
+        }
+
+        return self::context($CFG);
+    }
+
+    /**
+     * Link text for buying another supporter period while one is still active.
+     */
+    public static function extendLinkLabel($CFG): string {
+        $months = $CFG->premiumMonths();
+        if ( $months === 12 ) {
+            return 'Extend for another year';
+        }
+        if ( $months === 1 ) {
+            return 'Extend for another month';
+        }
+        return 'Extend for another ' . $months . ' months';
     }
 
     /**
@@ -76,6 +109,12 @@ class Supporter {
             }
         } else {
             echo('Thank you for supporting ' . $site . '!');
+        }
+
+        if ( $ctx['is_active'] && $ctx['supporter_url'] !== '' ) {
+            echo(' (<a href="' . $ctx['supporter_url'] . '"'
+                . ' title="' . htmlspecialchars(self::extendLinkLabel($CFG)) . '"'
+                . ' style="color: inherit;">extend</a>)');
         }
 
         echo("\n</p>\n");

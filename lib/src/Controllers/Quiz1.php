@@ -1,0 +1,1582 @@
+<?php
+
+namespace Tsugi\Controllers;
+
+use Tsugi\Util\U;
+use Tsugi\Core\LTIX;
+use Tsugi\Core\ReqScope;
+use Tsugi\Core\ReqScopeException;
+use Tsugi\Lumos\Application;
+use Tsugi\Services\Quiz1\Answer;
+use Tsugi\Services\Quiz1\ExportException;
+use Tsugi\Services\Quiz1\GiftExporter;
+use Tsugi\Services\Quiz1\GiftImporter;
+use Tsugi\Services\Grades\Gradebook;
+use Tsugi\Services\Quiz1\Grader;
+use Tsugi\Services\Quiz1\Html;
+use Tsugi\Services\Quiz1\ImportException;
+use Tsugi\Services\Quiz1\Qti12Exporter;
+use Tsugi\Services\Quiz1\Qti12Importer;
+use Tsugi\Services\Quiz1\Question;
+use Tsugi\Services\Quiz1\QuestionTypes;
+use Tsugi\Services\Quiz1\Quiz1Repository;
+use Tsugi\Services\Quiz1\SampleQuiz1;
+use Tsugi\Util\LTI13;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+
+class Quiz1 extends Tool {
+
+    const ROUTE = '/quiz1';
+    const NAME = 'Quizzes';
+    const REDIRECT = 'tsugi_controllers_quiz1';
+    const FORM_SESSION = 'quiz1_form';
+
+    /**
+     * True when the current user may author quizzes (instructor/admin).
+     *
+     * Parent menus (site URLs only):
+     * if ( \Tsugi\Controllers\Quiz1::showInMenu() ) {
+     *     $set->addLeft('Quizzes', rtrim($CFG->apphome, '/') . '/quiz1');
+     * }
+     */
+    public static function showInMenu() {
+        $rc = ReqScope::current();
+        return $rc && $rc->user && $rc->user->instructor && $rc->context && (int) $rc->context->id > 0;
+    }
+
+    /**
+     * User, course, and role loaded by the course peel.
+     *
+     * @return ReqScope
+     */
+    private function requireRc() {
+        $rc = ReqScope::current();
+        if ( ! $rc || ! $rc->user || (int) $rc->user->id < 1 || ! $rc->context || (int) $rc->context->id < 1 ) {
+            die('Request scope is not established.');
+        }
+        return $rc;
+    }
+
+    private function contextId() {
+        return (int) $this->requireRc()->context->id;
+    }
+
+    private function userId() {
+        return (int) $this->requireRc()->user->id;
+    }
+
+    private function instructor() {
+        return (bool) $this->requireRc()->user->instructor;
+    }
+
+    /**
+     * @param string $redirectUrl
+     * @return ReqScope
+     */
+    private function requireRcInstructor($redirectUrl) {
+        $rc = $this->requireRc();
+        if ( ! $rc->user->instructor ) {
+            U::flashError("You must be an administrator or instructor for this context");
+            header('Location: ' . U::addSession($redirectUrl));
+            exit();
+        }
+        return $rc;
+    }
+
+    public static function routes(Application $app, $prefix=self::ROUTE) {
+        $app->router->get($prefix, 'Quiz1@index');
+        $app->router->get($prefix.'/', 'Quiz1@index');
+        $app->router->get('/'.self::REDIRECT, 'Quiz1@index');
+        $app->router->get($prefix.'/add', 'Quiz1@add');
+        $app->router->post($prefix.'/add', 'Quiz1@addPost');
+        $app->router->post($prefix.'/sample', 'Quiz1@samplePost');
+        $app->router->get($prefix.'/{id}/export', 'Quiz1@export');
+        $app->router->get($prefix.'/{id}/export/gift', 'Quiz1@exportGift');
+        $app->router->get($prefix.'/{id}/import/gift', 'Quiz1@importGift');
+        $app->router->post($prefix.'/{id}/import/gift', 'Quiz1@importGiftPost');
+        $app->router->get($prefix.'/{id}/import/qti', 'Quiz1@importQti');
+        $app->router->post($prefix.'/{id}/import/qti', 'Quiz1@importQtiPost');
+        $app->router->get($prefix.'/{id}/questions/add', 'Quiz1@questionAdd');
+        $app->router->post($prefix.'/{id}/questions/add', 'Quiz1@questionAddPost');
+        $app->router->get($prefix.'/{id}/questions/{qid}/edit', 'Quiz1@questionEdit');
+        $app->router->post($prefix.'/{id}/questions/{qid}/edit', 'Quiz1@questionEditPost');
+        $app->router->post($prefix.'/{id}/questions/{qid}/delete', 'Quiz1@questionDeletePost');
+        $app->router->post($prefix.'/{id}/questions/{qid}/move', 'Quiz1@questionMovePost');
+        $app->router->get($prefix.'/{id}/edit', 'Quiz1@edit');
+        $app->router->post($prefix.'/{id}/edit', 'Quiz1@editPost');
+        $app->router->post($prefix.'/{id}/delete', 'Quiz1@deletePost');
+        $app->router->post($prefix.'/{id}/publish', 'Quiz1@publishPost');
+        $app->router->post($prefix.'/{id}/unpublish', 'Quiz1@unpublishPost');
+        $app->router->get($prefix.'/link/{id}', 'Quiz1@take');
+        $app->router->post($prefix.'/link/{id}', 'Quiz1@takePost');
+        $app->router->get($prefix.'/{id}/view', 'Quiz1@view');
+        $app->router->post($prefix.'/{id}/view', 'Quiz1@viewPost');
+    }
+
+    public function index(Request $request) {
+        global $OUTPUT;
+
+        $this->requireRc();
+        LTIX::getConnection();
+
+        $context_id = $this->contextId();
+        $quizzes = Quiz1Repository::listForContext($context_id);
+        $home = $this->toolHome(self::ROUTE);
+
+        if ( ! $this->instructor() ) {
+            $this->renderStudentIndex($quizzes, $home);
+            return;
+        }
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" role="main" id="main-content">
+            <?= self::quizIconStyles() ?>
+            <h1><?= htmlspecialchars(__('Quizzes')) ?>
+                <span class="pull-right">
+                    <a href="<?= htmlspecialchars($home.'/add') ?>" class="btn btn-primary"><?= htmlspecialchars(__('New Quiz')) ?></a>
+                </span>
+            </h1>
+            <p class="help-block"><?= htmlspecialchars(__('Create quizzes as course resources. View a quiz before it is published. After publish, students take it from Lessons or from the Take link. Import or export GIFT and Common Cartridge QTI 1.2.1 on any quiz.')) ?></p>
+            <?php if ( count($quizzes) < 1 ): ?>
+                <p><?= htmlspecialchars(__('No quizzes yet.')) ?></p>
+                <form method="post" action="<?= htmlspecialchars($home.'/sample') ?>">
+                    <?= self::csrfField() ?>
+                    <button type="submit" class="btn btn-default"><?= htmlspecialchars(__('Create sample quiz (all question types)')) ?></button>
+                </form>
+            <?php else: ?>
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th><?= htmlspecialchars(__('Title')) ?></th>
+                            <th><?= htmlspecialchars(__('Questions')) ?></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ( $quizzes as $quiz ): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($quiz->title) ?></td>
+                            <td><?= (int) $quiz->question_count ?></td>
+                            <td class="text-right" style="white-space:nowrap;">
+                                <div class="btn-group" style="display:inline-block;">
+                                    <button type="button" class="btn btn-xs btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                        <?= htmlspecialchars(__('Open')) ?> <span class="caret"></span>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-right">
+                                        <?php if ( (int) $quiz->published === 1 && $quiz->link_id ): ?>
+                                            <li><a href="<?= htmlspecialchars($home.'/link/'.$quiz->link_id) ?>"><?= htmlspecialchars(__('Take')) ?></a></li>
+                                        <?php endif; ?>
+                                        <li><a href="<?= htmlspecialchars($home.'/'.$quiz->id.'/view') ?>"><?= htmlspecialchars(__('View')) ?></a></li>
+                                        <li><a href="<?= htmlspecialchars($home.'/'.$quiz->id.'/view?print=yes') ?>" target="_blank" rel="noopener noreferrer"><?= htmlspecialchars(__('Print')) ?></a></li>
+                                    </ul>
+                                </div>
+                                <?= self::interchangeButtons($home, $quiz->id, true) ?>
+                                <?= self::publishIconButton($home, $quiz) ?>
+                                <?= self::editIconLink($home.'/'.$quiz->id.'/edit', $quiz->published) ?>
+                                <form method="post" action="<?= htmlspecialchars($home.'/'.$quiz->id.'/delete') ?>" style="display:inline;" onsubmit="return confirm(<?= htmlspecialchars(json_encode(__('Delete this quiz and all of its questions?')), ENT_QUOTES) ?>);">
+                                    <?= self::csrfField() ?>
+                                    <?= self::deleteIconButton() ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <form method="post" action="<?= htmlspecialchars($home.'/sample') ?>">
+                    <?= self::csrfField() ?>
+                    <button type="submit" class="btn btn-default"><?= htmlspecialchars(__('Create sample quiz (all question types)')) ?></button>
+                </form>
+            <?php endif; ?>
+        </main>
+        <?php
+        $OUTPUT->footer();
+    }
+
+    public function add(Request $request) {
+        $this->requireRcInstructor($this->toolHome(self::ROUTE));
+        $quiz = new \Tsugi\Services\Quiz1\Quiz1();
+        $saved = $this->takeForm('quiz_add');
+        if ( $saved ) {
+            $quiz->title = U::get($saved, 'title', '');
+            $quiz->instructions = U::get($saved, 'instructions', '');
+        }
+        $this->renderQuizForm($quiz, $this->toolHome(self::ROUTE).'/add', __('New Quiz'), true);
+    }
+
+    public function addPost(Request $request) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/add');
+        if ( $csrf ) {
+            return $csrf;
+        }
+
+        $quiz = new \Tsugi\Services\Quiz1\Quiz1();
+        $quiz->context_id = $this->contextId();
+        $quiz->user_id = $this->userId();
+        $quiz->title = trim(U::get($_POST, 'title', ''));
+        $quiz->instructions = Html::purify(U::get($_POST, 'instructions', ''));
+        $errors = $quiz->validate();
+        if ( count($errors) ) {
+            foreach ( $errors as $err ) {
+                U::flashError($err);
+            }
+            $this->stashForm(array(
+                'kind' => 'quiz_add',
+                'title' => $quiz->title,
+                'instructions' => $quiz->instructions,
+            ));
+            return new RedirectResponse($home.'/add');
+        }
+        $id = Quiz1Repository::insertQuiz($quiz);
+        unset($_SESSION[self::FORM_SESSION]);
+        U::flashSuccess(__('Quiz created.'));
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    public function edit(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $saved = $this->takeForm('quiz_edit', $quiz->id);
+        if ( $saved ) {
+            $quiz->title = U::get($saved, 'title', '');
+            $quiz->instructions = U::get($saved, 'instructions', '');
+        }
+        $this->renderQuizEdit($quiz);
+    }
+
+    public function editPost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/edit');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $quiz->title = trim(U::get($_POST, 'title', ''));
+        $quiz->instructions = Html::purify(U::get($_POST, 'instructions', ''));
+        $errors = $quiz->validate();
+        if ( count($errors) ) {
+            foreach ( $errors as $err ) {
+                U::flashError($err);
+            }
+            $this->stashForm(array(
+                'kind' => 'quiz_edit',
+                'quiz_id' => (int) $quiz->id,
+                'title' => $quiz->title,
+                'instructions' => $quiz->instructions,
+            ));
+            return new RedirectResponse($home.'/'.$id.'/edit');
+        }
+        Quiz1Repository::updateQuizMeta($quiz);
+        unset($_SESSION[self::FORM_SESSION]);
+        U::flashSuccess(__('Quiz updated.'));
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    public function deletePost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        Quiz1Repository::deleteQuiz((int) $id, $this->contextId());
+        U::flashSuccess(__('Quiz deleted.'));
+        return new RedirectResponse($home);
+    }
+
+    public function publishPost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $context_id = $this->contextId();
+        $link_id = Quiz1Repository::publish((int) $id, $context_id);
+        if ( ! $link_id ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        U::flashSuccess(__('Quiz published.'));
+        return new RedirectResponse($this->afterPublishUrl($home, (int) $id));
+    }
+
+    public function unpublishPost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $ok = Quiz1Repository::unpublish((int) $id, $this->contextId());
+        if ( ! $ok ) {
+            U::flashError(__('Quiz has never been published.'));
+            return new RedirectResponse($home);
+        }
+        U::flashSuccess(__('Quiz unpublished. The link is still there.'));
+        return new RedirectResponse($this->afterPublishUrl($home, (int) $id));
+    }
+
+    /**
+     * The quiz list, or the edit screen when the button was pressed there.
+     */
+    private function afterPublishUrl($home, $id) {
+        if ( U::get($_POST, 'next', '') === 'edit' ) {
+            return $home.'/'.(int) $id.'/edit';
+        }
+        return $home;
+    }
+
+    public function take(Request $request, $id) {
+        return $this->renderTake((int) $id, null, null, false);
+    }
+
+    public function view(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        LTIX::getConnection();
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $printing = U::get($_GET, 'print', '') === 'yes';
+        return $this->renderTake((int) $id, null, $quiz, true, $printing);
+    }
+
+    /**
+     * Instructor preview. Grades the answers on the page and does not write the gradebook.
+     */
+    public function viewPost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/view');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        LTIX::getConnection();
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $result = Grader::grade($quiz, $_POST);
+        return $this->renderTake((int) $id, $result, $quiz, true);
+    }
+
+    public function takePost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRc();
+        $csrf = self::requireCsrf($home.'/link/'.$id);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        LTIX::getConnection();
+        $quiz = Quiz1Repository::loadByLink((int) $id, $this->contextId());
+        if ( ! $quiz || ! $this->studentMayTake($quiz) ) {
+            if ( $quiz && $this->instructor() ) {
+                U::flashError(__('This quiz is not published.'));
+            } else {
+                U::flashError(__('Quiz not found.'));
+            }
+            return new RedirectResponse($home);
+        }
+        $result = Grader::grade($quiz, $_POST);
+        $this->recordTakeGrade($quiz, $result);
+        return $this->renderTake((int) $id, $result, $quiz, false);
+    }
+
+    /**
+     * @param array{earned:int,possible:int,essay_possible:int,items:array}|null $result
+     * @param bool $viewing Instructor preview. Does not require publication and does not record a grade.
+     * @param bool $printing Clean paper layout for an instructor, opened from view.
+     */
+    private function renderTake($id, $result, $quiz = null, $viewing = false, $printing = false) {
+        global $OUTPUT;
+
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRc();
+        LTIX::getConnection();
+        if ( $quiz === null ) {
+            $quiz = Quiz1Repository::loadByLink((int) $id, $this->contextId());
+        }
+        if ( ! $quiz || ( ! $viewing && ! $this->studentMayTake($quiz) ) ) {
+            if ( $quiz && $this->instructor() ) {
+                U::flashError(__('This quiz is not published.'));
+            } else {
+                U::flashError(__('Quiz not found.'));
+            }
+            return new RedirectResponse($home);
+        }
+        if ( $viewing && ! $this->instructor() ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+
+        $lessons_home = $this->toolHome(\Tsugi\Controllers\Lessons::ROUTE);
+        $from_module = self::moduleAnchorFromRequest();
+        if ( $from_module ) {
+            ReqScope::setReturnUrl($lessons_home.'/'.rawurlencode($from_module));
+        }
+        $requestContextLines = $this->requestContextLinesForQuiz($quiz, ! $viewing);
+        $return_url = null;
+        $rc = ReqScope::current();
+        if ( $rc && $rc->launchPresentation && is_string($rc->launchPresentation->return_url) ) {
+            $return_url = $rc->launchPresentation->return_url;
+        }
+        $lessons_url = $return_url ? U::addSession($return_url) : '';
+        $can_edit = $this->instructor();
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart($result === null);
+        if ( ! $printing ) {
+            $OUTPUT->topNav();
+            $OUTPUT->flashMessages();
+        }
+        include __DIR__ . '/templates/Quiz1/take.inc.php';
+        $savedFooter = $_SESSION['APP_FOOTER'] ?? null;
+        unset($_SESSION['APP_FOOTER']);
+        $OUTPUT->footer();
+        if ( $savedFooter !== null ) {
+            $_SESSION['APP_FOOTER'] = $savedFooter;
+        }
+        return '';
+    }
+
+    /**
+     * The course peel already loaded the user and the role.
+     * Take attaches the link from the URL. View and print do not.
+     *
+     * @param \Tsugi\Services\Quiz1\Quiz1 $quiz
+     * @param bool $attachLink
+     * @return ReqScope
+     * @throws ReqScopeException
+     */
+    private static function requestContextForQuiz($quiz, $attachLink) {
+        ReqScope::logSessionDrift((int) $quiz->context_id);
+        $rc = ReqScope::current();
+        if ( ! $rc || ! $rc->user || ! $rc->context ) {
+            throw new ReqScopeException('Request scope is not established.', 500);
+        }
+        if ( ! $attachLink ) {
+            return $rc;
+        }
+        $link_id = (int) $quiz->link_id;
+        if ( $link_id < 1 ) {
+            throw new ReqScopeException('Quiz has no link.', 404);
+        }
+        return ReqScope::setLink($link_id);
+    }
+
+    /**
+     * Hydrate ReqScope for this take. Grading is unchanged.
+     * A failure is shown in the dump and does not block the quiz.
+     *
+     * @param \Tsugi\Services\Quiz1\Quiz1 $quiz
+     * @return array<string,string>
+     */
+    private function requestContextLinesForQuiz($quiz, $attachLink) {
+        try {
+            $rc = self::requestContextForQuiz($quiz, $attachLink);
+        } catch ( ReqScopeException $ex ) {
+            return array('request context' => $ex->getMessage());
+        }
+        return self::requestContextLines($rc, $quiz);
+    }
+
+    /**
+     * @param \Tsugi\Services\Quiz1\Quiz1 $quiz
+     * @return array<string,string>
+     */
+    private static function requestContextLines(ReqScope $rc, $quiz) {
+        return array(
+            'authenticated user' => $rc->user->id . ' ' . (string) $rc->user->displayname
+                . ' instructor=' . ($rc->user->instructor ? '1' : '0')
+                . ' admin=' . ($rc->user->admin ? '1' : '0'),
+            'course/context' => $rc->context->id . ' ' . (string) $rc->context->title,
+            'quiz' => $quiz->id . ' ' . $quiz->title,
+            'link' => $rc->link ? ($rc->link->id . ' ' . (string) $rc->link->title) : 'null',
+            'result' => $rc->result ? (string) $rc->result->id : 'null',
+            'grade' => ($rc->result && $rc->result->grade !== null && $rc->result->grade !== false)
+                ? (string) $rc->result->grade
+                : 'null',
+            'publication state' => $rc->published === null ? 'never published' : ((int) $rc->published === 1 ? 'published' : 'unpublished'),
+            'return url' => ($rc->launchPresentation && $rc->launchPresentation->return_url)
+                ? $rc->launchPresentation->return_url
+                : 'null',
+        );
+    }
+
+    /**
+     * Store the take on the ReqScope result. Essays still open count in the
+     * denominator and are marked Completed / PendingManual. The page still renders either way.
+     *
+     * @param \Tsugi\Services\Quiz1\Quiz1 $quiz
+     * @param array{earned:int,possible:int,essay_possible:int,items:array} $graded
+     */
+    private function recordTakeGrade($quiz, array $graded) {
+        try {
+            $rc = self::requestContextForQuiz($quiz, true);
+        } catch ( ReqScopeException $ex ) {
+            return;
+        }
+        $score = Grader::gradebookScore($graded);
+        if ( $score === null ) {
+            return;
+        }
+        $extra = array(
+            LTI13::ACTIVITY_PROGRESS => LTI13::ACTIVITY_PROGRESS_COMPLETED,
+            LTI13::GRADING_PROGRESS => $score['pending_manual']
+                ? LTI13::GRADING_PROGRESS_PENDINGMANUAL
+                : LTI13::GRADING_PROGRESS_FULLYGRADED,
+        );
+        $stored = Gradebook::record($rc, $score['grade'], $extra);
+        if ( is_string($stored) ) {
+            U::flashError($stored);
+        }
+    }
+
+    /**
+     * Module anchor passed by Lessons so Back to Lessons returns to that module.
+     */
+    private static function moduleAnchorFromRequest() {
+        $from = isset($_GET['from']) ? trim((string) $_GET['from']) : '';
+        if ( $from === '' || ! preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/', $from) ) {
+            return null;
+        }
+        return $from;
+    }
+
+    /**
+     * Take is the published path for students and instructors. Drafts open in view mode.
+     *
+     * @param \Tsugi\Services\Quiz1\Quiz1 $quiz
+     */
+    private function studentMayTake($quiz) {
+        return (int) $quiz->published === 1;
+    }
+
+    /**
+     * @param \Tsugi\Services\Quiz1\Quiz1[] $quizzes
+     */
+    private function renderStudentIndex(array $quizzes, $home) {
+        global $OUTPUT;
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" role="main" id="main-content">
+            <h1><?= htmlspecialchars(__('Quizzes')) ?></h1>
+            <?php if ( count($quizzes) < 1 ): ?>
+                <p><?= htmlspecialchars(__('No quizzes in this course yet.')) ?></p>
+            <?php else:
+                $visible = array();
+                foreach ( $quizzes as $quiz ) {
+                    if ( (int) $quiz->published === 1 ) {
+                        $visible[] = $quiz;
+                    }
+                }
+            ?>
+                <?php if ( count($visible) < 1 ): ?>
+                    <p><?= htmlspecialchars(__('No quizzes in this course yet.')) ?></p>
+                <?php else: ?>
+                <ul class="list-unstyled">
+                <?php foreach ( $visible as $quiz ): ?>
+                    <li style="margin: 0.5em 0;">
+                        <a href="<?= htmlspecialchars($home.'/link/'.$quiz->link_id) ?>"><?= htmlspecialchars($quiz->title) ?></a>
+                        (<?= (int) $quiz->question_count ?> <?= htmlspecialchars(__('questions')) ?>)
+                    </li>
+                <?php endforeach; ?>
+                </ul>
+                <?php endif; ?>
+            <?php endif; ?>
+        </main>
+        <?php
+        $OUTPUT->footer();
+    }
+
+    public function questionAdd(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $saved = $this->takeForm('question_add', $quiz->id);
+        if ( $saved ) {
+            $question = $this->questionFromFormState($saved);
+            $question->quiz_id = $quiz->id;
+        } else {
+            $question = new Question();
+            $question->quiz_id = $quiz->id;
+            $question->type = U::get($_GET, 'type', QuestionTypes::MULTIPLE_CHOICE);
+            if ( ! QuestionTypes::isValid($question->type) ) {
+                $question->type = QuestionTypes::MULTIPLE_CHOICE;
+            }
+            $this->seedDefaultAnswers($question);
+        }
+        $this->renderQuestionForm($quiz, $question, $home.'/'.$quiz->id.'/questions/add', true);
+    }
+
+    public function questionAddPost(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/questions/add');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        $question = $this->questionFromPost();
+        $question->quiz_id = $quiz->id;
+        $errors = $question->validate();
+        if ( count($errors) ) {
+            foreach ( $errors as $err ) {
+                U::flashError($err);
+            }
+            $this->stashForm($this->questionFormState('question_add', $question, $quiz->id));
+            return new RedirectResponse($home.'/'.$quiz->id.'/questions/add?type='.rawurlencode($question->type));
+        }
+        Quiz1Repository::insertQuestion($question);
+        unset($_SESSION[self::FORM_SESSION]);
+        U::flashSuccess(__('Question added.'));
+        return new RedirectResponse($home.'/'.$quiz->id.'/edit');
+    }
+
+    public function questionEdit(Request $request, $id, $qid) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        $question = Quiz1Repository::loadQuestion((int) $qid, $this->contextId());
+        if ( ! $quiz || ! $question || (int) $question->quiz_id !== (int) $quiz->id ) {
+            U::flashError(__('Question not found.'));
+            return new RedirectResponse($home);
+        }
+        $saved = $this->takeForm('question_edit', $quiz->id, $question->id);
+        if ( $saved ) {
+            $restored = $this->questionFromFormState($saved);
+            $restored->id = $question->id;
+            $restored->quiz_id = $question->quiz_id;
+            $restored->sequence = $question->sequence;
+            $restored->type = $question->type;
+            $question = $restored;
+        }
+        $this->renderQuestionForm($quiz, $question, $home.'/'.$quiz->id.'/questions/'.$question->id.'/edit', false);
+    }
+
+    public function questionEditPost(Request $request, $id, $qid) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/questions/'.$qid.'/edit');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        $existing = Quiz1Repository::loadQuestion((int) $qid, $this->contextId());
+        if ( ! $quiz || ! $existing || (int) $existing->quiz_id !== (int) $quiz->id ) {
+            U::flashError(__('Question not found.'));
+            return new RedirectResponse($home);
+        }
+        $question = $this->questionFromPost();
+        $question->id = $existing->id;
+        $question->quiz_id = $existing->quiz_id;
+        $question->sequence = $existing->sequence;
+        $question->type = $existing->type;
+        $errors = $question->validate();
+        if ( count($errors) ) {
+            foreach ( $errors as $err ) {
+                U::flashError($err);
+            }
+            $this->stashForm($this->questionFormState('question_edit', $question, $quiz->id));
+            return new RedirectResponse($home.'/'.$quiz->id.'/questions/'.$qid.'/edit');
+        }
+        Quiz1Repository::updateQuestion($question);
+        unset($_SESSION[self::FORM_SESSION]);
+        U::flashSuccess(__('Question updated.'));
+        return new RedirectResponse($home.'/'.$quiz->id.'/edit');
+    }
+
+    public function questionDeletePost(Request $request, $id, $qid) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/edit');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        if ( ! Quiz1Repository::deleteQuestion((int) $qid, $this->contextId()) ) {
+            U::flashError(__('Question not found.'));
+        } else {
+            U::flashSuccess(__('Question deleted.'));
+        }
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    public function questionMovePost(Request $request, $id, $qid) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/edit');
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $dir = U::get($_POST, 'direction', '');
+        if ( $dir !== 'up' && $dir !== 'down' ) {
+            U::flashError(__('Invalid move direction.'));
+            return new RedirectResponse($home.'/'.$id.'/edit');
+        }
+        Quiz1Repository::moveQuestion((int) $qid, $this->contextId(), $dir);
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    public function export(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        try {
+            $xml = Qti12Exporter::export($quiz);
+        } catch ( ExportException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($home.'/'.$id.'/edit');
+        }
+        $slug = preg_replace('/[^a-z0-9]+/i', '-', strtolower($quiz->title));
+        $slug = trim($slug, '-');
+        if ( $slug === '' ) {
+            $slug = 'quiz-'.$quiz->id;
+        }
+        $response = new Response($xml, 200, array(
+            'Content-Type' => 'application/xml; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$slug.'-qti.xml"',
+        ));
+        return $response;
+    }
+
+    public function exportGift(Request $request, $id) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+        try {
+            $gift = GiftExporter::export($quiz);
+        } catch ( ExportException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($home.'/'.$id.'/edit');
+        }
+        $response = new Response($gift, 200, array(
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$this->quizSlug($quiz).'.gift"',
+        ));
+        return $response;
+    }
+
+    public function importGift(Request $request, $id) {
+        return $this->renderImportForm((int) $id, 'gift');
+    }
+
+    public function importGiftPost(Request $request, $id) {
+        return $this->handleImportPost((int) $id, 'gift');
+    }
+
+    public function importQti(Request $request, $id) {
+        return $this->renderImportForm((int) $id, 'qti');
+    }
+
+    public function importQtiPost(Request $request, $id) {
+        return $this->handleImportPost((int) $id, 'qti');
+    }
+
+    public function samplePost(Request $request) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = SampleQuiz1::build(0);
+        $quiz->id = null;
+        foreach ( $quiz->questions as $q ) {
+            $q->id = null;
+            $q->quiz_id = null;
+            foreach ( $q->answers as $a ) {
+                $a->id = null;
+            }
+        }
+        $quiz->context_id = $this->contextId();
+        $quiz->user_id = $this->userId();
+        $id = Quiz1Repository::insertQuiz($quiz);
+        U::flashSuccess(__('Sample quiz created. Export QTI or GIFT, or import more questions from GIFT or QTI.'));
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    /**
+     * Confirm before opening an editor when the quiz is already published.
+     *
+     * @param mixed $published
+     * @return string
+     */
+    public static function publishedEditConfirm($published) {
+        if ( (int) $published !== 1 ) {
+            return '';
+        }
+        $message = __('Are you sure you want to change this? This quiz has already been published.');
+        return ' onclick="return confirm('.htmlspecialchars(json_encode($message), ENT_QUOTES).');"';
+    }
+
+    private static function quizIconStyles() {
+        return '<style>'
+            .'.quiz-icon-btn{padding:4px 8px;min-width:30px;line-height:1.2;}'
+            .'.quiz-icon-btn .fa{font-size:14px;}'
+            .'.quiz-icon-btn .publish-on{color:#0b874b;}'
+            .'.quiz-icon-btn .publish-off{color:#8d959f;}'
+            .'</style>';
+    }
+
+    /**
+     * Grey ban when unpublished, green check when published. Posts the existing publish route.
+     *
+     * @param string $home
+     * @param object $quiz
+     * @param string $next
+     */
+    private static function publishIconButton($home, $quiz, $next = '') {
+        $on = $quiz->link_id && (int) $quiz->published === 1;
+        $action = htmlspecialchars($home.'/'.$quiz->id.'/'.($on ? 'unpublish' : 'publish'));
+        $label = htmlspecialchars($on ? __('Published. Click to unpublish.') : __('Unpublished. Click to publish.'));
+        $icon = $on ? 'fa-check-circle publish-on' : 'fa-ban publish-off';
+        $next_field = $next !== '' ? '<input type="hidden" name="next" value="'.htmlspecialchars($next).'">' : '';
+        return '<form method="post" action="'.$action.'" style="display:inline;">'
+            .self::csrfField()
+            .$next_field
+            .'<button type="submit" class="btn btn-xs btn-default quiz-icon-btn" title="'.$label.'" aria-label="'.$label.'">'
+            .'<i class="fa '.$icon.'" aria-hidden="true"></i></button></form>';
+    }
+
+    private static function editIconLink($href, $published) {
+        $label = htmlspecialchars(__('Edit'));
+        return '<a class="btn btn-xs btn-default quiz-icon-btn" href="'.htmlspecialchars($href).'" title="'.$label.'" aria-label="'.$label.'"'
+            .self::publishedEditConfirm($published).'>'
+            .'<i class="fa fa-pencil" aria-hidden="true"></i></a>';
+    }
+
+    private static function deleteIconButton() {
+        $label = htmlspecialchars(__('Delete'));
+        return '<button type="submit" class="btn btn-xs btn-default quiz-icon-btn" title="'.$label.'" aria-label="'.$label.'">'
+            .'<i class="fa fa-trash" aria-hidden="true"></i></button>';
+    }
+
+    /**
+     * Import / export menus available on every quiz.
+     */
+    private static function interchangeButtons($home, $quiz_id, $small) {
+        $cls = $small ? 'btn btn-xs btn-default dropdown-toggle' : 'btn btn-default dropdown-toggle';
+        $id = (int) $quiz_id;
+        $base = $home.'/'.$id;
+        ob_start();
+        ?>
+        <div class="btn-group" style="display:inline-block;">
+            <button type="button" class="<?= $cls ?>" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                <?= htmlspecialchars(__('Export')) ?> <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-right">
+                <li><a href="<?= htmlspecialchars($base.'/export') ?>"><?= htmlspecialchars(__('QTI')) ?></a></li>
+                <li><a href="<?= htmlspecialchars($base.'/export/gift') ?>"><?= htmlspecialchars(__('GIFT')) ?></a></li>
+            </ul>
+        </div>
+        <div class="btn-group" style="display:inline-block;">
+            <button type="button" class="<?= $cls ?>" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                <?= htmlspecialchars(__('Import')) ?> <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-right">
+                <li><a href="<?= htmlspecialchars($base.'/import/gift') ?>"><?= htmlspecialchars(__('GIFT')) ?></a></li>
+                <li><a href="<?= htmlspecialchars($base.'/import/qti') ?>"><?= htmlspecialchars(__('QTI')) ?></a></li>
+            </ul>
+        </div>
+        <?php
+        return trim(ob_get_clean());
+    }
+
+    private function quizSlug(\Tsugi\Services\Quiz1\Quiz1 $quiz) {
+        $slug = preg_replace('/[^a-z0-9]+/i', '-', strtolower($quiz->title));
+        $slug = trim($slug, '-');
+        if ( $slug === '' ) {
+            $slug = 'quiz-'.$quiz->id;
+        }
+        return $slug;
+    }
+
+    /**
+     * @param 'gift'|'qti' $format
+     */
+    private function renderImportForm($id, $format) {
+        global $OUTPUT;
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+
+        $is_gift = $format === 'gift';
+        $heading = $is_gift ? __('Import GIFT') : __('Import QTI');
+        $action = $home.'/'.$quiz->id.'/import/'.($is_gift ? 'gift' : 'qti');
+        $accept = $is_gift ? '.gift,.txt,text/plain' : '.xml,.zip,.imscc,application/xml,text/xml,application/zip';
+        $help = $is_gift
+            ? __('Paste Moodle GIFT or upload a .gift / .txt file. Questions are added to this quiz. Numerical and matching items are skipped.')
+            : __('Paste Common Cartridge QTI 1.2.1 XML or upload a quiz .xml / .zip / .imscc. This adds questions to this quiz; it does not import a course.');
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" role="main" id="main-content">
+            <p><a href="<?= htmlspecialchars($home.'/'.$quiz->id.'/edit') ?>">&larr; <?= htmlspecialchars($quiz->title) ?></a></p>
+            <h1><?= htmlspecialchars($heading) ?></h1>
+            <p class="help-block"><?= htmlspecialchars($help) ?></p>
+            <form method="post" action="<?= htmlspecialchars($action) ?>" enctype="multipart/form-data">
+                <?= self::csrfField() ?>
+                <div class="form-group">
+                    <label for="file"><?= htmlspecialchars(__('File')) ?></label>
+                    <input type="file" id="file" name="file" accept="<?= htmlspecialchars($accept) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="text"><?= htmlspecialchars($is_gift ? __('Or paste GIFT') : __('Or paste QTI XML')) ?></label>
+                    <textarea class="form-control" id="text" name="text" rows="16" style="font-family:monospace;"></textarea>
+                </div>
+                <p>
+                    <button type="submit" class="btn btn-primary"><?= htmlspecialchars(__('Import questions')) ?></button>
+                    <a class="btn btn-default" href="<?= htmlspecialchars($home.'/'.$quiz->id.'/edit') ?>"><?= htmlspecialchars(__('Cancel')) ?></a>
+                </p>
+            </form>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * @param 'gift'|'qti' $format
+     */
+    private function handleImportPost($id, $format) {
+        $home = $this->toolHome(self::ROUTE);
+        $this->requireRcInstructor($home);
+        $csrf = self::requireCsrf($home.'/'.$id.'/import/'.$format);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        $quiz = Quiz1Repository::load((int) $id, $this->contextId());
+        if ( ! $quiz ) {
+            U::flashError(__('Quiz not found.'));
+            return new RedirectResponse($home);
+        }
+
+        try {
+            $payload = $this->readImportInput();
+            if ( $format === 'gift' ) {
+                list($imported, $warnings) = GiftImporter::import($payload);
+            } else {
+                list($imported, $warnings) = Qti12Importer::import($payload);
+            }
+        } catch ( ImportException $e ) {
+            U::flashError(htmlspecialchars($e->getMessage(), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            return new RedirectResponse($home.'/'.$id.'/import/'.$format);
+        }
+
+        list($n, $save_errors) = Quiz1Repository::appendQuestions($quiz->id, $imported->questions);
+        $warnings = array_merge($warnings, $save_errors);
+        if ( $n < 1 ) {
+            $msg = __('No questions were imported.');
+            if ( count($warnings) ) {
+                $msg .= ' ' . implode(' ', $warnings);
+            }
+            U::flashError(htmlspecialchars($msg, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            return new RedirectResponse($home.'/'.$id.'/import/'.$format);
+        }
+        U::flashSuccess(sprintf(__('Imported %d question(s).'), $n));
+        if ( count($warnings) ) {
+            $safe = array();
+            foreach ( $warnings as $warn ) {
+                $safe[] = htmlspecialchars($warn, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
+            U::flashError(implode('<br>', $safe));
+        }
+        return new RedirectResponse($home.'/'.$id.'/edit');
+    }
+
+    private function readImportInput() {
+        if ( ! empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp_name']) ) {
+            if ( (int) $_FILES['file']['error'] !== UPLOAD_ERR_OK ) {
+                throw new ImportException(__('File upload failed.'));
+            }
+            if ( (int) $_FILES['file']['size'] > 2 * 1024 * 1024 ) {
+                throw new ImportException(__('File is too large (2 MB maximum).'));
+            }
+            $bytes = file_get_contents($_FILES['file']['tmp_name']);
+            if ( $bytes === false || $bytes === '' ) {
+                throw new ImportException(__('The uploaded file is empty.'));
+            }
+            return $bytes;
+        }
+        $text = trim((string) U::get($_POST, 'text', ''));
+        if ( $text === '' ) {
+            throw new ImportException(__('Paste quiz text or choose a file.'));
+        }
+        return $text;
+    }
+
+    /**
+     * One-slot flash of submitted fields after a validation redirect.
+     * Always overwrites; never accumulates. Stamped with course/quiz/question.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function stashForm(array $data) {
+        $data['context_id'] = $this->contextId();
+        $data['quiz_id'] = (int) U::get($data, 'quiz_id', 0);
+        $data['question_id'] = (int) U::get($data, 'question_id', 0);
+        $_SESSION[self::FORM_SESSION] = $data;
+    }
+
+    /**
+     * Consume the form flash. Any Quiz1 form GET takes the slot: restore on
+     * full match (course, kind, quiz, question), otherwise discard. Refresh
+     * and other tabs/courses lose the draft rather than leaking it.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function takeForm($kind, $quiz_id = 0, $question_id = 0) {
+        $data = isset($_SESSION[self::FORM_SESSION]) && is_array($_SESSION[self::FORM_SESSION])
+            ? $_SESSION[self::FORM_SESSION]
+            : null;
+        unset($_SESSION[self::FORM_SESSION]);
+        if ( ! $data ) {
+            return null;
+        }
+        if ( (int) U::get($data, 'context_id', 0) !== $this->contextId() ) {
+            return null;
+        }
+        if ( U::get($data, 'kind') !== $kind ) {
+            return null;
+        }
+        if ( (int) U::get($data, 'quiz_id', 0) !== (int) $quiz_id ) {
+            return null;
+        }
+        if ( (int) U::get($data, 'question_id', 0) !== (int) $question_id ) {
+            return null;
+        }
+        return $data;
+    }
+
+    /**
+     * @param int|string $quiz_id
+     * @return array<string, mixed>
+     */
+    private function questionFormState($kind, Question $question, $quiz_id) {
+        $answers = array();
+        foreach ( $question->answers as $ans ) {
+            $answers[] = array(
+                'text' => $ans->text,
+                'correct' => $ans->correct ? true : false,
+                'sequence' => (int) $ans->sequence,
+            );
+        }
+        return array(
+            'kind' => $kind,
+            'quiz_id' => (int) $quiz_id,
+            'question_id' => (int) $question->id,
+            'type' => $question->type,
+            'title' => $question->title,
+            'prompt' => $question->prompt,
+            'points' => (int) $question->points,
+            'feedback' => $question->feedback,
+            'sample_solution' => $question->sample_solution,
+            'case_sensitive' => $question->case_sensitive ? true : false,
+            'answers' => $answers,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function questionFromFormState(array $data) {
+        $q = new Question();
+        $q->type = (string) U::get($data, 'type', '');
+        $q->title = (string) U::get($data, 'title', '');
+        $q->prompt = (string) U::get($data, 'prompt', '');
+        $q->points = (int) U::get($data, 'points', 1);
+        $q->feedback = (string) U::get($data, 'feedback', '');
+        $q->sample_solution = (string) U::get($data, 'sample_solution', '');
+        $q->case_sensitive = U::get($data, 'case_sensitive') ? true : false;
+        $rows = U::get($data, 'answers', array());
+        if ( ! is_array($rows) ) {
+            $rows = array();
+        }
+        $seq = 1;
+        foreach ( $rows as $row ) {
+            if ( ! is_array($row) ) {
+                continue;
+            }
+            $q->answers[] = Answer::make(
+                U::get($row, 'text', ''),
+                U::get($row, 'correct') ? true : false,
+                (int) U::get($row, 'sequence', $seq)
+            );
+            $seq++;
+        }
+        return $q;
+    }
+
+    private function questionFromPost() {
+        $q = new Question();
+        $q->type = U::get($_POST, 'qtype', '');
+        $q->title = trim(U::get($_POST, 'title', ''));
+        $q->prompt = Html::purify(U::get($_POST, 'prompt', ''));
+        $q->points = U::get($_POST, 'points', 1);
+        $q->feedback = Html::purify(U::get($_POST, 'feedback', ''));
+        $q->sample_solution = Html::purify(U::get($_POST, 'sample_solution', ''));
+        $q->case_sensitive = U::get($_POST, 'case_sensitive') ? true : false;
+
+        if ( $q->type === QuestionTypes::TRUE_FALSE ) {
+            $correct = U::get($_POST, 'tf_correct', 'true') === 'true';
+            $q->answers = array(
+                Answer::make('True', $correct, 1),
+                Answer::make('False', ! $correct, 2),
+            );
+            return $q;
+        }
+
+        if ( $q->type === QuestionTypes::ESSAY ) {
+            $q->answers = array();
+            return $q;
+        }
+
+        $texts = U::get($_POST, 'answer_text', array());
+        if ( ! is_array($texts) ) {
+            $texts = array();
+        }
+        $corrects = U::get($_POST, 'answer_correct', array());
+        if ( ! is_array($corrects) ) {
+            $corrects = array();
+        }
+        $mc_correct = U::get($_POST, 'mc_correct', '');
+
+        $seq = 1;
+        foreach ( $texts as $i => $text ) {
+            $text = Html::purify($text);
+            if ( Question::isBlankHtml($text) ) {
+                continue;
+            }
+            $correct = false;
+            if ( $q->type === QuestionTypes::MULTIPLE_CHOICE ) {
+                $correct = ((string) $mc_correct === (string) $i);
+            } else if ( $q->type === QuestionTypes::MULTIPLE_RESPONSE ) {
+                $correct = ! empty($corrects[$i]);
+            } else {
+                $correct = true;
+            }
+            $q->answers[] = Answer::make($text, $correct, $seq);
+            $seq++;
+        }
+        return $q;
+    }
+
+    private function seedDefaultAnswers(Question $question) {
+        if ( $question->type === QuestionTypes::TRUE_FALSE ) {
+            $question->answers = array(
+                Answer::make('True', true, 1),
+                Answer::make('False', false, 2),
+            );
+            return;
+        }
+        if ( QuestionTypes::usesChoiceAnswers($question->type) ) {
+            for ( $i = 1; $i <= 4; $i++ ) {
+                $question->answers[] = Answer::make('', $i === 1, $i);
+            }
+            return;
+        }
+        if ( QuestionTypes::usesAcceptedStrings($question->type) ) {
+            $question->answers[] = Answer::make('', true, 1);
+        }
+    }
+
+    private function renderQuizForm(\Tsugi\Services\Quiz1\Quiz1 $quiz, $action, $heading, $is_new) {
+        global $OUTPUT;
+        $home = $this->toolHome(self::ROUTE);
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" role="main" id="main-content">
+            <h1><?= htmlspecialchars($heading) ?></h1>
+            <form method="post" action="<?= htmlspecialchars($action) ?>" id="quiz_form">
+                <?= self::csrfField() ?>
+                <div class="form-group">
+                    <label for="title"><?= htmlspecialchars(__('Title')) ?></label>
+                    <input type="text" class="form-control" id="title" name="title" required
+                           value="<?= htmlspecialchars($quiz->title) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="editor_instructions"><?= htmlspecialchars(__('Instructions')) ?></label>
+                    <div class="ckeditor-container">
+                        <textarea name="instructions" id="editor_instructions"><?= htmlspecialchars($quiz->instructions) ?></textarea>
+                    </div>
+                </div>
+                <p>
+                    <button type="submit" class="btn btn-primary"><?= htmlspecialchars($is_new ? __('Create Quiz') : __('Save')) ?></button>
+                    <a class="btn btn-default" href="<?= htmlspecialchars($home) ?>"><?= htmlspecialchars(__('Cancel')) ?></a>
+                </p>
+            </form>
+        </main>
+        <?php
+        $this->renderEditorFooter(array('editor_instructions'));
+    }
+
+    private function renderQuizEdit(\Tsugi\Services\Quiz1\Quiz1 $quiz) {
+        global $OUTPUT;
+        $home = $this->toolHome(self::ROUTE);
+        $questions = $quiz->orderedQuestions();
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" role="main" id="main-content">
+            <?= self::quizIconStyles() ?>
+            <p><a href="<?= htmlspecialchars($home) ?>">&larr; <?= htmlspecialchars(__('All quizzes')) ?></a></p>
+            <h1><?= htmlspecialchars(__('Edit Quiz')) ?>
+                <span class="pull-right">
+                    <?php if ( (int) $quiz->published === 1 && $quiz->link_id ): ?>
+                    <a class="btn btn-primary" href="<?= htmlspecialchars($home.'/link/'.$quiz->link_id) ?>"><?= htmlspecialchars(__('Take quiz')) ?></a>
+                    <?php endif; ?>
+                    <a class="btn btn-default" href="<?= htmlspecialchars($home.'/'.$quiz->id.'/view') ?>"><?= htmlspecialchars(__('View quiz')) ?></a>
+                    <?= self::publishIconButton($home, $quiz, 'edit') ?>
+                    <?= self::interchangeButtons($home, $quiz->id, false) ?>
+                </span>
+            </h1>
+            <form method="post" action="<?= htmlspecialchars($home.'/'.$quiz->id.'/edit') ?>" id="quiz_form">
+                <?= self::csrfField() ?>
+                <div class="form-group">
+                    <label for="title"><?= htmlspecialchars(__('Title')) ?></label>
+                    <input type="text" class="form-control" id="title" name="title" required
+                           value="<?= htmlspecialchars($quiz->title) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="editor_instructions"><?= htmlspecialchars(__('Instructions')) ?></label>
+                    <div class="ckeditor-container">
+                        <textarea name="instructions" id="editor_instructions"><?= htmlspecialchars($quiz->instructions) ?></textarea>
+                    </div>
+                </div>
+                <p>
+                    <button type="submit" class="btn btn-primary"><?= htmlspecialchars(__('Save quiz')) ?></button>
+                </p>
+            </form>
+
+            <h2><?= htmlspecialchars(__('Questions')) ?></h2>
+            <p>
+                <?php foreach ( QuestionTypes::labels() as $type => $label ): ?>
+                    <a class="btn btn-default btn-sm" href="<?= htmlspecialchars($home.'/'.$quiz->id.'/questions/add?type='.rawurlencode($type)) ?>"><?= htmlspecialchars($label) ?></a>
+                <?php endforeach; ?>
+            </p>
+            <?php if ( count($questions) < 1 ): ?>
+                <p><?= htmlspecialchars(__('No questions yet. Add one of the six Common Cartridge question types above.')) ?></p>
+            <?php else: ?>
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th><?= htmlspecialchars(__('Type')) ?></th>
+                            <th><?= htmlspecialchars(__('Question')) ?></th>
+                            <th><?= htmlspecialchars(__('Points')) ?></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ( $questions as $q ): ?>
+                        <tr>
+                            <td><?= (int) $q->sequence ?></td>
+                            <td><?= htmlspecialchars(QuestionTypes::label($q->type)) ?></td>
+                            <td><?= htmlspecialchars($q->title !== '' ? $q->title : Html::excerpt($q->prompt)) ?></td>
+                            <td><?= (int) $q->points ?></td>
+                            <td class="text-right" style="white-space:nowrap;">
+                                <form method="post" action="<?= htmlspecialchars($home.'/'.$quiz->id.'/questions/'.$q->id.'/move') ?>" style="display:inline;">
+                                    <?= self::csrfField() ?>
+                                    <input type="hidden" name="direction" value="up">
+                                    <button type="submit" class="btn btn-xs btn-default" title="<?= htmlspecialchars(__('Move up')) ?>">&uarr;</button>
+                                </form>
+                                <form method="post" action="<?= htmlspecialchars($home.'/'.$quiz->id.'/questions/'.$q->id.'/move') ?>" style="display:inline;">
+                                    <?= self::csrfField() ?>
+                                    <input type="hidden" name="direction" value="down">
+                                    <button type="submit" class="btn btn-xs btn-default" title="<?= htmlspecialchars(__('Move down')) ?>">&darr;</button>
+                                </form>
+                                <?= self::editIconLink($home.'/'.$quiz->id.'/questions/'.$q->id.'/edit', $quiz->published) ?>
+                                <form method="post" action="<?= htmlspecialchars($home.'/'.$quiz->id.'/questions/'.$q->id.'/delete') ?>" style="display:inline;" onsubmit="return confirm(<?= htmlspecialchars(json_encode(__('Delete this question?')), ENT_QUOTES) ?>);">
+                                    <?= self::csrfField() ?>
+                                    <?= self::deleteIconButton() ?>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </main>
+        <?php
+        $this->renderEditorFooter(array('editor_instructions'));
+    }
+
+    private function renderQuestionForm(\Tsugi\Services\Quiz1\Quiz1 $quiz, Question $question, $action, $is_new) {
+        global $OUTPUT;
+        $home = $this->toolHome(self::ROUTE);
+        $type = $question->type;
+        $labels = QuestionTypes::labels();
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        $tf_true = false;
+        foreach ( $question->answers as $ans ) {
+            if ( strtolower(trim(strip_tags($ans->text))) === 'true' && $ans->correct ) {
+                $tf_true = true;
+            }
+        }
+        if ( $is_new && $type === QuestionTypes::TRUE_FALSE && count($question->answers) ) {
+            $tf_true = $question->answers[0]->correct;
+        }
+        ?>
+        <main class="container" role="main" id="main-content">
+            <p><a href="<?= htmlspecialchars($home.'/'.$quiz->id.'/edit') ?>">&larr; <?= htmlspecialchars($quiz->title) ?></a></p>
+            <h1><?= htmlspecialchars($is_new ? __('Add Question') : __('Edit Question')) ?></h1>
+            <form method="post" action="<?= htmlspecialchars($action) ?>" id="question_form">
+                <?= self::csrfField() ?>
+                <input type="hidden" name="qtype" value="<?= htmlspecialchars($type) ?>">
+                <div class="form-group">
+                    <label><?= htmlspecialchars(__('Type')) ?></label>
+                    <p class="form-control-static"><?= htmlspecialchars($labels[$type] ?? $type) ?></p>
+                </div>
+                <div class="form-group">
+                    <label for="qtitle"><?= htmlspecialchars(__('Title (optional)')) ?></label>
+                    <input type="text" class="form-control" id="qtitle" name="title" value="<?= htmlspecialchars($question->title) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="editor_prompt"><?= htmlspecialchars(__('Prompt')) ?></label>
+                    <div class="ckeditor-container">
+                        <textarea name="prompt" id="editor_prompt"><?= htmlspecialchars($question->prompt) ?></textarea>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="points"><?= htmlspecialchars(__('Points')) ?></label>
+                    <input type="number" class="form-control" id="points" name="points" min="1" max="99" value="<?= (int) $question->points ?>" style="max-width:8em;">
+                </div>
+                <div class="form-group">
+                    <label for="editor_feedback"><?= htmlspecialchars(__('General feedback (optional)')) ?></label>
+                    <div class="ckeditor-container">
+                        <textarea name="feedback" id="editor_feedback"><?= htmlspecialchars($question->feedback) ?></textarea>
+                    </div>
+                </div>
+
+                <?php if ( $type === QuestionTypes::TRUE_FALSE ): ?>
+                    <div class="form-group">
+                        <label><?= htmlspecialchars(__('Correct answer')) ?></label>
+                        <div>
+                            <label class="radio-inline"><input type="radio" name="tf_correct" value="true" <?= $tf_true ? 'checked' : '' ?>> <?= htmlspecialchars(__('True')) ?></label>
+                            <label class="radio-inline"><input type="radio" name="tf_correct" value="false" <?= ! $tf_true ? 'checked' : '' ?>> <?= htmlspecialchars(__('False')) ?></label>
+                        </div>
+                    </div>
+                <?php elseif ( $type === QuestionTypes::ESSAY ): ?>
+                    <div class="form-group">
+                        <label for="editor_sample"><?= htmlspecialchars(__('Sample solution (optional, for graders)')) ?></label>
+                        <div class="ckeditor-container">
+                            <textarea name="sample_solution" id="editor_sample"><?= htmlspecialchars($question->sample_solution) ?></textarea>
+                        </div>
+                    </div>
+                <?php elseif ( QuestionTypes::usesChoiceAnswers($type) ): ?>
+                    <h3><?= htmlspecialchars(__('Choices')) ?></h3>
+                    <p class="help-block"><?= $type === QuestionTypes::MULTIPLE_RESPONSE
+                        ? htmlspecialchars(__('Mark every correct choice. At least two choices and one correct answer are required.'))
+                        : htmlspecialchars(__('Mark the one correct choice. At least two choices are required.')) ?></p>
+                    <div id="answer-rows">
+                        <?php
+                        $answers = $question->answers;
+                        if ( count($answers) < 2 ) {
+                            $answers[] = Answer::make('', false, count($answers) + 1);
+                            $answers[] = Answer::make('', false, count($answers) + 1);
+                        }
+                        foreach ( $answers as $i => $ans ):
+                        ?>
+                            <?= $this->answerRowHtml($type, $i, $ans) ?>
+                        <?php endforeach; ?>
+                    </div>
+                    <p><button type="button" class="btn btn-default btn-sm" id="add-answer"><?= htmlspecialchars(__('Add choice')) ?></button></p>
+                <?php elseif ( QuestionTypes::usesAcceptedStrings($type) ): ?>
+                    <h3><?= $type === QuestionTypes::FILL_BLANK
+                        ? htmlspecialchars(__('Accepted answers'))
+                        : htmlspecialchars(__('Matching patterns')) ?></h3>
+                    <p class="help-block"><?= $type === QuestionTypes::FILL_BLANK
+                        ? htmlspecialchars(__('Students must match one of these answers exactly. Matching is not case-sensitive.'))
+                        : htmlspecialchars(__('A student answer is correct if it contains one of these strings (Common Cartridge “contains” matching, not a regular expression).')) ?></p>
+                    <?php if ( $type === QuestionTypes::PATTERN_MATCH ): ?>
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" name="case_sensitive" value="1" <?= $question->case_sensitive ? 'checked' : '' ?>>
+                                <?= htmlspecialchars(__('Case sensitive')) ?>
+                            </label>
+                        </div>
+                    <?php endif; ?>
+                    <div id="answer-rows">
+                        <?php
+                        $answers = $question->answers;
+                        if ( count($answers) < 1 ) {
+                            $answers[] = Answer::make('', true, 1);
+                        }
+                        foreach ( $answers as $i => $ans ):
+                        ?>
+                            <?= $this->answerRowHtml($type, $i, $ans) ?>
+                        <?php endforeach; ?>
+                    </div>
+                    <p><button type="button" class="btn btn-default btn-sm" id="add-answer"><?= htmlspecialchars($type === QuestionTypes::FILL_BLANK ? __('Add accepted answer') : __('Add pattern')) ?></button></p>
+                <?php endif; ?>
+
+                <p>
+                    <button type="submit" class="btn btn-primary"><?= htmlspecialchars($is_new ? __('Add question') : __('Save question')) ?></button>
+                    <a class="btn btn-default" href="<?= htmlspecialchars($home.'/'.$quiz->id.'/edit') ?>"><?= htmlspecialchars(__('Cancel')) ?></a>
+                </p>
+            </form>
+        </main>
+        <script type="text/html" id="answer-row-template"><?= $this->answerRowHtml($type, '__I__', Answer::make('', $type !== QuestionTypes::MULTIPLE_CHOICE && $type !== QuestionTypes::MULTIPLE_RESPONSE, 0)) ?></script>
+        <?php
+        $editors = array('editor_prompt', 'editor_feedback');
+        if ( $type === QuestionTypes::ESSAY ) {
+            $editors[] = 'editor_sample';
+        }
+        $this->renderEditorFooter($editors, true, $type);
+    }
+
+    private function answerRowHtml($type, $i, Answer $ans) {
+        $is_choice = QuestionTypes::usesChoiceAnswers($type) && $type !== QuestionTypes::TRUE_FALSE;
+        $idx = htmlspecialchars((string) $i);
+        ob_start();
+        ?>
+        <div class="form-group answer-row" style="display:flex;gap:0.5em;align-items:flex-start;">
+            <?php if ( $type === QuestionTypes::MULTIPLE_CHOICE ): ?>
+                <label class="radio-inline" style="margin-top:8px;">
+                    <input type="radio" name="mc_correct" value="<?= $idx ?>" <?= $ans->correct ? 'checked' : '' ?>>
+                    <?= htmlspecialchars(__('Correct')) ?>
+                </label>
+            <?php elseif ( $type === QuestionTypes::MULTIPLE_RESPONSE ): ?>
+                <label class="checkbox-inline" style="margin-top:8px;">
+                    <input type="checkbox" name="answer_correct[<?= $idx ?>]" value="1" <?= $ans->correct ? 'checked' : '' ?>>
+                    <?= htmlspecialchars(__('Correct')) ?>
+                </label>
+            <?php endif; ?>
+            <input type="text" class="form-control" name="answer_text[<?= $idx ?>]" value="<?= htmlspecialchars($ans->text) ?>" placeholder="<?= htmlspecialchars($is_choice ? __('Choice text') : __('Answer')) ?>">
+            <button type="button" class="btn btn-default remove-answer" title="<?= htmlspecialchars(__('Remove')) ?>">&times;</button>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * @param string[] $ids
+     */
+    private function renderEditorFooter(array $ids, $with_answers = false, $type = '') {
+        global $OUTPUT;
+        $OUTPUT->footerStart();
+        ?>
+        <style>
+        <?php
+        $editorStyles = $with_answers
+            ? '#question_form .ckeditor-container { min-height: 0; }'
+                .' #question_form .ck-editor__editable { min-height: 2.5em; }'
+                .' #question_form .form-group { margin-bottom: 0.4em; }'
+                .' #question_form h3 { margin: 0.4em 0 0.2em; }'
+                .' #question_form .help-block { margin-bottom: 0.4em; }'
+                .' #question_form .answer-row { margin-bottom: 0.25em; }'
+            : '.ckeditor-container { min-height: 8em; }';
+        \Tsugi\UI\CKEditor::renderStyles(['includeLinkPicker' => false, 'extraStyles' => $editorStyles]);
+        ?>
+        </style>
+        <?php \Tsugi\UI\CKEditor::renderScriptTag(); ?>
+        <script type="text/javascript">
+        var appHome = <?= json_encode(isset($GLOBALS['CFG']->apphome) ? rtrim($GLOBALS['CFG']->apphome, '/') : '') ?>;
+        var pagesBase = appHome;
+        var filesBase = appHome;
+        <?php \Tsugi\UI\CKEditor::renderConfigScript(['toolbar' => array('heading', '|', 'bold', 'italic', 'link', 'bulletedList', 'numberedList', 'undo', 'redo')]); ?>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof ClassicEditor === 'undefined') return;
+            <?= json_encode($ids) ?>.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                ClassicEditor.create(el, ClassicEditor.defaultConfig).catch(function(e) { console.error(e); });
+            });
+            <?php if ( $with_answers && $type !== QuestionTypes::TRUE_FALSE && $type !== QuestionTypes::ESSAY ): ?>
+            var rows = document.getElementById('answer-rows');
+            var addBtn = document.getElementById('add-answer');
+            var tpl = document.getElementById('answer-row-template');
+            function nextIndex() {
+                return rows.querySelectorAll('.answer-row').length;
+            }
+            function reindex() {
+                var list = rows.querySelectorAll('.answer-row');
+                list.forEach(function(row, i) {
+                    row.querySelectorAll('input').forEach(function(inp) {
+                        if (inp.name === 'mc_correct') { inp.value = String(i); return; }
+                        if (inp.name && inp.name.indexOf('answer_correct') === 0) inp.name = 'answer_correct[' + i + ']';
+                        if (inp.name && inp.name.indexOf('answer_text') === 0) inp.name = 'answer_text[' + i + ']';
+                    });
+                });
+            }
+            if (addBtn && tpl && rows) {
+                addBtn.addEventListener('click', function() {
+                    var html = tpl.innerHTML.replace(/__I__/g, String(nextIndex()));
+                    var wrap = document.createElement('div');
+                    wrap.innerHTML = html.trim();
+                    rows.appendChild(wrap.firstElementChild);
+                    reindex();
+                });
+                rows.addEventListener('click', function(e) {
+                    if (!e.target.classList.contains('remove-answer')) return;
+                    var row = e.target.closest('.answer-row');
+                    if (row) row.remove();
+                    reindex();
+                });
+            }
+            <?php endif; ?>
+        });
+        </script>
+        <?php
+        $OUTPUT->footerEnd();
+    }
+}

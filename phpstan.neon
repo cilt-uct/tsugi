@@ -20,16 +20,15 @@ parameters:
         - cron
         - dev
         - ext
-        - gclass
+        - ims
+        - lib/src/Controllers/Ims
+        - lib/src/Services/Ims
         - lti
         - mod
         - tool
-        - settings
         - store
         - util
         - index.php
-        - login.php
-        - logout.php
         - top.php
         - tsugi.php
         - about.php

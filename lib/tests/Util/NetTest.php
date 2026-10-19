@@ -3,6 +3,7 @@
 require_once "src/Util/Net.php";
 
 use \Tsugi\Util\Net;
+use \Tsugi\Util\U;
 
 class NetTest extends \PHPUnit\Framework\TestCase
 {
@@ -10,16 +11,6 @@ class NetTest extends \PHPUnit\Framework\TestCase
         $stuff = Net::doGet("https://www.dr-chuck.com/page1.htm");
         // Handle rate limiting or network failures gracefully in CI
         if ($stuff === false || empty($stuff)) {
-            $this->markTestSkipped('External HTTP request failed (likely rate limiting in CI)');
-            return;
-        }
-        $this->assertStringContainsStringIgnoringCase("The First Page",$stuff);
-    }
-
-    public function testGetStream() {
-        $stuff = Net::getStream("https://www.dr-chuck.com/page1.htm");
-        // Handle rate limiting or network failures gracefully in CI
-        if ($stuff === false) {
             $this->markTestSkipped('External HTTP request failed (likely rate limiting in CI)');
             return;
         }
@@ -72,6 +63,16 @@ class NetTest extends \PHPUnit\Framework\TestCase
         $existing = Net::ensureUserAgentHeader("User-Agent: Custom/1.0\r\nAccept: text/plain");
         $this->assertStringContainsString('User-Agent: Custom/1.0', $existing);
         $this->assertEquals(1, preg_match_all('/User-Agent:/i', $existing));
+    }
+
+    public function testParseHeadersIgnoreCase() {
+        // HTTP/2 lowercases header names (RFC 9113). parseHeaders() does not
+        // rewrite keys, so 'Link' is absent and getIgnoreCase() is required.
+        $raw = "HTTP/2 200\ncontent-type: application/vnd.ims.lti-nrps.v2.membershipcontainer+json\nlink: </api/lti/courses/1/names_and_roles?page=2>; rel=\"next\"\n\n";
+        $headers = Net::parseHeaders($raw);
+        $this->assertNull(U::get($headers, 'Link'));
+        $this->assertEquals('</api/lti/courses/1/names_and_roles?page=2>; rel="next"', U::getIgnoreCase($headers, 'Link'));
+        $this->assertEquals('application/vnd.ims.lti-nrps.v2.membershipcontainer+json', U::getIgnoreCase($headers, 'Content-Type'));
     }
 
 }

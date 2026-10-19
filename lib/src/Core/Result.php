@@ -50,7 +50,7 @@ class Result extends Entity {
         $stmt = $PDOX->queryDie(
             "SELECT result_id, R.link_id AS link_id, R.user_id AS user_id,
                 L.lti13_lineitem AS lti13_lineitem, U.subject_key AS lti13_subject_key,
-                sourcedid, service_id, grade, note, R.json AS json, R.note AS note
+                sourcedid, service_id, grade, comment, R.json AS json, R.comment AS comment
             FROM {$CFG->dbprefix}lti_result AS R
             JOIN {$CFG->dbprefix}lti_link AS L
                 ON L.link_id = R.link_id AND R.link_id = :LID
@@ -130,6 +130,30 @@ class Result extends Entity {
     }
 
     /**
+     * A progress value from $extra. Absent or empty uses $default.
+     * Any other value must be a recognized string, or this returns false.
+     *
+     * @param mixed $extra
+     * @param string $key
+     * @param string[] $allowed
+     * @param string $default
+     * @return string|false
+     */
+    private static function suppliedProgress($extra, $key, array $allowed, $default) {
+        if ( ! is_array($extra) || ! array_key_exists($key, $extra) ) {
+            return $default;
+        }
+        $value = $extra[$key];
+        if ( $value === null || $value === false || $value === '' ) {
+            return $default;
+        }
+        if ( is_string($value) && in_array($value, $allowed, true) ) {
+            return $value;
+        }
+        return false;
+    }
+
+    /**
      * Send a grade and update our local copy
      *
      * Call the right LTI service to send a new grade up to the server.
@@ -159,14 +183,32 @@ class Result extends Entity {
 
         $PDOX = LTIX::getConnection();
 
+        // A comment on this send is stored in lti_result.comment. Callers that
+        // omit it leave whatever comment is already there.
+        $receivedComment = null;
+        if ( is_array($extra) && array_key_exists(LTI13::LINEITEM_COMMENT, $extra)
+            && is_string($extra[LTI13::LINEITEM_COMMENT]) ) {
+            $receivedComment = $extra[LTI13::LINEITEM_COMMENT];
+        }
+
         // Secret and key from session to avoid crossing tenant boundaries
         $key_key = false;
         $subject_key = false;
         $secret = false;
         $lti13_subject_key = false;
         if ( $row !== false ) {
-            // Using the note from the local db for the comment.
-            $comment = isset($row['note']) ? $row['note'] : false;
+            // Using the stored comment, unless this send brought a new one.
+            // A row that still carries the text under note is accepted until callers move.
+            if ( isset($row['comment']) ) {
+                $comment = $row['comment'];
+            } else if ( isset($row['note']) ) {
+                $comment = $row['note'];
+            } else {
+                $comment = false;
+            }
+            if ( $receivedComment !== null ) {
+                $comment = $receivedComment;
+            }
             $result_url = isset($row['result_url']) ? $row['result_url'] : false;
             $sourcedid = isset($row['sourcedid']) ? $row['sourcedid'] : false;
             $service = isset($row['service']) ? $row['service'] : false;
@@ -193,12 +235,13 @@ class Result extends Entity {
             $lti13_subject_key = LTIX::ltiParameter('subject_key');
             $title = LTIX::ltiParameter('link_title');
             $link_id = LTIX::ltiParameter('link_id');
-            $comment = is_array($extra) && isset($extra[LTI13::LINEITEM_COMMENT]) ? $extra[LTI13::LINEITEM_COMMENT] : false;
+            $comment = $receivedComment !== null ? $receivedComment : false;
         }
 
-        // Check if we are to use SHA256 as the signature
+        // A POX callback has no launch, and $LINK is false. isset() is true
+        // for that, so only read the signature method from a real link.
         $signature = false;
-        if ( isset($LINK) ) {
+        if ( is_object($LINK) ) {
             $signature = $LINK->settingsGet('oauth_signature_method');
             // error_log("Sending... sig=$signature");
         }
@@ -211,29 +254,62 @@ class Result extends Entity {
         // Get the IP Address
         $ipaddr = Net::getIP();
 
-        // Resolve activity_progress and grading_progress from $extra or use LTI13 defaults
-        $activity_progress = is_array($extra) && isset($extra[LTI13::ACTIVITY_PROGRESS])
-            ? $extra[LTI13::ACTIVITY_PROGRESS]
-            : LTI13::ACTIVITY_PROGRESS_COMPLETED;
-        $grading_progress = is_array($extra) && isset($extra[LTI13::GRADING_PROGRESS])
-            ? $extra[LTI13::GRADING_PROGRESS]
-            : LTI13::GRADING_PROGRESS_FULLYGRADED;
+        // Resolve activity_progress and grading_progress from $extra or use LTI13 defaults.
+        // A supplied value must be one of the recognized strings. Absent or empty keeps the default.
+        $activity_progress = self::suppliedProgress(
+            $extra,
+            LTI13::ACTIVITY_PROGRESS,
+            array(
+                LTI13::ACTIVITY_PROGRESS_INITIALIZED,
+                LTI13::ACTIVITY_PROGRESS_STARTED,
+                LTI13::ACTIVITY_PROGRESS_INPROGRESS,
+                LTI13::ACTIVITY_PROGRESS_SUBMITTED,
+                LTI13::ACTIVITY_PROGRESS_COMPLETED,
+            ),
+            LTI13::ACTIVITY_PROGRESS_COMPLETED
+        );
+        $grading_progress = self::suppliedProgress(
+            $extra,
+            LTI13::GRADING_PROGRESS,
+            array(
+                LTI13::GRADING_PROGRESS_FULLYGRADED,
+                LTI13::GRADING_PROGRESS_PENDING,
+                LTI13::GRADING_PROGRESS_PENDINGMANUAL,
+                LTI13::GRADING_PROGRESS_FAILED,
+                LTI13::GRADING_PROGRESS_NOTREADY,
+            ),
+            LTI13::GRADING_PROGRESS_FULLYGRADED
+        );
+        if ( $activity_progress === false ) {
+            return 'Activity progress is not a recognized value.';
+        }
+        if ( $grading_progress === false ) {
+            return 'Grading progress is not a recognized value.';
+        }
 
         // Update the local copy of the grade in the lti_result table
         if ( $PDOX !== false && ! empty($result_id) ) {
+            $commentSql = '';
+            $parms = array(
+                ':grade' => $grade,
+                ':IP' => $ipaddr,
+                ':activity_progress' => $activity_progress,
+                ':grading_progress' => $grading_progress,
+                ':RID' => $result_id,
+            );
+            if ( $receivedComment !== null ) {
+                $commentSql = 'comment = :comment,';
+                $parms[':comment'] = $receivedComment;
+            }
             $stmt = $PDOX->queryReturnError(
                 "UPDATE {$CFG->dbprefix}lti_result SET grade = :grade,
                     ipaddr = :IP,
+                    {$commentSql}
                     activity_progress = :activity_progress,
                     grading_progress = :grading_progress,
                     score_timestamp = NOW(),
                     updated_at = NOW() WHERE result_id = :RID",
-                array(
-                    ':grade' => $grade,
-                    ':IP' => $ipaddr,
-                    ':activity_progress' => $activity_progress,
-                    ':grading_progress' => $grading_progress,
-                    ':RID' => $result_id)
+                $parms
             );
 
             if ( $stmt->success ) {
@@ -607,29 +683,28 @@ class Result extends Entity {
     }
 
     /**
-     * Get a Note
+     * Get the comment stored for this result.
      *
      * @param $user_id The primary key of the user (instructor only)
      *
-     * @return The annotation array
+     * @return string|false
      */
-    public function getNote($user_id=false) {
+    public function getComment($user_id=false) {
         global $CFG;
 
         $PDOX = $this->launch->pdox;
         if ( ! $this->launch->user->instructor || ! $user_id || $user_id == $this->launch->user->id ){
             $stmt = $PDOX->queryDie(
-                "SELECT note FROM {$CFG->dbprefix}lti_result
+                "SELECT comment FROM {$CFG->dbprefix}lti_result
                     WHERE result_id = :RID",
                 array(':RID' => $this->id)
             );
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-            $note_str = is_array($row) ? $row['note'] : "";
-            return $note_str;
+            return is_array($row) ? $row['comment'] : "";
         } else if ( $this->launch->user->instructor ) {
             $p = $CFG->dbprefix;
             $row = $PDOX->rowDie(
-                "SELECT note
+                "SELECT comment
                 FROM {$p}lti_result AS R
                 WHERE R.link_id = :LID and R.user_id = :UID",
                 array(
@@ -637,8 +712,7 @@ class Result extends Entity {
                     ":LID" => $this->launch->link->id
                 )
             );
-            $note_str = is_array($row) ? $row['note'] : "";
-            return $note_str;
+            return is_array($row) ? $row['comment'] : "";
         } else {
             return false;
             http_response_code(403);
@@ -647,31 +721,40 @@ class Result extends Entity {
     }
 
     /**
-     * Set the Note for this result
+     * The comment for this result. Reads lti_result.comment.
      *
-     * @param $note_str The Note String
      * @param $user_id The primary key of the user (instructor only)
      *
-     * @return The annotation array
+     * @return string|false
      */
-    public function setNote($note_str, $user_id=false) {
+    public function getNote($user_id=false) {
+        return $this->getComment($user_id);
+    }
+
+    /**
+     * Set the comment stored for this result.
+     *
+     * @param $comment_str The comment
+     * @param $user_id The primary key of the user (instructor only)
+     */
+    public function setComment($comment_str, $user_id=false) {
         global $CFG;
         $PDOX = $this->launch->pdox;
         if ( ! $this->launch->user->instructor || ! $user_id || $user_id == $this->launch->user->id ){
-            $stmt = $PDOX->queryDie(
-                "UPDATE {$CFG->dbprefix}lti_result SET note = :note, updated_at = NOW()
+            $PDOX->queryDie(
+                "UPDATE {$CFG->dbprefix}lti_result SET comment = :comment, updated_at = NOW()
                     WHERE result_id = :RID",
                 array(
-                    ':note' => $note_str,
+                    ':comment' => $comment_str,
                     ':RID' => $this->id)
             );
         } else if ( $this->launch->user->instructor ) {
             $p = $CFG->dbprefix;
-            $stmt = $PDOX->queryDie(
-                "UPDATE {$p}lti_result SET note = :NOTE, updated_at = NOW()
+            $PDOX->queryDie(
+                "UPDATE {$p}lti_result SET comment = :comment, updated_at = NOW()
                 WHERE link_id = :LID and user_id = :UID",
                 array(
-                    ":NOTE" => $note_str,
+                    ":comment" => $comment_str,
                     ":UID" => $user_id,
                     ":LID" => $this->launch->link->id
                 )
@@ -680,12 +763,23 @@ class Result extends Entity {
             http_response_code(403);
             die();
         }
+        GradeUtil::invalidateGradesCurrentUser();
+    }
+
+    /**
+     * The comment for this result. Writes lti_result.comment.
+     *
+     * @param $note_str The comment
+     * @param $user_id The primary key of the user (instructor only)
+     */
+    public function setNote($note_str, $user_id=false) {
+        $this->setComment($note_str, $user_id);
     }
 
     /**
      * Retrieve the number of attempts and latest attempt
      *
-     * @return object with attempted_at, attempts, and updated_at
+     * @return object with attempted_at, attempts, submitted_at, and updated_at
      */
     public function getAttempts() {
         global $CFG;
@@ -694,6 +788,7 @@ class Result extends Entity {
         $retval = new \stdClass();
         $retval->attempts = 0;
         $retval->attempted_at = 0;
+        $retval->submitted_at = 0;
         $retval->updated_at = 0;
 
         if ( ($this->id ?? null) == null ) return $retval;
@@ -702,6 +797,7 @@ class Result extends Entity {
         // skew comparisons against time().
         $sql = "SELECT COALESCE(attempts, 0) AS attempts,
                 COALESCE(UNIX_TIMESTAMP(attempted_at), 0) AS attempted_at,
+                COALESCE(UNIX_TIMESTAMP(submitted_at), 0) AS submitted_at,
                 COALESCE(UNIX_TIMESTAMP(updated_at), 0) AS updated_at
             FROM {$p}lti_result WHERE result_id = :RID";
         $stmt = $PDOX->queryReturnError($sql, array( ":RID" => $this->id));
@@ -710,6 +806,7 @@ class Result extends Entity {
             if ( is_object($row) ) {
                 $row->attempts = (int) $row->attempts;
                 $row->attempted_at = (int) $row->attempted_at;
+                $row->submitted_at = (int) $row->submitted_at;
                 $row->updated_at = (int) $row->updated_at;
                 return $row;
             }
@@ -719,6 +816,9 @@ class Result extends Entity {
 
     /**
      * Record an attempt on this result - different than submitting a grade
+     *
+     * Increments attempts, sets attempted_at, and stamps submitted_at
+     * on the first real attempt (leaves later submissions unchanged).
      */
     public function recordAttempt() {
         global $CFG;
@@ -726,7 +826,70 @@ class Result extends Entity {
 
         if ( ($this->id ?? null) == null ) return;
         $p = $CFG->dbprefix;
-        $sql = "UPDATE {$p}lti_result SET attempts = COALESCE(attempts, 0) + 1, attempted_at = NOW() WHERE result_id = :RID";
+        $sql = "UPDATE {$p}lti_result
+            SET attempts = COALESCE(attempts, 0) + 1,
+                attempted_at = NOW(),
+                submitted_at = COALESCE(submitted_at, NOW())
+            WHERE result_id = :RID";
         $stmt = $PDOX->queryReturnError($sql, array( ":RID" => $this->id));
+    }
+
+    /**
+     * Seconds remaining before another attempt is allowed.
+     *
+     * After $delay_tries free attempts, the student must wait $delay seconds
+     * from attempted_at. Blank, non-numeric, or non-positive delay means no wait.
+     *
+     * @param mixed $delay Seconds between retries
+     * @param mixed $delay_tries Attempts allowed before the delay applies
+     * @param object|null $info Optional getAttempts() result to avoid a second query
+     * @return int Seconds to wait (0 if a retry is allowed now)
+     */
+    public function secondsUntilRetry($delay = 0, $delay_tries = 0, $info = null) {
+        $delay = self::numericSetting($delay, 0);
+        $delay_tries = self::numericSetting($delay_tries, 0);
+        if ( $delay <= 0 ) return 0;
+        if ( ! is_object($info) ) $info = $this->getAttempts();
+        $when = (int) ($info->attempted_at ?? 0);
+        $tries = (int) ($info->attempts ?? 0);
+        if ( $when <= 0 ) return 0;
+        if ( $tries <= $delay_tries ) return 0;
+        $remain = ($when + (int) $delay) - time();
+        return $remain > 0 ? $remain : 0;
+    }
+
+    /**
+     * Whether a new attempt is allowed given delay settings.
+     *
+     * @param mixed $delay Seconds between retries
+     * @param mixed $delay_tries Attempts allowed before the delay applies
+     * @param object|null $info Optional getAttempts() result
+     */
+    public function canRetry($delay = 0, $delay_tries = 0, $info = null) {
+        return $this->secondsUntilRetry($delay, $delay_tries, $info) <= 0;
+    }
+
+    /**
+     * Whether a hard cap on attempts has been reached.
+     *
+     * Non-numeric or less-than-one $max_tries means no cap.
+     *
+     * @param mixed $max_tries Maximum allowed attempts
+     * @param object|null $info Optional getAttempts() result
+     */
+    public function atAttemptLimit($max_tries, $info = null) {
+        if ( ! is_numeric($max_tries) ) return false;
+        $max = $max_tries + 0;
+        if ( $max < 1 ) return false;
+        if ( ! is_object($info) ) $info = $this->getAttempts();
+        return (int) ($info->attempts ?? 0) >= $max;
+    }
+
+    /**
+     * Coerce a link-setting value to a number.
+     */
+    private static function numericSetting($value, $default = 0) {
+        if ( is_numeric($value) ) return $value + 0;
+        return $default;
     }
 }

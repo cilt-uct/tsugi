@@ -3,7 +3,8 @@
 namespace Tsugi\Controllers;
 
 use Tsugi\Util\U;
-use Tsugi\Lumen\Application;
+use Tsugi\Core\Manifest;
+use Tsugi\Lumos\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
@@ -44,27 +45,31 @@ class LaunchController extends Tool {
     public static function launchByResourceLinkId(Application $app, $resource_link_id) {
         global $CFG;
 
-        $path = U::rest_path();
-        $redirect_path = U::addSession($path->parent);
+        $toolHome = self::determineToolHome(self::ROUTE);
+        $redirect_path = U::addSession(self::determineParentPath(self::ROUTE));
         if ( $redirect_path === '' ) {
             $redirect_path = '/';
         }
 
-        if ( ! isset($CFG->lessons) ) {
-            $app->tsugiFlashError(__('Cannot find lessons.json ($CFG->lessons)'));
+        $l = Manifest::currentLessons();
+        if ( ! $l ) {
+            $app->tsugiFlashError(__('Cannot find lessons.json ($CFG->lessons) or an active course manifest'));
             return new RedirectResponse($redirect_path);
         }
 
-        $l = new \Tsugi\UI\Lessons($CFG->lessons);
         $lti = $l->getLtiByRlid($resource_link_id);
         if ( ! $lti ) {
             $app->tsugiFlashError(__('Cannot find lti resource link id'));
             return new RedirectResponse($redirect_path);
         }
+        if ( $l->resourceLinkPublished($resource_link_id) === false && ! $l->lessonsViewerIsInstructor() ) {
+            $app->tsugiFlashError(__('This tool is not published.'));
+            return new RedirectResponse(U::addSession(self::determineToolHome(Lessons::ROUTE)));
+        }
 
         $module = $l->getModuleByRlid($resource_link_id);
 
-        $return_url = $path->parent . self::ROUTE . '/' . self::RETURN_SEGMENT;
+        $return_url = $toolHome . '/' . self::RETURN_SEGMENT;
 
         $fallback_title = ( $module && isset($module->title) ) ? $module->title : '';
 

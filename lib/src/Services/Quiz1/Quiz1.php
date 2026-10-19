@@ -1,0 +1,121 @@
+<?php
+
+namespace Tsugi\Services\Quiz1;
+
+/**
+ * Format-neutral quiz: title, instructions, ordered questions.
+ *
+ * QTI and GIFT are interchange formats only. This object is what Tsugi
+ * edits, validates, and later imports into.
+ */
+class Quiz1 {
+
+    /** @var int|null */
+    public $id;
+
+    /** @var int */
+    public $context_id = 0;
+
+    /** @var int */
+    public $user_id = 0;
+
+    /** @var string */
+    public $title = '';
+
+    /** @var string */
+    public $instructions = '';
+
+    /** @var Question[] */
+    public $questions = array();
+
+    /** @var int|null Set on list views without loading questions. */
+    public $question_count;
+
+    /** @var int|null lti_link.link_id once this quiz has a link. */
+    public $link_id;
+
+    /**
+     * lti_link.link_key for this quiz. Null when the quiz has no link.
+     * Set by load(); export reads it. Not derived from quiz_id.
+     *
+     * @var string|null
+     */
+    public $link_key = null;
+
+    /**
+     * Null when never published. Otherwise lti_link.published (0 or 1).
+     *
+     * @var int|null
+     */
+    public $published;
+
+    /**
+     * Null when this quiz has no link. Otherwise YYYY-MM-DD, or empty when the link has no due date.
+     *
+     * @var string|null
+     */
+    public $due = null;
+
+    /**
+     * @return string[] Validation error messages (empty = valid).
+     */
+    public function validate() {
+        $errors = array();
+
+        if ( trim(strip_tags($this->title)) === '' ) {
+            $errors[] = 'Quiz title is required.';
+        }
+
+        $seen = array();
+        foreach ( $this->questions as $i => $question ) {
+            if ( ! $question instanceof Question ) {
+                $errors[] = 'Question ' . ($i + 1) . ' is invalid.';
+                continue;
+            }
+            $prefix = 'Question ' . ($i + 1) . ': ';
+            foreach ( $question->validate() as $err ) {
+                $errors[] = $prefix . $err;
+            }
+            $seq = (int) $question->sequence;
+            if ( isset($seen[$seq]) ) {
+                $errors[] = 'Question ordering must be unique; duplicate sequence ' . $seq . '.';
+            }
+            $seen[$seq] = true;
+        }
+
+        return $errors;
+    }
+
+    public function isValid() {
+        return count($this->validate()) === 0;
+    }
+
+    /**
+     * Questions in deterministic display order.
+     *
+     * @return Question[]
+     */
+    public function orderedQuestions() {
+        $list = $this->questions;
+        usort($list, function($a, $b) {
+            $sa = (int) $a->sequence;
+            $sb = (int) $b->sequence;
+            if ( $sa === $sb ) {
+                return ((int) $a->id) <=> ((int) $b->id);
+            }
+            return $sa <=> $sb;
+        });
+        return $list;
+    }
+
+    /**
+     * Sum of question points (Canvas assessment_meta points_possible).
+     */
+    public function pointsPossible() {
+        $sum = 0;
+        foreach ( $this->orderedQuestions() as $question ) {
+            $sum += (int) $question->points;
+        }
+        return $sum;
+    }
+}

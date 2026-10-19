@@ -1,0 +1,490 @@
+<?php
+
+namespace Tsugi\Services\Login;
+
+use \Tsugi\Util\U;
+use \Tsugi\Util\Net;
+use \Tsugi\Core\LTIX;
+use \Tsugi\Core\Cache;
+use \Tsugi\Core\User;
+use \Tsugi\Controllers\Login;
+
+/**
+ * Google site login: OAuth callback, then the google.com user, site course, and session.
+ */
+class GoogleLoginService {
+
+    /**
+     * Handle a visit to the login page: either the Google button URL, or a completed OAuth callback.
+     *
+     * @param string $callback_url The URL Google should redirect back to
+     * @param callable|null $redirect_callback Optional callback for custom redirect logic
+     * @return GoogleLoginResult
+     */
+    public static function processCallback($callback_url, $redirect_callback = null) {
+        global $CFG, $PDOX;
+
+        $result = new GoogleLoginResult();
+
+        if ( session_id() == "" ) {
+            session_start();
+        }
+
+        if ( ! isset($PDOX) ) {
+            $PDOX = LTIX::getConnection();
+        }
+
+        // Fail fast if the google.com LTI key is missing (before showing the login form)
+        $stmt = $PDOX->queryDie(
+            "SELECT key_id FROM {$CFG->dbprefix}lti_key
+                WHERE key_sha256 = :SHA LIMIT 1",
+            array('SHA' => lti_sha256('google.com'))
+        );
+        $key_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if ( $key_row === false || ($key_row['key_id']+0) < 1 ) {
+            $result->error = 'Error: No key defined for accounts from google.com';
+            return $result;
+        }
+
+        $glog = new \Tsugi\Google\GoogleLogin(
+            $CFG->google_client_id,
+            $CFG->google_client_secret,
+            $callback_url,
+            $CFG->wwwroot
+        );
+
+        $doLogin = false;
+        $user_key = false;
+        $firstName = false;
+        $lastName = false;
+        $userEmail = false;
+        $userAvatar = false;
+
+        if ( $CFG->DEVELOPER && $CFG->OFFLINE ) {
+            $user_key = 'http://notgoogle.com/1234567';
+            $firstName = 'Fake';
+            $lastName = 'Person';
+            $userEmail = 'fake_person@notgoogle.com';
+            $doLogin = true;
+        } else {
+            if ( isset($_GET['code']) ) {
+                if ( isset($_SESSION['GOOGLE_STATE']) && isset($_GET['state']) ) {
+                    if ( $_SESSION['GOOGLE_STATE'] != $_GET['state'] ) {
+                        $result->error = "Missing important session data - could not log you in.  Sorry.";
+                        error_log("Google Login state mismatch");
+                        unset($_SESSION['GOOGLE_STATE']);
+                        return $result;
+                    }
+                } else {
+                    $result->error = "Missing important session data info- could not log you in.  Sorry.";
+                    error_log("Error missing state");
+                    unset($_SESSION['GOOGLE_STATE']);
+                    return $result;
+                }
+
+                $google_code = $_GET['code'];
+                $glog->getAccessToken($google_code);
+                $user = $glog->getUserInfo();
+
+                $firstName = isset($user->given_name) ? $user->given_name : false;
+                $lastName = isset($user->family_name) ? $user->family_name : false;
+                $userEmail = isset($user->email) ? $user->email : false;
+                $userAvatar = isset($user->picture) ? $user->picture : false;
+
+                if ( $userAvatar === false && $userEmail !== false ) {
+                    $gravatarurl = 'http://www.gravatar.com/avatar/';
+                    $gravatarurl .= md5( strtolower( trim( $userEmail ) ) );
+                    $url = $gravatarurl . '?d=404';
+                    $x = get_headers($url);
+                    if ( is_array($x) && strpos($x[0]," 200 ") > 0 ) {
+                        $userAvatar = $gravatarurl;
+                    }
+                }
+
+                $user_key = 'googlemail:'.$userEmail;
+                $doLogin = true;
+            }
+        }
+
+        if ( ! $doLogin ) {
+            $_SESSION['GOOGLE_STATE'] = md5(uniqid(rand(), TRUE));
+            $result->login_url = $glog->getLoginUrl($_SESSION['GOOGLE_STATE']);
+            return $result;
+        }
+
+        if ( $firstName === false || $lastName === false || $userEmail === false ) {
+            error_log('Google-Missing:'.$user_key.','.$firstName.','.$lastName.','.$userEmail);
+            $result->error = "You do not have a first name, last name, and email in Google or you did not share it with us.";
+            return $result;
+        }
+
+        $displayName = $firstName . ' ' . $lastName;
+        return self::establishSiteSession(
+            $user_key,
+            $userEmail,
+            $displayName,
+            $userAvatar,
+            $redirect_callback
+        );
+    }
+
+    /**
+     * Upsert profile/user under the google.com key and fill the site-login session.
+     *
+     * @param string $user_key
+     * @param string $userEmail
+     * @param string $displayName
+     * @param string|false $userAvatar
+     * @param callable|null $redirect_callback
+     * @param array $options create_courses (0/1 or omit), force_membership_role (upsert learner)
+     * @return GoogleLoginResult
+     */
+    public static function establishSiteSession($user_key, $userEmail, $displayName, $userAvatar = false,
+        $redirect_callback = null, $options = array()) {
+        global $CFG, $PDOX;
+
+        $result = new GoogleLoginResult();
+        if ( session_id() == "" ) {
+            session_start();
+        }
+        if ( ! isset($PDOX) ) {
+            $PDOX = LTIX::getConnection();
+        }
+
+        $oauth_consumer_key = 'google.com';
+        $stmt = $PDOX->queryDie(
+            "SELECT key_id, secret FROM {$CFG->dbprefix}lti_key
+                WHERE key_sha256 = :SHA LIMIT 1",
+            array('SHA' => lti_sha256($oauth_consumer_key))
+        );
+        $key_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if ( $key_row === false ) {
+            $result->error = 'Error: No key defined for accounts from google.com';
+            return $result;
+        }
+        $google_key_id = $key_row['key_id']+0;
+        $google_secret = $key_row['secret'];
+        if ( $google_key_id < 1 ) {
+            $result->error = 'Error: No key for accounts from google.com';
+            return $result;
+        }
+
+        $context_key = false;
+        $context_id = false;
+        if ( $CFG->hasSiteContextTitle() ) {
+            $context_title = trim($CFG->context_title);
+            $context_key = 'course:'.md5($context_title);
+            $row = $PDOX->rowDie(
+                "SELECT context_id FROM {$CFG->dbprefix}lti_context
+                    WHERE context_sha256 = :SHA AND key_id = :KID LIMIT 1",
+                array(':SHA' => lti_sha256($context_key), ':KID' => $google_key_id)
+            );
+            if ( $row != false ) {
+                $context_id = $row['context_id'];
+            } else {
+                $sql = "INSERT INTO {$CFG->dbprefix}lti_context
+                        ( context_key, context_sha256, title, key_id, created_at, updated_at ) VALUES
+                        ( :context_key, :context_sha256, :title, :key_id, NOW(), NOW() )";
+                $PDOX->queryDie($sql, array(
+                        ':context_key' => $context_key,
+                        ':context_sha256' => lti_sha256($context_key),
+                        ':title' => $context_title,
+                        ':key_id' => $google_key_id));
+                $context_id = $PDOX->lastInsertId();
+            }
+        }
+        $result->context_id = $context_id;
+        $result->context_key = $context_key;
+
+        $userSHA = lti_sha256($user_key);
+
+        // Update old user records if needed
+        $stmt = $PDOX->queryDie(
+            "SELECT user_id, user_key, user_sha256 FROM {$CFG->dbprefix}lti_user
+                WHERE key_id = :KEY AND email = :EM 
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1;",
+            array(':EM' => $userEmail, ':KEY' => $google_key_id)
+        );
+        $user_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if ( $user_row !== false ) {
+            $old_user_key = $user_row['user_key'];
+            $old_user_sha = $user_row['user_sha256'];
+            if ( $old_user_key != $user_key || $old_user_sha != $userSHA ) {
+                $stmt = $PDOX->queryDie(
+                    "UPDATE {$CFG->dbprefix}lti_user
+                        SET user_key=:NEWK, user_sha256=:NEWSHA
+                        WHERE user_key=:OLDK AND user_sha256=:OLDSHA AND key_id = :KEY",
+                    array(':NEWK' => $user_key, ':NEWSHA' => $userSHA,
+                        ':OLDK' => $old_user_key, ':OLDSHA' => $old_user_sha,
+                        ':KEY' => $google_key_id)
+                );
+                $stmt = $PDOX->queryDie(
+                    "UPDATE {$CFG->dbprefix}profile
+                        SET profile_sha256=:NEWSHA, profile_key=:NEWK
+                        WHERE profile_sha256=:OLDSHA AND key_id = :KEY",
+                    array(':NEWK' => $user_key, ':NEWSHA' => $userSHA,
+                        ':KEY' => $google_key_id, ':OLDSHA' => $old_user_sha)
+                );
+                error_log("User record adjusted old_key=$old_user_key, old_sha=$old_user_sha, new_key=$user_key, new_sha=$userSHA");
+            }
+        }
+
+        // Load or create profile
+        $stmt = $PDOX->queryDie(
+            "SELECT P.profile_id AS profile_id, P.displayname AS displayname,
+                P.email as email, U.user_id as user_id
+                FROM {$CFG->dbprefix}profile AS P
+                LEFT JOIN {$CFG->dbprefix}lti_user AS U
+                ON P.profile_id = U.profile_id AND P.email = U.email AND
+                    P.displayname = U.displayname AND user_sha256 = profile_sha256 AND
+                    P.key_id = U.key_id
+                WHERE profile_sha256 = :SHA AND P.key_id = :ID LIMIT 1",
+            array('SHA' => $userSHA, ":ID" => $google_key_id)
+        );
+        $profile_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $profile_id = 0;
+        $user_id = 0;
+
+        if ( $profile_row === false ) {
+            $stmt = $PDOX->queryDie(
+                "INSERT INTO {$CFG->dbprefix}profile
+                (profile_sha256, profile_key, key_id, email, displayname, image, created_at, updated_at, login_at) ".
+                    "VALUES ( :SHA, :UKEY, :KEY, :EMAIL, :DN, :IM, NOW(), NOW(), NOW() )",
+                array('SHA' => $userSHA, ':UKEY' => $user_key, ':KEY' => $google_key_id,
+                    ':EMAIL' => $userEmail, ':DN' => $displayName, ':IM' => $userAvatar)
+            );
+            if ( $stmt->success) $profile_id = $PDOX->lastInsertId();
+            error_log('Profile-Insert:'.$user_key.','.$displayName.','.$userEmail.','.$profile_id);
+        } else {
+            $profile_id = $profile_row['profile_id']+0;
+            if ( $profile_row['email'] == $userEmail && $profile_row['displayname'] ) {
+                $user_id = $profile_row['user_id']+0;
+            }
+            $stmt = $PDOX->queryDie(
+                "UPDATE {$CFG->dbprefix}profile
+                SET email = :EMAIL, displayname = :DN, image = :IM, login_at = NOW()
+                WHERE profile_id = :PRID",
+                array('PRID' => $profile_id,
+                    ':EMAIL' => $userEmail, ':DN' => $displayName, ':IM' => $userAvatar)
+            );
+        }
+
+        if ( $profile_id < 1 ) {
+            error_log('Fail-SQL-Profile:'.$user_key.','.$displayName.','.$userEmail.','.$stmt->errorImplode);
+            $result->error = "Internal database error, sorry";
+            return $result;
+        }
+
+        if ( $user_id < 1 ) {
+            $stmt = $PDOX->queryDie(
+                "SELECT user_id FROM {$CFG->dbprefix}lti_user
+                WHERE user_sha256 = :SHA AND key_id = :ID LIMIT 1",
+                array('SHA' => $userSHA, ":ID" => $google_key_id)
+            );
+            $user_row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $user_id = 0;
+        }
+
+        $didinsert = false;
+        if ( $user_id > 0 ) {
+            $stmt = $PDOX->queryDie(
+                "UPDATE {$CFG->dbprefix}lti_user
+                 SET displayname=:DN, email=:EMAIL, image=:IM, login_at=NOW(), ipaddr=:IP
+                 WHERE user_id=:ID",
+                array(':DN' => $displayName,':IP' => Net::getIP(),
+                    ':ID' => $user_id, ':IM' => $userAvatar, ':EMAIL' => $userEmail)
+            );
+            error_log('User-Update:'.$user_key.','.$displayName.','.$userEmail);
+        } else if ( $user_row === false ) {
+            $stmt = $PDOX->queryReturnError(
+                "INSERT INTO {$CFG->dbprefix}lti_user
+                (user_sha256, user_key, key_id, profile_id,
+                    email, displayname, image, created_at, updated_at, login_at, ipaddr) ".
+                "VALUES ( :SHA, :UKEY, :KEY, :PROF, :EMAIL, :DN, :IM, NOW(), NOW(), NOW(), :IP )",
+                array('SHA' => $userSHA, ':UKEY' => $user_key, ':KEY' => $google_key_id,
+                    ':PROF' => $profile_id, ':EMAIL' => $userEmail, ':DN' => $displayName,
+                    ':IM' => $userAvatar, ':IP' => Net::getIP())
+            );
+            if ( $stmt->success ) {
+                $user_id = $PDOX->lastInsertId();
+                error_log('User-Insert:'.$user_key.','.$displayName.','.$userEmail.','.$user_id);
+                $didinsert = true;
+            }
+        } else {
+            $user_id = $user_row['user_id']+0;
+            $stmt = $PDOX->queryDie(
+                "UPDATE {$CFG->dbprefix}lti_user
+                 SET email=:EMAIL, displayname=:DN, image=:IM, profile_id = :PRID, login_at=NOW(), ipaddr=:IP
+                 WHERE user_id=:ID",
+                array(':EMAIL' => $userEmail, ':DN' => $displayName,':IP' => Net::getIP(),
+                    ':ID' => $user_id, ':PRID' => $profile_id, ':IM' => $userAvatar)
+            );
+            error_log('User-Update:'.$user_key.','.$displayName.','.$userEmail);
+        }
+
+        if ( $user_id < 1 ) {
+            error_log('No User Entry:'.$user_key.','.$displayName.','.$userEmail);
+            $result->error = "Internal database error, sorry";
+            return $result;
+        }
+
+        if ( array_key_exists('create_courses', $options) && $options['create_courses'] !== null ) {
+            $cc = ((int) $options['create_courses'] === 1) ? 1 : 0;
+            $PDOX->queryDie(
+                "UPDATE {$CFG->dbprefix}lti_user SET create_courses = :CC WHERE user_id = :ID",
+                array(':CC' => $cc, ':ID' => $user_id)
+            );
+        }
+
+        $force_membership_role = ! empty($options['force_membership_role']);
+
+        if ( $context_id !== false ) {
+            if ( $force_membership_role ) {
+                $PDOX->queryDie(
+                    "INSERT INTO {$CFG->dbprefix}lti_membership
+                    ( context_id, user_id, role, created_at, updated_at ) VALUES
+                    ( :context_id, :user_id, :role, NOW(), NOW() )
+                    ON DUPLICATE KEY UPDATE
+                        role = VALUES(role),
+                        updated_at = NOW()",
+                    array(
+                        ':context_id' => $context_id,
+                        ':user_id' => $user_id,
+                        ':role' => LTIX::ROLE_LEARNER)
+                );
+            } else {
+                $sql = "INSERT IGNORE INTO {$CFG->dbprefix}lti_membership
+                    ( context_id, user_id, role, created_at, updated_at ) VALUES
+                    ( :context_id, :user_id, :role, NOW(), NOW() )";
+                $PDOX->queryDie($sql, array(
+                    ':context_id' => $context_id,
+                    ':user_id' => $user_id,
+                    ':role' => LTIX::ROLE_LEARNER));
+            }
+        }
+
+        $welcome = "Welcome ";
+        if ( ! $didinsert ) $welcome .= "back ";
+        U::flashSuccess($welcome.$displayName." (".$userEmail.")");
+
+        $lti = array();
+        $lti['key_id'] = $google_key_id;
+        $_SESSION["oauth_consumer_key"] = $oauth_consumer_key;
+        $lti['key_key'] = $oauth_consumer_key;
+
+        if ( is_string($google_secret) && U::strlen($google_secret) > 1 ) {
+            $_SESSION['secret'] = LTIX::encrypt_secret($google_secret);
+            $lti['secret'] = LTIX::encrypt_secret($google_secret);
+        } else {
+            unset($_SESSION['secret']);
+        }
+
+        $_SESSION["id"] = $user_id;
+        $lti["user_id"] = $user_id;
+        $_SESSION["user_id"] = $user_id;
+        User::rememberCreateCourses($user_id);
+        $_SESSION["user_key"] = $user_key;
+        $lti["user_key"] = $user_key;
+        $_SESSION["email"] = $userEmail;
+        $lti["email"] = $userEmail;
+        $_SESSION["displayname"] = $displayName;
+        $lti["displayname"] = $displayName;
+        $_SESSION["profile_id"] = $profile_id;
+        $lti["profile_id"] = $profile_id;
+
+        if ( isset($userAvatar) ) {
+            $_SESSION["avatar"] = $userAvatar;
+            $_SESSION["image"] = $userAvatar;
+            $lti["image"] = $userAvatar;
+        }
+
+        if ( $CFG->hasSiteContextTitle() ) {
+            $session_context_title = trim($CFG->context_title);
+            $_SESSION['context_title'] = $session_context_title;
+            $lti['context_title'] = $session_context_title;
+            $lti['resource_title'] = $session_context_title;
+        }
+        if ( isset($context_id) ) {
+            $_SESSION["context_id"] = $context_id;
+            $lti["context_id"] = $context_id;
+            if ( $context_id ) {
+                $_SESSION['site_context_id'] = (int) $context_id;
+            }
+        }
+        if ( isset($context_key) ) {
+            $_SESSION["context_key"] = $context_key;
+            $lti["context_key"] = $context_key;
+        }
+
+        // Drop all Tsugi session caches (cache_*) so membership, due dates, lti_user, lti_link, etc. match this login
+        Cache::clearAllSessionCaches();
+        \Tsugi\UI\Output::clearTopNavSession();
+
+        $is_instructor = false;
+        if ( isset($context_id) && $context_id ) {
+            if ( isset($CFG->dirroot) ) {
+                $lms_util = $CFG->dirroot . '/lib/include/lms-util.php';
+                if ( file_exists($lms_util) ) {
+                    require_once($lms_util);
+                    $is_instructor = isInstructor();
+                }
+            }
+        }
+        $_SESSION['isinstructor'] = $is_instructor;
+        $lti['role'] = $is_instructor ? LTIX::ROLE_INSTRUCTOR : LTIX::ROLE_LEARNER;
+
+        if ( $context_id !== false && $user_id >= 1 ) {
+            $mrow = $PDOX->rowDie(
+                "SELECT membership_id FROM {$CFG->dbprefix}lti_membership
+                 WHERE context_id = :CID AND user_id = :UID LIMIT 1",
+                array(':CID' => $context_id, ':UID' => $user_id)
+            );
+            if ( is_array($mrow) && isset($mrow['membership_id']) ) {
+                $lti['membership_id'] = $mrow['membership_id'] + 0;
+            }
+        }
+
+        $_SESSION[TSUGI_SESSION_LTI] = $lti;
+        LTIX::ensureCsrfToken(true);
+        LTIX::noteLoggedIn($lti);
+
+        $result->success = true;
+        $result->user_id = $user_id;
+        $result->user_email = $userEmail;
+        $result->display_name = $displayName;
+        $result->did_insert = $didinsert;
+
+        if ( $redirect_callback && is_callable($redirect_callback) ) {
+            $result->redirect_url = call_user_func($redirect_callback, $result);
+        } else {
+            $result->redirect_url = Login::returnAfterLogin($result, null, false);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Google OAuth authorize URL for the sign-in button.
+     *
+     * @param string $callback_url The URL Google should redirect back to
+     * @return string
+     */
+    public static function authorizeUrl($callback_url) {
+        global $CFG;
+
+        if ( session_id() == "" ) {
+            session_start();
+        }
+
+        $glog = new \Tsugi\Google\GoogleLogin(
+            $CFG->google_client_id,
+            $CFG->google_client_secret,
+            $callback_url,
+            $CFG->wwwroot
+        );
+
+        $_SESSION['GOOGLE_STATE'] = md5(uniqid(rand(), TRUE));
+        return $glog->getLoginUrl($_SESSION['GOOGLE_STATE']);
+    }
+}

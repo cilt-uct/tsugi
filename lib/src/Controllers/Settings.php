@@ -23,8 +23,12 @@ use Tsugi\Services\Cartridge\ImportException;
 use Tsugi\Services\Cartridge\Package;
 use Tsugi\Services\Cartridge\Pending;
 use Tsugi\Services\Courses\CourseDelete;
+use Tsugi\LinkedIn\LinkedIn;
+use Tsugi\Services\Badges\CourseBadges;
 use Tsugi\Services\CourseNav\CourseNav;
+use Tsugi\Services\Lessons\LessonsService;
 use Tsugi\Services\Outbound\Lti11CourseTool;
+use Tsugi\Services\Outbound\Lti13CourseTool;
 use Tsugi\Services\Outbound\PlatformDynamicRegistration;
 use Tsugi\Services\Outbound\ToolRegistrationService;
 use Tsugi\Services\Outbound\Lti11TestLaunch;
@@ -45,7 +49,7 @@ use Tsugi\Core\ReqScope;
  * Site-wide (wwwroot/settings): keys, contexts, PII expiry. Login is required;
  * a course context is not. Do not call requireAuth() on those pages.
  *
- * Course-mounted (/courses/{id}/settings): theme, navigation, images,
+ * Course-mounted (/courses/{id}/settings): theme, navigation, images, badges,
  * add, edit, and delete an LTI 1.1 tool for this course, Common Cartridge import/export,
  * and delete course for the active manifest.
  * Instructor + manifest only. Nested dispatch from
@@ -78,10 +82,13 @@ class Settings extends Tool {
         self::mapPage($app, $prefix.'/delete', 'deleteCourse', true);
         self::mapPage($app, $prefix.'/navigation', 'navigation', true);
         self::mapPage($app, $prefix.'/images', 'images', true);
+        self::mapPage($app, $prefix.'/badges', 'badges', true);
         self::mapPage($app, $prefix.'/tools/dynamic/status', 'toolsDynamicStatus', false);
         self::mapPage($app, $prefix.'/tools/dynamic/done', 'toolsDynamicDone', false);
         self::mapPage($app, $prefix.'/tools/dynamic', 'toolsDynamic', true);
         self::mapPage($app, $prefix.'/tools/view', 'toolsView', false);
+        self::mapPage($app, $prefix.'/tools/edit', 'toolsEdit', true);
+        self::mapPage($app, $prefix.'/tools/manual', 'toolsManual', true);
         self::mapPage($app, $prefix.'/tools/launch-url', 'toolsLaunchUrl', false);
         self::mapPage($app, $prefix.'/tools/test', 'toolsTest', true);
         self::mapPage($app, $prefix.'/tools/links', 'toolsLinks', false);
@@ -1695,6 +1702,8 @@ re-check your login status.
         $add_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/add'));
         $dynamic_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/dynamic'));
         $view_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/view'));
+        $edit_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/edit'));
+        $manual_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/manual'));
         $gate = $this->courseGate();
         if ( $gate ) {
             return $gate;
@@ -1963,6 +1972,7 @@ re-check your login status.
         $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
         $add_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/add'));
         $test_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/test'));
+        $edit_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/edit'));
         $gate = $this->courseGate();
         if ( $gate ) {
             return $gate;
@@ -1998,6 +2008,208 @@ re-check your login status.
         <?php
         $OUTPUT->footer();
         return '';
+    }
+
+    /**
+     * Course-mounted Settings: edit one LTI 1.3 tool this course owns.
+     */
+    public function toolsEdit(Request $request)
+    {
+        if ( ! self::isCourseRoute() ) {
+            return new RedirectResponse($this->pageUrl());
+        }
+        if ( $request->isMethod('POST') ) {
+            return $this->toolsEditPost($request);
+        }
+
+        global $OUTPUT;
+
+        $setup_url = U::addSession($this->toolHome(self::ROUTE));
+        $navigation_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'navigation'));
+        $export_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'export'));
+        $import_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'import'));
+        $images_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'images'));
+        $delete_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'delete'));
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $add_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/add'));
+        $view_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/view'));
+        $test_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/test'));
+        $edit_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/edit'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+
+        $registrationId = (int) $request->query->get('registration_id', 0);
+        $contextId = ReqScope::currentContextId();
+        try {
+            $tool_edit = Lti13CourseTool::editState($contextId, $registrationId);
+        } catch ( \InvalidArgumentException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($tools_url);
+        } catch ( \Exception $e ) {
+            U::flashError(__('Could not open that tool.'));
+            return new RedirectResponse($tools_url);
+        }
+
+        $save_url = $tools_url;
+        $setup_tab = 'tools';
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <?php include __DIR__ . '/templates/Settings/tabs.inc.php'; ?>
+            <div style="margin-top:10px;">
+            <?php include __DIR__ . '/templates/Settings/tool_edit.inc.php'; ?>
+            </div>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * @param Request $request
+     * @return RedirectResponse|JsonResponse
+     */
+    private function toolsEditPost(Request $request)
+    {
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $edit_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/edit'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+        $registrationId = 0;
+        if ( isset($_POST['registration_id']) && (is_string($_POST['registration_id']) || is_int($_POST['registration_id'])) ) {
+            $registrationId = (int) $_POST['registration_id'];
+        }
+        $back = $registrationId > 0 ? self::toolEditUrl($edit_url, $registrationId) : $tools_url;
+        $live = self::editWantsJson($request);
+        if ( $live ) {
+            $csrf = self::requireCsrfJson();
+        } else {
+            $csrf = self::requireCsrf($back);
+        }
+        if ( $csrf ) {
+            return $csrf;
+        }
+        try {
+            $message = Lti13CourseTool::apply(ReqScope::currentContextId(), $registrationId, $_POST);
+        } catch ( \InvalidArgumentException $e ) {
+            if ( $live ) {
+                return new JsonResponse(array('ok' => false, 'error' => $e->getMessage()), 400);
+            }
+            U::flashError($e->getMessage());
+            return new RedirectResponse($back);
+        } catch ( \Exception $e ) {
+            if ( $live ) {
+                return new JsonResponse(array('ok' => false, 'error' => __('Could not save the tool.')), 500);
+            }
+            U::flashError(__('Could not save the tool.'));
+            return new RedirectResponse($back);
+        }
+        if ( $live ) {
+            return new JsonResponse(array('ok' => true, 'message' => $message));
+        }
+        U::flashSuccess($message);
+        return new RedirectResponse($back);
+    }
+
+    /**
+     * Turn off and delete on the LTI 1.3 editor post in place.
+     * Add and the text saves still reload so the new markup can be rendered.
+     *
+     * @param Request $request
+     * @return bool
+     */
+    private static function editWantsJson(Request $request) {
+        if ( $request->isXmlHttpRequest() ) {
+            return true;
+        }
+        $accept = (string) $request->headers->get('Accept', '');
+        return str_contains($accept, 'application/json');
+    }
+
+    /**
+     * Course-mounted Settings: create an LTI 1.3 tool without dynamic registration.
+     */
+    public function toolsManual(Request $request)
+    {
+        if ( ! self::isCourseRoute() ) {
+            return new RedirectResponse($this->pageUrl());
+        }
+        if ( $request->isMethod('POST') ) {
+            return $this->toolsManualPost($request);
+        }
+
+        global $OUTPUT;
+
+        $setup_url = U::addSession($this->toolHome(self::ROUTE));
+        $navigation_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'navigation'));
+        $export_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'export'));
+        $import_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'import'));
+        $images_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'images'));
+        $delete_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'delete'));
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $manual_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/manual'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+
+        $setup_tab = 'tools';
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <?php include __DIR__ . '/templates/Settings/tabs.inc.php'; ?>
+            <div style="margin-top:10px;">
+            <?php include __DIR__ . '/templates/Settings/tool_manual.inc.php'; ?>
+            </div>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * @param Request $request
+     * @return RedirectResponse
+     */
+    private function toolsManualPost(Request $request)
+    {
+        $manual_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/manual'));
+        $edit_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools/edit'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+        $csrf = self::requireCsrf($manual_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        try {
+            $registrationId = Lti13CourseTool::createManual(
+                ReqScope::currentContextId(),
+                ReqScope::loggedInUserId(),
+                $_POST
+            );
+        } catch ( \InvalidArgumentException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($manual_url);
+        } catch ( \Exception $e ) {
+            U::flashError(__('Could not add the tool.'));
+            return new RedirectResponse($manual_url);
+        }
+        U::flashSuccess(__('The tool was added to this course.'));
+        return new RedirectResponse(self::toolEditUrl($edit_url, $registrationId));
     }
 
     /**
@@ -2752,6 +2964,153 @@ re-check your login status.
             ? __('16×9 image saved.')
             : __('Course icon saved.'));
         return new RedirectResponse($images_url);
+    }
+
+    /**
+     * Course-mounted Settings: author the badges array on this manifest.
+     */
+    public function badges(Request $request)
+    {
+        if ( ! self::isCourseRoute() ) {
+            return new RedirectResponse($this->pageUrl());
+        }
+        if ( $request->isMethod('POST') ) {
+            return $this->badgesPost($request);
+        }
+
+        global $CFG, $OUTPUT, $PDOX;
+
+        $setup_url = U::addSession($this->toolHome(self::ROUTE));
+        $navigation_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'navigation'));
+        $export_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'export'));
+        $import_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'import'));
+        $images_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'images'));
+        $badges_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'badges'));
+        $delete_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'delete'));
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $files_public_url = U::addSession($this->toolHome('/files') . '?folder=' . rawurlencode('Public'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+
+        $doc = Manifest::currentDocument();
+        $decoded = (is_array($doc) && isset($doc['json'])) ? json_decode($doc['json'], true) : null;
+        $badges = CourseBadges::listFromDocument(is_array($decoded) ? ($decoded['badges'] ?? array()) : array());
+        $lessons = Manifest::currentLessons();
+        $assignment_choices = ($lessons instanceof LessonsService)
+            ? CourseBadges::assignmentChoices($lessons)
+            : array();
+        $public_images = CourseBadges::publicPngs(ReqScope::currentContextId());
+        $linkedin_add = LinkedIn::fromConfig($CFG)->canAddToProfile();
+
+        $edit_index = null;
+        $edit = null;
+        $raw = $request->query->get('badge', '');
+        if ( is_scalar($raw) && ctype_digit((string) $raw) ) {
+            $idx = (int) $raw;
+            if ( isset($badges[$idx]) ) {
+                $edit_index = $idx;
+                $edit = $badges[$idx];
+            }
+        }
+        if ( $lessons instanceof LessonsService && is_array($edit) && isset($edit['assignments']) && is_array($edit['assignments']) ) {
+            foreach ( $edit['assignments'] as $saved_id ) {
+                $saved_id = (string) $saved_id;
+                if ( $saved_id === '' || isset($assignment_choices[$saved_id]) ) {
+                    continue;
+                }
+                $place = CourseBadges::placement($lessons, $saved_id);
+                if ( ! empty($place['known']) ) {
+                    $assignment_choices[$saved_id] = $place['title'];
+                }
+            }
+        }
+
+        $save_url = $badges_url;
+        $setup_tab = 'badges';
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <?php include __DIR__ . '/templates/Settings/tabs.inc.php'; ?>
+            <div style="margin-top:10px;">
+            <?php include __DIR__ . '/templates/Settings/badges.inc.php'; ?>
+            </div>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * Save the badges array onto a new manifest version.
+     */
+    private function badgesPost(Request $request)
+    {
+        $badges_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'badges'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+        $csrf = self::requireCsrf($badges_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
+
+        global $PDOX;
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+
+        $doc = Manifest::currentDocument();
+        if ( ! $doc ) {
+            U::flashError(__('Cannot load course manifest.'));
+            return new RedirectResponse($badges_url);
+        }
+        $decoded = json_decode($doc['json'], true);
+        if ( ! is_array($decoded) ) {
+            U::flashError(__('Invalid manifest JSON.'));
+            return new RedirectResponse($badges_url);
+        }
+
+        $lessons = Manifest::currentLessons();
+        if ( ! ($lessons instanceof LessonsService) ) {
+            U::flashError(__('Cannot load course manifest.'));
+            return new RedirectResponse($badges_url);
+        }
+
+        $context_id = ReqScope::currentContextId();
+        try {
+            $decoded['badges'] = CourseBadges::apply(
+                $decoded['badges'] ?? array(),
+                $_POST,
+                $lessons,
+                $context_id
+            );
+            Manifest::saveNewVersion(
+                $context_id,
+                $decoded,
+                ReqScope::loggedInUserId(),
+                'Update badges'
+            );
+        } catch ( \InvalidArgumentException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($badges_url);
+        } catch ( \Exception $e ) {
+            U::flashError(__('Failed to save badges.'));
+            return new RedirectResponse($badges_url);
+        }
+
+        U::flashSuccess(__('Badges saved.'));
+        return new RedirectResponse($badges_url);
     }
 
     /**

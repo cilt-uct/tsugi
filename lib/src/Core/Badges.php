@@ -5,6 +5,7 @@ namespace Tsugi\Core;
 use \Tsugi\Util\U;
 use \Tsugi\Util\Ob3DataIntegrity;
 use \Tsugi\Crypt\AesCtr;
+use \Tsugi\Services\Badges\CourseBadges;
 
 /**
  * Open Badges 2.0 and 3.0 JSON generation utilities
@@ -31,11 +32,41 @@ class Badges {
      * @param object $lesson The Lessons object
      * @return array|string Array of [row, png, pieces, badge] on success, error string on failure
      */
+    /**
+     * Course id stored in an unpublished assertion id, or 0.
+     *
+     * @param mixed $encrypted
+     */
+    public static function contextIdFromAssertion($encrypted): int {
+        global $CFG;
+
+        if ( ! is_string($encrypted) || $encrypted === '' || (strlen($encrypted) % 2) !== 0 || ! ctype_xdigit($encrypted) ) {
+            return 0;
+        }
+        if ( self::checkBadgeConfig(false) !== false ) {
+            return 0;
+        }
+        $bin = hex2bin($encrypted);
+        if ( ! is_string($bin) || $bin === '' ) {
+            return 0;
+        }
+        $plain = \Tsugi\Crypt\AesCtr::decrypt($bin, $CFG->badge_encrypt_password, 256);
+        if ( ! is_string($plain) ) {
+            return 0;
+        }
+        $pieces = explode(':', $plain);
+        if ( count($pieces) !== 3 || ! is_numeric($pieces[2]) ) {
+            return 0;
+        }
+        return (int) $pieces[2];
+    }
+
     public static function parseAssertionId($encrypted, $lesson) {
         global $CFG, $PDOX;
         
-        // Check badge configuration
-        $config_error = self::checkBadgeConfig();
+        // Encrypt password and salt. The site image folder is checked only
+        // when this badge is not a Files Public picture.
+        $config_error = self::checkBadgeConfig(false);
         if ( $config_error !== false ) {
             return $config_error;
         }
@@ -67,10 +98,17 @@ class Badges {
             return 'Bad badge image';
         }
 
-        // Load the badge
-        $file = $CFG->badge_path . '/' . $pieces[1] . '.png';
-        $png = file_get_contents($file);
-        if ( $png === false ) return 'File contents fail';
+        $png = self::pngBytes($badge, $pieces[1], (int) $pieces[2]);
+        if ( ! is_string($png) ) {
+            $image = (is_object($badge) && isset($badge->image)) ? $badge->image : '';
+            if ( ! CourseBadges::isPublicImage($image) ) {
+                $file_config = self::checkBadgeConfig(true);
+                if ( $file_config !== false ) {
+                    return $file_config;
+                }
+            }
+            return 'File contents fail';
+        }
 
         // Join the course even when it is soft-deleted. Published badges stay valid.
         $row = $PDOX->rowDie(
@@ -104,20 +142,26 @@ class Badges {
             return null;
         }
         foreach ( $lesson->lessons->badges as $badge ) {
-            if ( isset($badge->image) && $badge->image == $code.'.png' ) {
+            if ( isset($badge->image) && CourseBadges::imageMatchesCode($badge->image, $code) ) {
                 return $badge;
             }
         }
         return null;
     }
-    
+
     /**
-     * Check if badge configuration is properly set up
-     * Returns an error message string if configuration is missing, or false if OK
-     * 
+     * Check if badge configuration is properly set up.
+     *
+     * Identity (encrypt password and salt) is always required. The site badge
+     * folder is required for file-based badge images. Manifest badges that
+     * use Files Public do not need it.
+     *
+     * Returns an error message string if configuration is missing, or false if OK.
+     *
+     * @param bool $requireFiles When false, badge_path and badge_url are not required
      * @return string|false Error message string or false if OK
      */
-    public static function checkBadgeConfig() {
+    public static function checkBadgeConfig($requireFiles = true) {
         global $CFG;
         
         $missing = array();
@@ -130,12 +174,14 @@ class Badges {
             $missing[] = '$CFG->badge_assert_salt';
         }
         
-        if ( !isset($CFG->badge_path) || empty($CFG->badge_path) ) {
-            $missing[] = '$CFG->badge_path';
-        }
-        
-        if ( !isset($CFG->badge_url) || empty($CFG->badge_url) ) {
-            $missing[] = '$CFG->badge_url';
+        if ( $requireFiles ) {
+            if ( !isset($CFG->badge_path) || empty($CFG->badge_path) ) {
+                $missing[] = '$CFG->badge_path';
+            }
+            
+            if ( !isset($CFG->badge_url) || empty($CFG->badge_url) ) {
+                $missing[] = '$CFG->badge_url';
+            }
         }
         
         if ( count($missing) > 0 ) {
@@ -155,16 +201,95 @@ class Badges {
             $msg .= "// will be invalidated.\n";
             $msg .= "\$CFG->badge_encrypt_password = \"somethinglongwithhex387438758974987\";\n";
             $msg .= "\$CFG->badge_assert_salt = \"mediumlengthhexstring\";\n";
-            $msg .= "\n";
-            $msg .= "// This folder contains the badge images\n";
-            $msg .= "\$CFG->badge_path = \$CFG->dirroot . '/../bimages';\n";
-            $msg .= "\$CFG->badge_url = \$CFG->apphome . '/bimages';\n";
+            if ( $requireFiles ) {
+                $msg .= "\n";
+                $msg .= "// This folder contains the badge images\n";
+                $msg .= "\$CFG->badge_path = \$CFG->dirroot . '/../bimages';\n";
+                $msg .= "\$CFG->badge_url = \$CFG->apphome . '/bimages';\n";
+            }
             $msg .= "</pre>\n";
             $msg .= "<p>For more information, see <code>config-dist.php</code> in your Tsugi installation.</p>\n";
             return $msg;
         }
         
         return false;
+    }
+
+    /**
+     * Live image URL for a badge that has not been published yet.
+     *
+     * A course Public image stays on that course's file. A missing Public
+     * file does not fall through to the site badge folder.
+     *
+     * @param object|null $badge
+     * @param string $code
+     */
+    public static function liveImageUrl($badge, $code, int $contextId = 0): string {
+        global $CFG;
+        if ( is_object($badge) ) {
+            $image = (isset($badge->image) && is_string($badge->image)) ? $badge->image : '';
+            if ( CourseBadges::isPublicImage($image) ) {
+                return CourseBadges::displayUrl($badge, $contextId);
+            }
+            $url = CourseBadges::displayUrl($badge, $contextId);
+            if ( $url !== '' ) {
+                return $url;
+            }
+        }
+        $code = is_string($code) ? $code : '';
+        if ( $code !== '' && isset($CFG->badge_url) && is_string($CFG->badge_url) && $CFG->badge_url !== '' ) {
+            return rtrim($CFG->badge_url, '/') . '/' . $code . '.png';
+        }
+        return '';
+    }
+
+    /**
+     * Site badge folder is required only for an unpublished file-based image.
+     *
+     * @param object|null $badge
+     * @param array<string,mixed>|null $frozen
+     */
+    private static function needsBadgeFiles($badge, $frozen): bool {
+        if ( self::useFrozen($frozen) ) {
+            return false;
+        }
+        if ( is_object($badge) && isset($badge->image) && CourseBadges::isPublicImage($badge->image) ) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @param object|null $badge
+     * @param array<string,mixed>|null $frozen
+     */
+    private static function claimImage($badge, $code, $frozen, $encrypted = null): string {
+        $contextId = is_string($encrypted) ? self::contextIdFromAssertion($encrypted) : 0;
+        $live = self::liveImageUrl($badge, $code, $contextId);
+        if ( self::useFrozen($frozen) ) {
+            return self::frozenString($frozen, 'image_url', $live);
+        }
+        return $live;
+    }
+
+    /**
+     * PNG bytes for baking. Public files come from the course. Otherwise badge_path.
+     *
+     * @param object|null $badge
+     * @return string|null
+     */
+    private static function pngBytes($badge, string $code, int $contextId): ?string {
+        global $CFG;
+        $image = (is_object($badge) && isset($badge->image) && is_string($badge->image)) ? $badge->image : '';
+        if ( CourseBadges::isPublicImage($image) ) {
+            return CourseBadges::bytes($image, $contextId);
+        }
+        if ( $code === '' || ! isset($CFG->badge_path) || ! is_string($CFG->badge_path) || $CFG->badge_path === '' ) {
+            return null;
+        }
+        $file = rtrim($CFG->badge_path, '/') . '/' . $code . '.png';
+        $png = @file_get_contents($file);
+        return is_string($png) ? $png : null;
     }
     
     /**
@@ -245,6 +370,110 @@ class Badges {
         global $CFG;
         return "Completed {$badge->title} in course $title at {$CFG->servicename}";
     }
+
+    /**
+     * A published badge carries its claims. Unminted badges keep reading config.
+     *
+     * @param array<string,mixed>|null $frozen
+     */
+    private static function useFrozen($frozen) {
+        return is_array($frozen)
+            && isset($frozen['guid'])
+            && is_string($frozen['guid'])
+            && $frozen['guid'] !== '';
+    }
+
+    /**
+     * @param array<string,mixed>|null $frozen
+     */
+    private static function frozenString($frozen, $key, $default) {
+        if ( ! is_array($frozen) || ! isset($frozen[$key]) || ! is_string($frozen[$key]) || $frozen[$key] === '' ) {
+            return $default;
+        }
+        return $frozen[$key];
+    }
+
+    /**
+     * @param array<string,mixed>|null $frozen
+     */
+    private static function claimNarrative($badge, $title, $frozen) {
+        if ( self::useFrozen($frozen) ) {
+            return self::frozenString($frozen, 'narrative', self::buildEvidenceNarrative($badge, $title));
+        }
+        return self::buildEvidenceNarrative($badge, $title);
+    }
+
+    /**
+     * @param array<string,mixed> $frozen
+     */
+    private static function assertionResourceUrl($guid, $resource) {
+        global $CFG;
+        return rtrim($CFG->wwwroot, '/') . '/assertions/' . rawurlencode($guid) . '/' . $resource;
+    }
+
+    /**
+     * Manifest badges are fetched from the assertion id, which names the course.
+     *
+     * @param object|null $badge
+     */
+    private static function courseScopedResource($encrypted, $badge, string $resource): ?string {
+        if ( ! is_string($encrypted) || $encrypted === '' ) {
+            return null;
+        }
+        if ( ! is_object($badge) || ! isset($badge->image) || ! CourseBadges::isPublicImage($badge->image) ) {
+            return null;
+        }
+        return self::assertionResourceUrl($encrypted, $resource);
+    }
+
+    /**
+     * Issuer profile fields. Frozen values win for a published badge.
+     *
+     * @param array<string,mixed>|null $frozen
+     * @return array{name:string,url:string,email:string,logo:string,linkedin_url:string}
+     */
+    private static function issuerFields($frozen) {
+        global $CFG;
+
+        if ( self::useFrozen($frozen) && isset($frozen['issuer']) && is_array($frozen['issuer']) ) {
+            $src = $frozen['issuer'];
+            $email = isset($src['email']) && is_string($src['email']) ? $src['email'] : '';
+            if ( $email === '' ) {
+                $email = self::getIssuerEmail();
+            }
+            return array(
+                'name' => isset($src['name']) && is_string($src['name']) ? $src['name'] : '',
+                'url' => isset($src['url']) && is_string($src['url']) ? $src['url'] : '',
+                'email' => $email,
+                'logo' => isset($src['logo']) && is_string($src['logo']) ? $src['logo'] : '',
+                'linkedin_url' => isset($src['linkedin_url']) && is_string($src['linkedin_url']) ? $src['linkedin_url'] : '',
+            );
+        }
+
+        $email = (isset($CFG->badge_issuer_email) && !empty($CFG->badge_issuer_email))
+            ? $CFG->badge_issuer_email
+            : self::getIssuerEmail();
+
+        if (isset($CFG->badge_organization) && !empty($CFG->badge_organization)) {
+            $name = $CFG->badge_organization;
+        } elseif (method_exists($CFG, 'getBadgeOrganization')) {
+            $name = $CFG->getBadgeOrganization();
+        } else {
+            $name = $CFG->servicename;
+        }
+
+        $url = (isset($CFG->badge_organization_url) && !empty($CFG->badge_organization_url))
+            ? $CFG->badge_organization_url
+            : $CFG->apphome;
+
+        return array(
+            'name' => is_string($name) ? $name : '',
+            'url' => is_string($url) ? $url : '',
+            'email' => is_string($email) ? $email : '',
+            'logo' => (isset($CFG->badge_organization_logo) && is_string($CFG->badge_organization_logo)) ? $CFG->badge_organization_logo : '',
+            'linkedin_url' => (isset($CFG->linkedin_url) && is_string($CFG->linkedin_url)) ? $CFG->linkedin_url : '',
+        );
+    }
     
     /**
      * Normalize ISO8601 date to Z format (required by Badgr/Credly)
@@ -272,22 +501,27 @@ class Badges {
      * @param object $badge The badge object
      * @param string $title The course title
      * @param string $email The recipient email
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded assertion
      */
-    public static function getOb2Assertion($encrypted, $date, $code, $badge, $title, $email) {
+    public static function getOb2Assertion($encrypted, $date, $code, $badge, $title, $email, $frozen = null) {
         global $CFG;
 
-        $config_error = self::checkBadgeConfig();
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $image = $CFG->badge_url.'/'.$code.'.png';
+        $image = self::claimImage($badge, $code, $frozen, $encrypted);
         $recipient = 'sha256$' . hash('sha256', $email . $CFG->badge_assert_salt);
         $assert_id = self::buildAssertionUrl($encrypted);
-        $badge_url = self::buildBadgeUrl($code);
-        $evidence = $CFG->apphome;
-        $narrative = self::buildEvidenceNarrative($badge, $title);
+        $badge_url = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'badge.json')
+            : (self::courseScopedResource($encrypted, $badge, 'badge.json') ?? self::buildBadgeUrl($code));
+        $evidence = self::useFrozen($frozen)
+            ? self::frozenString($frozen, 'evidence_url', $CFG->apphome)
+            : $CFG->apphome;
+        $narrative = self::claimNarrative($badge, $title, $frozen);
         
         // Normalize date to Z format (required by Badgr/Credly)
         $issuedOn = self::normalizeDateToZ($date);
@@ -327,20 +561,28 @@ class Badges {
      * @param string $code The badge code
      * @param object $badge The badge object
      * @param string $title The course title
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded badge class
      */
-    public static function getOb2Badge($encrypted, $code, $badge, $title) {
+    public static function getOb2Badge($encrypted, $code, $badge, $title, $frozen = null) {
         global $CFG;
 
-        $config_error = self::checkBadgeConfig();
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $image = $CFG->badge_url.'/'.$code.'.png';
-        $badge_url = self::buildBadgeUrl($code);
-        $issuer_url = self::buildIssuerUrl();
-        $narrative = self::buildEvidenceNarrative($badge, $title);
+        $image = self::claimImage($badge, $code, $frozen, $encrypted);
+        $badge_url = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'badge.json')
+            : (self::courseScopedResource($encrypted, $badge, 'badge.json') ?? self::buildBadgeUrl($code));
+        $issuer_url = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'issuer.json')
+            : (self::courseScopedResource($encrypted, $badge, 'issuer.json') ?? self::buildIssuerUrl());
+        $narrative = self::claimNarrative($badge, $title, $frozen);
+        $criteria_id = self::useFrozen($frozen)
+            ? self::frozenString($frozen, 'evidence_url', $CFG->apphome)
+            : $CFG->apphome;
         
         $badge_class = array(
             "@context" => self::OB2_CONTEXT,
@@ -350,7 +592,7 @@ class Badges {
             "image" => $image,
             "description" => $narrative,
             "criteria" => array(
-                "id" => $CFG->apphome,
+                "id" => $criteria_id,
                 "narrative" => $narrative
             ),
             "issuer" => $issuer_url
@@ -366,50 +608,32 @@ class Badges {
      * @param string|null $code The badge code (optional)
      * @param object|null $badge The badge object (optional)
      * @param string|null $title The course title (optional)
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded issuer
      */
-    public static function getOb2Issuer($encrypted = null, $code = null, $badge = null, $title = null) {
-        global $CFG;
-
-        $config_error = self::checkBadgeConfig();
+    public static function getOb2Issuer($encrypted = null, $code = null, $badge = null, $title = null, $frozen = null) {
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $issuer_url = self::buildIssuerUrl();
-        
-        // Get issuer email with fallback
-        $issuer_email = (isset($CFG->badge_issuer_email) && !empty($CFG->badge_issuer_email)) 
-            ? $CFG->badge_issuer_email 
-            : self::getIssuerEmail();
-        
-        // Get issuer name with fallback
-        if (isset($CFG->badge_organization) && !empty($CFG->badge_organization)) {
-            $issuer_name = $CFG->badge_organization;
-        } elseif (method_exists($CFG, 'getBadgeOrganization')) {
-            $issuer_name = $CFG->getBadgeOrganization();
-        } else {
-            // Fallback for older ConfigInfo versions without the method
-            $issuer_name = $CFG->servicename;
-        }
-        
-        // Get issuer URL with fallback
-        $organization_url = (isset($CFG->badge_organization_url) && !empty($CFG->badge_organization_url))
-            ? $CFG->badge_organization_url
-            : $CFG->apphome;
+        $fields = self::issuerFields($frozen);
+        $issuer_url = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'issuer.json')
+            : (self::courseScopedResource($encrypted, $badge, 'issuer.json') ?? self::buildIssuerUrl());
         
         $issuer = array(
             "@context" => self::OB2_CONTEXT,
             "id" => $issuer_url,
             "type" => "Issuer",
-            "name" => $issuer_name,
-            "url" => $organization_url,
-            "email" => $issuer_email
+            "name" => $fields['name'],
+            "url" => $fields['url'],
+            "email" => $fields['email']
         );
         
         // Add logo if configured (OB2 uses simple string URL)
-        if (isset($CFG->badge_organization_logo) && !empty($CFG->badge_organization_logo)) {
-            $issuer["image"] = $CFG->badge_organization_logo;
+        if ($fields['logo'] !== '') {
+            $issuer["image"] = $fields['logo'];
         }
         
         return json_encode($issuer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -424,23 +648,32 @@ class Badges {
      * @param object $badge The badge object
      * @param string $title The course title
      * @param string $email The recipient email
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded credential
      */
-    public static function getOb3Assertion($encrypted, $date, $code, $badge, $title, $email) {
+    public static function getOb3Assertion($encrypted, $date, $code, $badge, $title, $email, $frozen = null) {
         global $CFG;
 
-        $config_error = self::checkBadgeConfig();
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $image = $CFG->badge_url.'/'.$code.'.png';
+        $image = self::claimImage($badge, $code, $frozen, $encrypted);
         $recipient = 'sha256$' . hash('sha256', $email . $CFG->badge_assert_salt);
         $credential_id = $CFG->wwwroot . "/assertions/" . urlencode($encrypted) . ".vc.json";
-        $achievement_id = self::buildBadgeUrlWithFormat($code, 'ob3');
-        $issuer_id = self::buildIssuerUrlWithFormat('ob3');
-        $evidence = $CFG->apphome;
-        $narrative = self::buildEvidenceNarrative($badge, $title);
+        $achievement_id = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'achievement.json')
+            : (self::courseScopedResource($encrypted, $badge, 'achievement.json') ?? self::buildBadgeUrlWithFormat($code, 'ob3'));
+        $scoped_issuer = self::courseScopedResource($encrypted, $badge, 'issuer.json');
+        $issuer_id = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'issuer.json') . '?format=ob3'
+            : ($scoped_issuer !== null ? $scoped_issuer . '?format=ob3' : self::buildIssuerUrlWithFormat('ob3'));
+        $evidence = self::useFrozen($frozen)
+            ? self::frozenString($frozen, 'evidence_url', $CFG->apphome)
+            : $CFG->apphome;
+        $narrative = self::claimNarrative($badge, $title, $frozen);
+        $issuer_fields = self::issuerFields($frozen);
         
         // Legacy OB1 assertion reference for traceability
         $legacy_assertion = $CFG->wwwroot . "/badges/assert.php?id=" . urlencode($encrypted);
@@ -458,8 +691,8 @@ class Badges {
             "issuer" => array(
                 "id" => $issuer_id,
                 "type" => "Profile",
-                "name" => $CFG->servicename,
-                "url" => $CFG->apphome
+                "name" => self::useFrozen($frozen) ? $issuer_fields['name'] : $CFG->servicename,
+                "url" => self::useFrozen($frozen) ? $issuer_fields['url'] : $CFG->apphome
             ),
             "validFrom" => $normalized_date,
             "credentialSubject" => array(
@@ -521,20 +754,29 @@ class Badges {
      * @param string $code The badge code
      * @param object $badge The badge object
      * @param string $title The course title
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded achievement
      */
-    public static function getOb3Achievement($encrypted, $code, $badge, $title) {
+    public static function getOb3Achievement($encrypted, $code, $badge, $title, $frozen = null) {
         global $CFG;
 
-        $config_error = self::checkBadgeConfig();
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $image = $CFG->badge_url.'/'.$code.'.png';
-        $achievement_id = self::buildBadgeUrlWithFormat($code, 'ob3');
-        $issuer_id = self::buildIssuerUrlWithFormat('ob3');
-        $narrative = self::buildEvidenceNarrative($badge, $title);
+        $image = self::claimImage($badge, $code, $frozen, $encrypted);
+        $achievement_id = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'achievement.json')
+            : (self::courseScopedResource($encrypted, $badge, 'achievement.json') ?? self::buildBadgeUrlWithFormat($code, 'ob3'));
+        $scoped_issuer = self::courseScopedResource($encrypted, $badge, 'issuer.json');
+        $issuer_id = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'issuer.json') . '?format=ob3'
+            : ($scoped_issuer !== null ? $scoped_issuer . '?format=ob3' : self::buildIssuerUrlWithFormat('ob3'));
+        $narrative = self::claimNarrative($badge, $title, $frozen);
+        $criteria_id = self::useFrozen($frozen)
+            ? self::frozenString($frozen, 'evidence_url', $CFG->apphome)
+            : $CFG->apphome;
         
         $achievement = array(
             "@context" => array(
@@ -550,7 +792,7 @@ class Badges {
                 "type" => "Image"
             ),
             "criteria" => array(
-                "id" => $CFG->apphome,
+                "id" => $criteria_id,
                 "narrative" => $narrative
             ),
             "issuer" => array(
@@ -569,37 +811,22 @@ class Badges {
      * @param string|null $code The badge code (optional)
      * @param object|null $badge The badge object (optional)
      * @param string|null $title The course title (optional)
+     * @param array<string,mixed>|null $frozen Published-badge snapshot. Null reads live config.
      * @return string JSON-encoded issuer
      */
-    public static function getOb3Issuer($encrypted = null, $code = null, $badge = null, $title = null) {
+    public static function getOb3Issuer($encrypted = null, $code = null, $badge = null, $title = null, $frozen = null) {
         global $CFG;
 
-        $config_error = self::checkBadgeConfig();
+        $config_error = self::checkBadgeConfig(self::needsBadgeFiles($badge, $frozen));
         if ( $config_error !== false ) {
             return $config_error;
         }
 
-        $issuer_id = self::buildIssuerUrlWithFormat('ob3');
-        
-        // Get issuer email with fallback
-        $issuer_email = (isset($CFG->badge_issuer_email) && !empty($CFG->badge_issuer_email)) 
-            ? $CFG->badge_issuer_email 
-            : self::getIssuerEmail();
-        
-        // Get issuer name with fallback
-        if (isset($CFG->badge_organization) && !empty($CFG->badge_organization)) {
-            $issuer_name = $CFG->badge_organization;
-        } elseif (method_exists($CFG, 'getBadgeOrganization')) {
-            $issuer_name = $CFG->getBadgeOrganization();
-        } else {
-            // Fallback for older ConfigInfo versions without the method
-            $issuer_name = $CFG->servicename;
-        }
-        
-        // Get issuer URL with fallback
-        $issuer_url = (isset($CFG->badge_organization_url) && !empty($CFG->badge_organization_url))
-            ? $CFG->badge_organization_url
-            : $CFG->apphome;
+        $fields = self::issuerFields($frozen);
+        $scoped_issuer = self::courseScopedResource($encrypted, $badge, 'issuer.json');
+        $issuer_id = self::useFrozen($frozen)
+            ? self::assertionResourceUrl($frozen['guid'], 'issuer.json') . '?format=ob3'
+            : ($scoped_issuer !== null ? $scoped_issuer . '?format=ob3' : self::buildIssuerUrlWithFormat('ob3'));
         
         $issuer = array(
             "@context" => array(
@@ -608,25 +835,25 @@ class Badges {
             ),
             "id" => $issuer_id,
             "type" => "Profile",
-            "name" => $issuer_name,
-            "url" => $issuer_url,
-            "email" => $issuer_email
+            "name" => $fields['name'],
+            "url" => $fields['url'],
+            "email" => $fields['email']
         );
         
         // Add logo if configured
-        if (isset($CFG->badge_organization_logo) && !empty($CFG->badge_organization_logo)) {
+        if ($fields['logo'] !== '') {
             $issuer["image"] = array(
-                "id" => $CFG->badge_organization_logo,
+                "id" => $fields['logo'],
                 "type" => "Image"
             );
         }
         
         // Add LinkedIn URL if configured (as extension or additional property)
-        if (isset($CFG->linkedin_url) && !empty($CFG->linkedin_url)) {
+        if ($fields['linkedin_url'] !== '') {
             if (!isset($issuer["extensions"])) {
                 $issuer["extensions"] = array();
             }
-            $issuer["extensions"]["linkedIn"] = $CFG->linkedin_url;
+            $issuer["extensions"]["linkedIn"] = $fields['linkedin_url'];
         }
         
         // Add verificationMethod for OB3 proof verification when signing is configured

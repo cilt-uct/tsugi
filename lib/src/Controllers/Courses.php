@@ -148,6 +148,54 @@ class Courses extends Tool {
     }
 
     /**
+     * A site URL is not the launch course. Drop the top-level course fields.
+     *
+     * The LTI row stays, so /courses/{id} for that launch can match it again.
+     * Google site login keeps its own course. A Plus session keeps its course
+     * too; a site tool asks isPlusSession() and sends the launch back.
+     * A course-mounted URL is that course.
+     */
+    public static function releaseUnmountedCourse() {
+        if ( ! defined('COOKIE_SESSION') ) {
+            return false;
+        }
+        if ( self::isCourseMountedRequest() ) {
+            return false;
+        }
+        if ( Settings::isCartridgeUploadRequest() ) {
+            return false;
+        }
+        if ( self::isGoogleLoginSession() ) {
+            return false;
+        }
+        if ( ReqScope::isPlusSession() ) {
+            return false;
+        }
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        $ltiContext = 0;
+        if ( isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey]) ) {
+            $ltiContext = (int) ($_SESSION[$ltiKey]['context_id'] ?? 0);
+        }
+        $top = (int) ($_SESSION['context_id'] ?? 0);
+        if ( $ltiContext < 1 && $top < 1 && Manifest::activeId() < 1
+                && ! isset($_SESSION['context_title']) ) {
+            return false;
+        }
+        unset(
+            $_SESSION['context_id'],
+            $_SESSION['context_key'],
+            $_SESSION['context_title'],
+            $_SESSION['membership_id'],
+            $_SESSION['isinstructor']
+        );
+        Manifest::rememberInSession(0);
+        Cache::clearAllSessionCaches();
+        Output::clearTopNavSession();
+        ReqScope::resetIdentity();
+        return true;
+    }
+
+    /**
      * Google site-login context id, or 0.
      */
     public static function siteLoginContextId() {
@@ -305,24 +353,19 @@ class Courses extends Tool {
      * True when this session is a Google site login (not an LMS LTI launch).
      */
     public static function isGoogleLoginSession() {
-        $postKey = defined('TSUGI_SESSION_LTI_POST') ? TSUGI_SESSION_LTI_POST : 'lti_post';
-        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
-        if ( ! empty($_SESSION[$postKey]) ) {
-            return false;
-        }
-        $key = isset($_SESSION['oauth_consumer_key']) ? $_SESSION['oauth_consumer_key'] : null;
-        if ( $key === null && isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey]) ) {
-            $key = isset($_SESSION[$ltiKey]['key_key']) ? $_SESSION[$ltiKey]['key_key'] : null;
-        }
-        return $key === self::GOOGLE_KEY;
+        return ReqScope::isGoogleSession();
     }
 
     /**
      * Switch the Google-login session to $context_id when needed.
      *
+     * $recordAccess is for /courses/{id} navigation. It refreshes the course
+     * login_at when the stored time is older than five minutes.
+     *
+     * @param bool $recordAccess
      * @return true|string true on success, error message otherwise
      */
-    public static function ensureActiveContext($context_id) {
+    public static function ensureActiveContext($context_id, $recordAccess = false) {
         global $CFG, $PDOX, $CONTEXT, $LAUNCH, $TSUGI_LAUNCH;
 
         $cid = (int) $context_id;
@@ -336,7 +379,9 @@ class Courses extends Tool {
         $p = $CFG->dbprefix;
 
         $context_row = $PDOX->rowDie(
-            "SELECT context_id, context_key, title, manifest_id FROM {$p}lti_context
+            "SELECT context_id, context_key, title, manifest_id,
+                    (login_at IS NULL OR login_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)) AS login_stale
+             FROM {$p}lti_context
              WHERE context_id = :CID AND (deleted IS NULL OR deleted = 0)",
             array(':CID' => $cid)
         );
@@ -347,6 +392,9 @@ class Courses extends Tool {
         // Session pair. restoreSiteLoginContext() calls this before ReqScope is filled.
         $current = ReqScope::currentContextIdLegacy();
         if ( $current === $cid ) {
+            if ( $recordAccess ) {
+                self::noteCourseLogin($cid, $context_row);
+            }
             self::wireLaunchConnection();
             // Pages/Files only need context_id. Lessons reads the session
             // manifest_id, which Google login never set for this course.
@@ -435,8 +483,35 @@ class Courses extends Tool {
         LTIX::buildLaunch($lti);
         self::wireLaunchConnection();
         self::establishReqScope($cid);
+        if ( $recordAccess ) {
+            self::noteCourseLogin($cid, $context_row);
+        }
 
         return true;
+    }
+
+    /**
+     * Last access for this course. A visit inside five minutes leaves the stamp.
+     *
+     * @param int $context_id
+     * @param array<string,mixed> $context_row
+     */
+    private static function noteCourseLogin($context_id, array $context_row) {
+        if ( empty($context_row['login_stale']) ) {
+            return;
+        }
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return;
+        }
+        global $CFG, $PDOX;
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+        $PDOX->queryReturnError(
+            "UPDATE {$CFG->dbprefix}lti_context SET login_at = NOW() WHERE context_id = :CID",
+            array(':CID' => $cid)
+        );
     }
 
     /**
@@ -657,6 +732,9 @@ class Courses extends Tool {
     }
 
     public static function enter(Application $app, Request $request, $id) {
+        if ( ! ReqScope::isLoggedIn() ) {
+            return self::loginRedirectForCourse();
+        }
         $gate = self::gateResponse();
         if ( $gate ) {
             return $gate;
@@ -667,7 +745,7 @@ class Courses extends Tool {
             return $siteHome;
         }
 
-        $result = self::ensureActiveContext($id);
+        $result = self::ensureActiveContext($id, true);
         if ( $result !== true ) {
             return self::switchFailedResponse($result);
         }
@@ -845,7 +923,7 @@ class Courses extends Tool {
             return new RedirectResponse(U::addSession(self::joinToolHome($home, 'create')));
         }
 
-        $switch = self::ensureActiveContext($result['context_id']);
+        $switch = self::ensureActiveContext($result['context_id'], true);
         if ( $switch !== true ) {
             return self::switchFailedResponse($switch);
         }
@@ -878,7 +956,31 @@ class Courses extends Tool {
         return $row ? (int) $row['key_id'] : 0;
     }
 
+    /**
+     * Lessons outline or a published page for an anonymous reader.
+     *
+     * Course files are not included. A file URL under /courses/{id}/files
+     * stays on the login gate.
+     *
+     * @param Request $request
+     * @param mixed $rest
+     * @return bool
+     */
+    private static function anonymousContentRequest(Request $request, $rest) {
+        return $request->isMethod('GET')
+            && (self::isAnonymousLessonRest($rest) || self::isAnonymousPageRest($rest));
+    }
+
     public static function nested(Application $app, Request $request, $id, $rest) {
+        if ( self::anonymousContentRequest($request, $rest)
+                && ! self::viewerAlreadyInCourse($id) && self::anonymousLessonsOpen($id) ) {
+            return self::dispatchAnonymousLessons($app, $request, $id, $rest);
+        }
+
+        if ( ! ReqScope::isLoggedIn() ) {
+            return self::loginRedirectForCourse();
+        }
+
         $gate = self::gateResponse();
         if ( $gate ) {
             return $gate;
@@ -896,7 +998,7 @@ class Courses extends Tool {
         }
 
         $before = ReqScope::currentContextId();
-        $result = self::ensureActiveContext($id);
+        $result = self::ensureActiveContext($id, true);
         if ( $result !== true ) {
             return self::switchFailedResponse($result);
         }
@@ -1110,9 +1212,15 @@ class Courses extends Tool {
     }
 
     /**
-     * Google site-login only. Every /courses route uses this, including
-     * nested tools and /courses/{id}/image/{kind}. LMS LTI launches already
-     * have a course from the LMS and do not use this URL family.
+     * Google site-login, or the Plus launch for this same course.
+     *
+     * Every /courses route uses this, including nested tools and
+     * /courses/{id}/image/{kind}, except a read-only lessons GET and a published
+     * page when this course allows anonymous lesson viewing. Course file URLs
+     * stay on this gate. An ordinary LMS launch already has its
+     * course and cannot switch. A Plus launch may open /courses/{id} when
+     * that id is the context it just launched, so each tab's address is the
+     * course. It cannot open a different id, the course list, or create.
      *
      * @return Response|null
      */
@@ -1120,13 +1228,232 @@ class Courses extends Tool {
         if ( ! ReqScope::isLoggedIn() ) {
             return new Response('Must be logged in', 403);
         }
-        if ( ! self::isGoogleLoginSession() ) {
-            return new Response(
-                'This session is an LTI launch from an LMS. Course switching is not available.',
-                403
-            );
+        if ( self::isGoogleLoginSession() || self::plusOwnsCourseUrl() ) {
+            return null;
         }
-        return null;
+        return new Response(
+            'This session is an LTI launch from an LMS. Course switching is not available.',
+            403
+        );
+    }
+
+    /**
+     * GET /courses/{id}/lessons, /content, or /outline, or one module under any of them.
+     *
+     * Author, launch, and deeper paths stay on the membership gate.
+     *
+     * @param mixed $rest
+     * @return bool
+     */
+    public static function isAnonymousLessonRest($rest) {
+        $rest = is_string($rest) ? trim($rest, '/') : '';
+        return self::isAnonymousLessonTail($rest, 'lessons')
+            || self::isAnonymousLessonTail($rest, 'content')
+            || self::isAnonymousLessonTail($rest, 'outline');
+    }
+
+    /**
+     * @param string $rest
+     * @param string $head
+     * @return bool
+     */
+    private static function isAnonymousLessonTail($rest, $head) {
+        if ( $rest === $head ) {
+            return true;
+        }
+        $prefix = $head.'/';
+        if ( ! str_starts_with($rest, $prefix) ) {
+            return false;
+        }
+        $tail = substr($rest, strlen($prefix));
+        if ( $tail === '' || str_contains($tail, '/') || str_starts_with($tail, '_') ) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * A published-page GET: /courses/{id}/pages or /courses/{id}/pages/{key}.
+     *
+     * Add, edit, manage, history, and analytics stay on the membership gate.
+     *
+     * @param mixed $rest
+     * @return bool
+     */
+    public static function isAnonymousPageRest($rest) {
+        $rest = is_string($rest) ? trim($rest, '/') : '';
+        if ( $rest === 'pages' ) {
+            return true;
+        }
+        if ( ! str_starts_with($rest, 'pages/') ) {
+            return false;
+        }
+        $tail = substr($rest, strlen('pages/'));
+        if ( $tail === '' || str_contains($tail, '/') ) {
+            return false;
+        }
+        $head = strtolower($tail);
+        if ( in_array($head, array('json', 'lessons-json', 'add', 'edit', 'manage', 'history', 'analytics'), true) ) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Logged-in member (or site admin) who can already open this course.
+     *
+     * @param mixed $context_id
+     * @return bool
+     */
+    private static function viewerAlreadyInCourse($context_id) {
+        if ( self::gateResponse() !== null ) {
+            return false;
+        }
+        return self::memberCheck($context_id) === true;
+    }
+
+    /**
+     * This course's lti_context.anonymous_lessons is on, and it is a live manifest course.
+     *
+     * @param mixed $context_id
+     * @return bool
+     */
+    private static function anonymousLessonsOpen($context_id) {
+        return self::contextAllowsAnonymousLessons($context_id);
+    }
+
+    /**
+     * Absolute URL of /courses/{id}/lessons.
+     *
+     * @param mixed $context_id
+     * @return string
+     */
+    public static function lessonsUrl($context_id) {
+        global $CFG;
+        $id = (int) $context_id;
+        if ( $id < 1 ) {
+            return '';
+        }
+        $root = '';
+        if ( isset($CFG) && is_object($CFG) && isset($CFG->wwwroot) ) {
+            $root = rtrim((string) $CFG->wwwroot, '/');
+        }
+        if ( $root === '' ) {
+            return self::ROUTE.'/'.$id.'/lessons';
+        }
+        return $root.self::ROUTE.'/'.$id.'/lessons';
+    }
+
+    /**
+     * True when this course row allows anonymous lesson preview.
+     *
+     * @param mixed $context_id
+     * @return bool
+     */
+    public static function contextAllowsAnonymousLessons($context_id) {
+        global $CFG, $PDOX;
+
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return false;
+        }
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+        $table = $CFG->dbprefix.'lti_context';
+        if ( ! $PDOX->columnExists('anonymous_lessons', $table) ) {
+            return false;
+        }
+        $row = $PDOX->rowDie(
+            "SELECT manifest_id, anonymous_lessons FROM {$table}
+             WHERE context_id = :CID AND (deleted IS NULL OR deleted = 0)",
+            array(':CID' => $cid)
+        );
+        if ( ! is_array($row) ) {
+            return false;
+        }
+        if ( (int) ($row['manifest_id'] ?? 0) < 1 ) {
+            return false;
+        }
+        return (int) ($row['anonymous_lessons'] ?? 0) === 1;
+    }
+
+    /**
+     * Turn anonymous lesson preview on or off for one course.
+     *
+     * @param mixed $context_id
+     * @param bool $on
+     * @return bool
+     */
+    public static function setContextAnonymousLessons($context_id, $on) {
+        global $CFG, $PDOX;
+
+        $cid = (int) $context_id;
+        if ( $cid < 1 ) {
+            return false;
+        }
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+        $table = $CFG->dbprefix.'lti_context';
+        if ( ! $PDOX->columnExists('anonymous_lessons', $table) ) {
+            return false;
+        }
+        $stmt = $PDOX->queryReturnError(
+            "UPDATE {$table} SET anonymous_lessons = :ON
+             WHERE context_id = :CID AND (deleted IS NULL OR deleted = 0)",
+            array(
+                ':ON' => $on ? 1 : 0,
+                ':CID' => $cid,
+            )
+        );
+        return is_object($stmt) && ! empty($stmt->success);
+    }
+
+    /**
+     * Render lessons, or a published page, for someone who is not in the course.
+     *
+     * The session is restored afterward so this read does not switch their
+     * course or leave a membership behind.
+     *
+     * @param mixed $id
+     * @param mixed $rest
+     * @return mixed
+     */
+    private static function dispatchAnonymousLessons(Application $app, Request $request, $id, $rest) {
+        $had = isset($_SESSION) && is_array($_SESSION);
+        $snap = $had ? $_SESSION : null;
+        ReqScope::beginAnonymousLessonView((int) $id);
+        try {
+            return $app->dispatch(self::innerRequest($request, $rest));
+        } finally {
+            if ( $had ) {
+                $_SESSION = $snap;
+            }
+            ReqScope::endAnonymousLessonView();
+            ReqScope::resetIdentity();
+        }
+    }
+
+    /**
+     * True when this request is /courses/{id} for the Plus launch in the session.
+     *
+     * The URL id must be the context this /plus launch opened. The resource
+     * link id is not the check. Another tool's session does not carry the flag.
+     */
+    private static function plusOwnsCourseUrl() {
+        $urlId = self::courseIdFromRequest();
+        if ( $urlId < 1 ) {
+            return false;
+        }
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        $lti = (isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey])) ? $_SESSION[$ltiKey] : array();
+        $launchContext = (int) ($lti['context_id'] ?? 0);
+        $plusCourse = (int) ($lti['plus_course'] ?? 0);
+        if ( $plusCourse !== 1 || $launchContext < 1 || $urlId !== $launchContext ) {
+            return false;
+        }
+        return (int) ($lti['plus_context_launch'] ?? 0) === 1;
     }
 
     /**
@@ -1147,11 +1474,138 @@ class Courses extends Tool {
     }
 
     /**
-     * @param string $message
-     * @return Response
+     * Send a logged-out /courses/{id} visitor to login, and bring them back here.
+     *
+     * A Plus or LTI launch with a platform return URL goes back to that
+     * platform instead. The error return is preferred, then the launch return.
      */
+    private static function loginRedirectForCourse() {
+        $launch = self::launchErrorRedirect('Must be logged in');
+        if ( $launch !== null ) {
+            return $launch;
+        }
+        $return = LTIX::curPageUrl();
+        if ( is_string($return) && $return !== '' ) {
+            Login::setReturnUrl($return);
+        }
+        return new RedirectResponse(Login::loginUrl());
+    }
+
+    /**
+     * Platform URL for a Plus or LTI launch, or null.
+     *
+     * Same preference as an aborted launch: launch_presentation_error_return_url,
+     * then launch_presentation_return_url. Only the stored launch is used.
+     * The current request body is not a launch.
+     *
+     * @return string|null
+     */
+    private static function launchErrorReturnUrl() {
+        if ( ! ReqScope::isPlusSession() && ! ReqScope::isLtiSession() ) {
+            return null;
+        }
+        $postKey = defined('TSUGI_SESSION_LTI_POST') ? TSUGI_SESSION_LTI_POST : 'lti_post';
+        $stored = (isset($_SESSION[$postKey]) && is_array($_SESSION[$postKey])) ? $_SESSION[$postKey] : array();
+        $jwtError = null;
+        $jwtReturn = null;
+        // A later LTI 1.1 launch replaces lti_post and leaves tsugi_jwt in place.
+        $idToken = $stored['id_token'] ?? null;
+        $jwt = (is_string($idToken) && $idToken !== '') ? ($_SESSION['tsugi_jwt'] ?? null) : null;
+        if ( is_object($jwt) && isset($jwt->body) && is_object($jwt->body) ) {
+            $claim = $jwt->body->{\Tsugi\Util\LTI13::PRESENTATION_CLAIM} ?? null;
+            if ( is_object($claim) ) {
+                $jwtError = $claim->{\Tsugi\Util\LTI13::ERROR_RETURN_URL} ?? null;
+                $jwtReturn = $claim->{\Tsugi\Util\LTI13::RETURN_URL} ?? null;
+            }
+        }
+        $candidates = array(
+            $stored['launch_presentation_error_return_url'] ?? null,
+            $jwtError,
+            $stored['launch_presentation_return_url'] ?? null,
+            $jwtReturn,
+        );
+        foreach ( $candidates as $candidate ) {
+            if ( ! is_string($candidate) ) {
+                continue;
+            }
+            $url = trim($candidate);
+            if ( preg_match('#\Ahttps?://\S+\z#i', $url) ) {
+                return $url;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Redirect to the platform error return, or null when this session has none.
+     *
+     * @param string $message
+     * @return RedirectResponse|null
+     */
+    private static function launchErrorRedirect($message) {
+        $launchReturn = self::launchErrorReturnUrl();
+        if ( $launchReturn === null ) {
+            return null;
+        }
+        $fragment = '';
+        $hash = strpos($launchReturn, '#');
+        if ( $hash !== false ) {
+            $fragment = substr($launchReturn, $hash);
+            $launchReturn = substr($launchReturn, 0, $hash);
+        }
+        $launchReturn .= (strpos($launchReturn, '?') !== false) ? '&' : '?';
+        $launchReturn .= 'lti_errormsg='.rawurlencode($message).$fragment;
+        return new RedirectResponse($launchReturn);
+    }
+
+    /**
+     * Home after a course URL refuses the logged-in user.
+     */
+    private static function deniedCourseHome() {
+        $home = self::appHomeUrl();
+        if ( $home !== '' ) {
+            return $home;
+        }
+        return Login::defaultHomeUrl();
+    }
+
     private static function switchFailedResponse($message) {
-        $status = ($message === 'You are not a member of that course.') ? 403 : 400;
-        return new Response($message, $status);
+        if ( $message === 'Must be logged in.' ) {
+            return self::loginRedirectForCourse();
+        }
+        if ( $message === 'You are not a member of that course.' ) {
+            $launch = self::launchErrorRedirect('You are not a member of that course.');
+            if ( $launch !== null ) {
+                return $launch;
+            }
+            U::flashError(htmlspecialchars(__('You are not a member of that course.'), ENT_QUOTES, 'UTF-8'));
+            return new RedirectResponse(U::addSession(self::deniedCourseHome()));
+        }
+        $status = 400;
+        $copy = self::courseSwitchErrorCopy($message);
+        $response = new Response(self::renderCourseSwitchError($copy), $status);
+        $response->headers->set('Content-Type', 'text/html; charset=UTF-8');
+        return $response;
+    }
+
+    /**
+     * @param string $message
+     * @return array{title: string, paragraphs: array<int, string>, home: string}
+     */
+    private static function courseSwitchErrorCopy($message) {
+        $home = self::appHomeUrl();
+        $text = is_string($message) && $message !== '' ? $message : __('Cannot open this course.');
+        return array(
+            'title' => __('Cannot open this course'),
+            'paragraphs' => array($text),
+            'home' => $home,
+        );
+    }
+
+    /**
+     * @param array{title: string, paragraphs: array<int, string>, home: string} $copy
+     */
+    private static function renderCourseSwitchError(array $copy) {
+        return self::renderLeavePage($copy);
     }
 }

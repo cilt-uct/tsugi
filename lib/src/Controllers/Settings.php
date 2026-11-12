@@ -3,6 +3,7 @@
 namespace Tsugi\Controllers;
 
 use Tsugi\Util\U;
+use Tsugi\Core\Guid;
 use Tsugi\Core\LTIX;
 use Tsugi\Core\Manifest;
 use Tsugi\Core\ContextImages;
@@ -18,6 +19,7 @@ use Tsugi\Lumos\Application;
 use Tsugi\Services\Settings\Expire;
 use Tsugi\Services\Settings\DynamicRegistration;
 use Tsugi\Services\Quiz1\ExportException;
+use Tsugi\Services\Cartridge\CourseCopy;
 use Tsugi\Services\Cartridge\Importer;
 use Tsugi\Services\Cartridge\ImportException;
 use Tsugi\Services\Cartridge\Package;
@@ -50,8 +52,9 @@ use Tsugi\Core\ReqScope;
  * a course context is not. Do not call requireAuth() on those pages.
  *
  * Course-mounted (/courses/{id}/settings): theme, navigation, images, badges,
+ * this course's configuration (course title, anonymous lessons),
  * add, edit, and delete an LTI 1.1 tool for this course, Common Cartridge import/export,
- * and delete course for the active manifest.
+ * copy from another owned course, and delete course for the active manifest.
  * Instructor + manifest only. Nested dispatch from
  * Courses keeps REQUEST_URI prefixed, so isCourseRoute() can tell the two
  * families apart. File-based $CFG->lessons sites keep using the site $CFG->theme.
@@ -67,6 +70,9 @@ class Settings extends Tool {
     const NAME = 'Settings';
     const REDIRECT = 'tsugi_controllers_settings';
 
+    /** Stored course title. lti_context.title is TEXT; this caps the form. */
+    const COURSE_TITLE_MAX = 255;
+
     /** Keep in sync with Controllers/util/upload/.user.ini and .htaccess */
     const CARTRIDGE_UPLOAD_MAX = '128M';
     const CARTRIDGE_UPLOAD_PATH = '/lib/src/Controllers/util/upload/';
@@ -79,10 +85,12 @@ class Settings extends Tool {
         self::mapPage($app, $prefix.'/export/download', 'exportDownload', false);
         self::mapPage($app, $prefix.'/export', 'export', true);
         self::mapPage($app, $prefix.'/import', 'import', true);
+        self::mapPage($app, $prefix.'/copy', 'copy', true);
         self::mapPage($app, $prefix.'/delete', 'deleteCourse', true);
         self::mapPage($app, $prefix.'/navigation', 'navigation', true);
         self::mapPage($app, $prefix.'/images', 'images', true);
         self::mapPage($app, $prefix.'/badges', 'badges', true);
+        self::mapPage($app, $prefix.'/configuration', 'configuration', true);
         self::mapPage($app, $prefix.'/tools/dynamic/status', 'toolsDynamicStatus', false);
         self::mapPage($app, $prefix.'/tools/dynamic/done', 'toolsDynamicDone', false);
         self::mapPage($app, $prefix.'/tools/dynamic', 'toolsDynamic', true);
@@ -311,9 +319,8 @@ class Settings extends Tool {
 
         $key_count = self::keyCount();
 
-        $sql = "SELECT count(C.context_id) AS count
+        $sql = "SELECT count(DISTINCT C.context_id) AS count
                 FROM {$CFG->dbprefix}lti_context AS C
-                LEFT JOIN {$CFG->dbprefix}lti_membership AS M ON C.context_id = M.context_id
                 WHERE ( C.key_id IN (select key_id from {$CFG->dbprefix}lti_key where user_id = :UID )
                  OR C.user_id = :UID )
                   AND (C.deleted IS NULL OR C.deleted = 0)";
@@ -361,17 +368,19 @@ This allows you to manage Personally Identifiable Information (PII) for your lea
 Use this tool to encrypt strings using LTIX encryption methods. Note: This tool only supports encryption - decryption is only available to administrators.
 </p>
 </li>
+<?php if ( CourseCopy::fileCourseAvailable() ) { ?>
 <li><p><a href="<?= htmlspecialchars($CFG->wwwroot, ENT_QUOTES, 'UTF-8') ?>/cc/" target="_blank" rel="noopener noreferrer" aria-label="Download a copy of this course as an IMS Common Cartridge (opens in new window)">Download a copy of this course as an IMS Common Cartridge</a>
 </br>
 You can import this content into an LMS like Sakai, Canvas, Blackboard, D2L or Moodle.
 </p>
 </li>
+<?php } ?>
 <?php if ( isset($CFG->google_classroom_secret) ) { ?>
 <li><p>(Experimental) <a href="<?= htmlspecialchars($this->pageUrl('gclass_login'), ENT_QUOTES, 'UTF-8') ?>" aria-label="Connect to Google Classroom">Connect to Google Classroom</a>
 <?php
-        $count = U::get($_SESSION,'gc_count');
-        if ( $count ) {
-            echo('(Connected to ' . (int)$count . ' classroom(s))');
+        $label = $this->classroomConnectionLabel();
+        if ( $label ) {
+            echo('('.htmlentities($label).')');
         } else {
             echo('(Not connected)');
         }
@@ -386,6 +395,10 @@ These
         }
         ?>
  can be used in Google Classroom courses.
+</p>
+<p><a href="<?= htmlspecialchars($CFG->wwwroot.'/gclass/courses', ENT_QUOTES, 'UTF-8') ?>" aria-label="Classroom courses">Classroom courses</a>
+<br/>
+Classes the connected Google account teaches, and the queue for ones already installed.
 </p>
 </li>
 <li>
@@ -518,7 +531,35 @@ can visit the administrator dashboard.
     {
         global $CFG;
         Login::setReturnUrl(self::settingsUrl());
-        return new RedirectResponse($CFG->wwwroot . '/gclass/login');
+        return new RedirectResponse($CFG->wwwroot . '/gclass/login?consent=1');
+    }
+
+    /**
+     * Account and class names for the settings line. Null when Classroom is not connected.
+     */
+    private function classroomConnectionLabel() {
+        try {
+            $token = \Tsugi\Google\GoogleClassroom::retrieve_instructor_token();
+            if ( ! $token ) {
+                return null;
+            }
+            $client = \Tsugi\Google\GoogleClassroom::getClient($token);
+            if ( ! $client ) {
+                return null;
+            }
+            $service = new \Google_Service_Classroom($client);
+            $courses = GoogleClassroom::teacherCourses($service);
+            $email = GoogleClassroom::googleEmail($service);
+            $_SESSION['gc_count'] = count($courses);
+            return GoogleClassroom::courseSummary($email, $courses);
+        } catch (\Throwable $e) {
+            $count = (int) U::get($_SESSION, 'gc_count');
+            if ( $count < 1 ) {
+                return null;
+            }
+            $word = $count === 1 ? 'class' : 'classes';
+            return 'Connected to '.$count.' '.$word;
+        }
     }
 
     public function recent(Request $request)
@@ -858,6 +899,21 @@ can visit the administrator dashboard.
         $query_fields = array(':UID' => $uid, ':UID2' => $uid);
         $fields = array("membership_id", "context_id", "user_id", "role_override", "created_at", "updated_at");
 
+        if ( isset($_POST['doUpdate']) ) {
+            $current_row = $PDOX->rowDie("SELECT context_id, user_id FROM {$tablename} WHERE membership_id = :MID",
+                array(':MID' => $_REQUEST['membership_id']));
+            $posted_context = array_key_exists('context_id', $_POST) ? (string) $_POST['context_id'] : null;
+            $posted_user = array_key_exists('user_id', $_POST) ? (string) $_POST['user_id'] : null;
+            if ( ! $current_row
+                || ($posted_context !== null && $posted_context !== (string) $current_row['context_id'])
+                || ($posted_user !== null && $posted_user !== (string) $current_row['user_id']) ) {
+                U::flashError("Cannot change context_id or user_id");
+                return new RedirectResponse($from_location);
+            }
+            $_POST['context_id'] = $current_row['context_id'];
+            $_POST['user_id'] = $current_row['user_id'];
+        }
+
         $row = CrudForm::handleUpdate($tablename, $fields, $where_clause,
             $query_fields, $allow_edit, $allow_delete);
 
@@ -1175,7 +1231,9 @@ of this type of data.
 
         $query_parms = array(":UID" => ReqScope::loggedInUserId());
         $searchfields = array("key_id", "key_key", "created_at", "updated_at", "user_id");
-        $sql = "SELECT key_id, key_key, secret, login_at, created_at, updated_at, user_id
+        $sql = "SELECT key_id, key_key, secret, lms_issuer, lms_client,
+                lms_oidc_auth, lms_keyset_url, lms_token_url,
+                login_at, created_at, updated_at, user_id
                 FROM {$CFG->dbprefix}lti_key
                 WHERE user_id = :UID";
 
@@ -1183,8 +1241,15 @@ of this type of data.
         $rows = $PDOX->allRowsDie($newsql, $query_parms);
         $newrows = array();
         foreach ( $rows as $row ) {
-            $newrow = $row;
+            $newrow = array();
+            $newrow['key_id'] = $row['key_id'];
+            $newrow['key_key'] = $row['key_key'];
+            $newrow['status'] = \Tsugi\Services\Admin\AdminService::keyTypeLabel($row);
             $newrow['secret'] = '****';
+            $newrow['login_at'] = $row['login_at'];
+            $newrow['created_at'] = $row['created_at'];
+            $newrow['updated_at'] = $row['updated_at'];
+            $newrow['user_id'] = $row['user_id'];
             $newrows[] = $newrow;
         }
 
@@ -1251,9 +1316,12 @@ you will need to request a key and have it approved.
             return new RedirectResponse($from_location);
         }
 
-        if ( U::get($_POST,'key_key') && U::get($_POST,'key_key') != $oldrow['key_key'] ) {
+        if ( isset($_POST['key_key']) && $_POST['key_key'] !== '' && $_POST['key_key'] != $oldrow['key_key'] ) {
             U::flashError("Cannot change key value");
             return new RedirectResponse($from_location);
+        }
+        if ( isset($_POST['doUpdate']) ) {
+            $_POST['key_key'] = $oldrow['key_key'];
         }
 
         if ( isset($_POST['deploy_key']) ) {
@@ -1271,7 +1339,7 @@ you will need to request a key and have it approved.
             return new RedirectResponse($from_location);
         }
 
-        $key = new \Tsugi\Core\Key();
+        $key = new \Tsugi\Core\Key(array('key_id' => (int) $row['key_id']));
         $key->id = $row['key_id'];
         $key->title = $row['key_title'];
         $launch = new \Tsugi\Core\Launch();
@@ -1334,7 +1402,6 @@ $(document).ready( function() {
             '</p>'
         );
         document.getElementById("key_key").readOnly = true;
-        document.getElementById("key_key").disabled = true;
 });
 </script>
 <?php
@@ -1402,9 +1469,10 @@ $(document).ready( function() {
                 $key_sha256 = lti_sha256($oauth_consumer_key);
                 $PDOX->queryDie(
                     "INSERT INTO {$CFG->dbprefix}lti_key
-                        (key_sha256, key_key, secret, user_id, created_at, updated_at)
-                        VALUES ( :k256, :key, :secret, :uid, NOW(), NOW() )",
+                        (guid, key_sha256, key_key, secret, user_id, created_at, updated_at)
+                        VALUES ( UNHEX(:guid), :k256, :key, :secret, :uid, NOW(), NOW() )",
                     array(
+                    ':guid' => Guid::uuid7(),
                     'k256' => $key_sha256,
                         'key' => $oauth_consumer_key,
                         'secret' => $oauth_secret,
@@ -1566,7 +1634,7 @@ connect to Google Classroom and install tools.
         $from_location = $this->pageUrl('key/requests');
         $allow_delete = true;
         $allow_edit = true;
-        $fields = array("request_id", "title", "notes", "admin", "state", "lti", "created_at", "updated_at");
+        $fields = array("request_id", "title", "notes", "created_at", "updated_at");
         $where_clause = "user_id = :UID";
         $query_fields = array();
         $query_fields[":UID"] = ReqScope::loggedInUserId();
@@ -2583,7 +2651,8 @@ re-check your login status.
                         $request->getUri(),
                         $accepted['role'],
                         $chosen['title'],
-                        $include_lineitems
+                        $include_lineitems,
+                        isset($chosen['custom']) && is_array($chosen['custom']) ? $chosen['custom'] : array()
                     );
                 }
             }
@@ -2755,6 +2824,14 @@ re-check your login status.
         $nav_rows = CourseNav::editorRows($doc);
         $save_url = $navigation_url;
         $setup_tab = 'navigation';
+        $steps_on = true;
+        $steps_doc = Manifest::currentDocument();
+        if ( is_array($steps_doc) && isset($steps_doc['json']) ) {
+            $steps_decoded = json_decode($steps_doc['json'], true);
+            if ( is_array($steps_decoded) && array_key_exists('steps', $steps_decoded) ) {
+                $steps_on = LessonsService::stepsFlag($steps_decoded['steps']);
+            }
+        }
 
         $OUTPUT->header();
         $OUTPUT->bodyStart();
@@ -2787,7 +2864,6 @@ re-check your login status.
         if ( $csrf ) {
             return $csrf;
         }
-
         $doc = Manifest::currentDocument();
         if ( ! $doc ) {
             U::flashError(__('Cannot load course manifest.'));
@@ -2799,8 +2875,18 @@ re-check your login status.
             return new RedirectResponse($navigation_url);
         }
 
-        $nav = CourseNav::fromPost($_POST);
+        if ( array_key_exists('steps', $_POST) ) {
+            $decoded['steps'] = ((string) U::get($_POST, 'steps', '0')) === '1';
+        }
+
         $context_id = ReqScope::currentContextId();
+        $nav = CourseNav::fromPost($_POST);
+        if ( ! Courses::isGoogleLoginSession() ) {
+            $nav = CourseNav::retainSiteAccountItems(
+                Manifest::navigationDocumentForContext($context_id),
+                $nav
+            );
+        }
         try {
             Manifest::saveNewVersion(
                 $context_id,
@@ -2967,6 +3053,200 @@ re-check your login status.
     }
 
     /**
+     * This course's title and anonymous-lessons switch.
+     */
+    public function configuration(Request $request)
+    {
+        if ( ! self::isCourseRoute() ) {
+            return new RedirectResponse($this->pageUrl());
+        }
+        if ( $request->isMethod('POST') ) {
+            return $this->configurationPost();
+        }
+
+        global $OUTPUT;
+
+        $setup_url = U::addSession($this->toolHome(self::ROUTE));
+        $navigation_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'navigation'));
+        $export_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'export'));
+        $import_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'import'));
+        $images_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'images'));
+        $badges_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'badges'));
+        $delete_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'delete'));
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $configuration_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'configuration'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+
+        $context_id = self::settingsContextId();
+        $table_ok = $context_id > 0 && self::anonymousLessonsColumnReady();
+        $anonymous_lessons = $table_ok && Courses::contextAllowsAnonymousLessons($context_id);
+        $course_title = self::courseHeadingTitle();
+        if ( $course_title === __('Settings') ) {
+            $course_title = '';
+        }
+        $save_url = $configuration_url;
+        $setup_tab = 'configuration';
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <?php include __DIR__ . '/templates/Settings/tabs.inc.php'; ?>
+            <div style="margin-top:10px;">
+            <?php include __DIR__ . '/templates/Settings/configuration.inc.php'; ?>
+            </div>
+        </main>
+        <?php
+        $OUTPUT->footer();
+        return '';
+    }
+
+    /**
+     * Trim a posted course title. Null when blank. False when longer than COURSE_TITLE_MAX.
+     *
+     * @param mixed $raw
+     * @return string|null|false
+     */
+    public static function normalizeCourseTitle($raw) {
+        if ( ! is_string($raw) ) {
+            return null;
+        }
+        $title = trim($raw);
+        if ( $title === '' ) {
+            return null;
+        }
+        $len = function_exists('mb_strlen') ? mb_strlen($title) : strlen($title);
+        if ( $len > self::COURSE_TITLE_MAX ) {
+            return false;
+        }
+        return $title;
+    }
+
+    /**
+     * Save this course's title or its anonymous lessons flag.
+     */
+    private function configurationPost()
+    {
+        $configuration_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'configuration'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+        $csrf = self::requireCsrf($configuration_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
+        if ( array_key_exists('course_title', $_POST) ) {
+            return $this->configurationTitlePost($configuration_url);
+        }
+        $context_id = self::settingsContextId();
+        if ( $context_id < 1 || ! self::anonymousLessonsColumnReady() ) {
+            U::flashError(__('Course column is missing. Run Upgrade Database.'));
+            return new RedirectResponse($configuration_url);
+        }
+
+        $on = U::get($_POST, 'anonymous_lessons') ? true : false;
+        if ( ! Courses::setContextAnonymousLessons($context_id, $on) ) {
+            U::flashError(__('Could not save course configuration.'));
+            return new RedirectResponse($configuration_url);
+        }
+        U::flashSuccess($on
+            ? __('Anonymous lesson viewing is on for this course.')
+            : __('Anonymous lesson viewing is off for this course.'));
+        return new RedirectResponse($configuration_url);
+    }
+
+    /**
+     * Save the course title onto a new manifest version and lti_context.title.
+     *
+     * @param string $configuration_url
+     * @return RedirectResponse
+     */
+    private function configurationTitlePost($configuration_url)
+    {
+        $title = self::normalizeCourseTitle(U::get($_POST, 'course_title'));
+        if ( $title === null ) {
+            U::flashError(__('Course title is required.'));
+            return new RedirectResponse($configuration_url);
+        }
+        if ( $title === false ) {
+            U::flashError(sprintf(__('Course title must be %d characters or fewer.'), self::COURSE_TITLE_MAX));
+            return new RedirectResponse($configuration_url);
+        }
+
+        $context_id = self::settingsContextId();
+        if ( $context_id < 1 ) {
+            U::flashError(__('Cannot load course manifest.'));
+            return new RedirectResponse($configuration_url);
+        }
+
+        $doc = Manifest::currentDocument();
+        if ( ! $doc ) {
+            U::flashError(__('Cannot load course manifest.'));
+            return new RedirectResponse($configuration_url);
+        }
+        $decoded = json_decode($doc['json'], true);
+        if ( ! is_array($decoded) ) {
+            U::flashError(__('Invalid manifest JSON.'));
+            return new RedirectResponse($configuration_url);
+        }
+
+        $current = '';
+        if ( isset($decoded['title']) && is_string($decoded['title']) ) {
+            $current = trim($decoded['title']);
+        }
+        try {
+            if ( $current === $title ) {
+                Manifest::syncContextTitle($context_id, $title);
+            } else {
+                $decoded['title'] = $title;
+                Manifest::saveNewVersion(
+                    $context_id,
+                    $decoded,
+                    ReqScope::loggedInUserId(),
+                    'Update course title'
+                );
+            }
+        } catch ( \InvalidArgumentException $e ) {
+            U::flashError($e->getMessage());
+            return new RedirectResponse($configuration_url);
+        } catch ( \Exception $e ) {
+            U::flashError(__('Could not save course title.'));
+            return new RedirectResponse($configuration_url);
+        }
+
+        U::flashSuccess(__('Course title saved.'));
+        return new RedirectResponse($configuration_url);
+    }
+
+    /**
+     * Course the instructor is editing.
+     */
+    private static function settingsContextId() {
+        $cid = ReqScope::currentContextId();
+        if ( $cid > 0 ) {
+            return $cid;
+        }
+        return ReqScope::currentContextIdLegacy();
+    }
+
+    /**
+     * True when lti_context.anonymous_lessons exists.
+     */
+    private static function anonymousLessonsColumnReady() {
+        global $CFG, $PDOX;
+        if ( $PDOX === null || $PDOX === false ) {
+            $PDOX = LTIX::getConnection();
+        }
+        return $PDOX->columnExists('anonymous_lessons', $CFG->dbprefix.'lti_context');
+    }
+
+    /**
      * Course-mounted Settings: author the badges array on this manifest.
      */
     public function badges(Request $request)
@@ -3111,6 +3391,153 @@ re-check your login status.
 
         U::flashSuccess(__('Badges saved.'));
         return new RedirectResponse($badges_url);
+    }
+
+    /**
+     * Copy into this course: export another course to a cartridge, then import it.
+     */
+    public function copy(Request $request)
+    {
+        if ( ! self::isCourseRoute() ) {
+            return new RedirectResponse($this->pageUrl());
+        }
+        if ( $request->isMethod('POST') ) {
+            return $this->copyPost();
+        }
+
+        global $OUTPUT;
+
+        $setup_url = U::addSession($this->toolHome(self::ROUTE));
+        $export_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'export'));
+        $import_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'import'));
+        $copy_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'copy'));
+        $navigation_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'navigation'));
+        $images_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'images'));
+        $delete_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'delete'));
+        $tools_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'tools'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+
+        $setup_tab = 'copy';
+        $form_url = $copy_url;
+        $cc_is_copy = true;
+        $pending_token = '';
+        $pending_name = '';
+        $pending_title = '';
+        $pending_modules = array();
+        $copy_sources = array();
+        $cid = ReqScope::currentContextId();
+        $uid = ReqScope::loggedInUserId();
+        $pending = Pending::load($cid, $uid, CourseCopy::SESSION_KEY);
+        if ( $pending ) {
+            try {
+                $pkg = Package::open($pending['path']);
+                try {
+                    $pending_modules = $pkg->describeModules();
+                    $pending_title = $pkg->title;
+                } finally {
+                    $pkg->close();
+                }
+                $pending_token = $pending['token'];
+                $pending_name = $pending['name'];
+            } catch ( ImportException $e ) {
+                Pending::clear(CourseCopy::SESSION_KEY);
+                U::flashError($e->getMessage());
+            }
+        }
+        if ( $pending_token === '' ) {
+            $copy_sources = CourseCopy::sources($uid, $cid);
+        }
+
+        $OUTPUT->header();
+        $OUTPUT->bodyStart();
+        $OUTPUT->topNav();
+        $OUTPUT->flashMessages();
+        ?>
+        <main class="container" id="main-content">
+            <?php include __DIR__ . '/templates/Settings/tabs.inc.php'; ?>
+            <div style="margin-top:10px;">
+            <?php
+            if ( $pending_token !== '' ) {
+                include __DIR__ . '/templates/Settings/import.inc.php';
+            } else {
+                include __DIR__ . '/templates/Settings/copy.inc.php';
+            }
+            ?>
+            </div>
+        </main>
+        <?php
+        if ( $pending_token !== '' ) {
+            $OUTPUT->footerStart();
+            $this->echoImportPendingScript(true);
+            $OUTPUT->footerEnd();
+        } else if ( count($copy_sources) > 0 ) {
+            $OUTPUT->footerStart();
+            ?>
+<script>
+$('#copy-source-form').on('submit', function(){
+    var btn = $(this).find('[type="submit"]');
+    btn.prop('disabled', true).text(<?= json_encode(__('Preparing copy...')) ?>);
+});
+</script>
+            <?php
+            $OUTPUT->footerEnd();
+        } else {
+            $OUTPUT->footer();
+        }
+        return '';
+    }
+
+    /**
+     * Export the chosen course into the copy stash, or run the import on that stash.
+     *
+     * @return RedirectResponse
+     */
+    private function copyPost()
+    {
+        $copy_url = U::addSession(self::joinToolHome($this->toolHome(self::ROUTE), 'copy'));
+        $gate = $this->courseGate();
+        if ( $gate ) {
+            return $gate;
+        }
+        $csrf = self::requireCsrf($copy_url);
+        if ( $csrf ) {
+            return $csrf;
+        }
+
+        $action = U::get($_POST, 'cc_import_action', '');
+        if ( is_string($action) && $action !== '' ) {
+            return $this->importPendingPost($copy_url, $action, CourseCopy::SESSION_KEY);
+        }
+
+        $uid = ReqScope::loggedInUserId();
+        $cid = ReqScope::currentContextId();
+        $dest = tempnam(sys_get_temp_dir(), Pending::FILE_PREFIX);
+        if ( $dest === false ) {
+            U::flashError(__('Could not create a temporary file for the cartridge.'));
+            return new RedirectResponse($copy_url);
+        }
+        @set_time_limit(120);
+        try {
+            $name = CourseCopy::exportTo(U::get($_POST, 'cc_copy_source', ''), $dest, $uid, $cid);
+            Pending::stash($dest, $name, $cid, $uid, CourseCopy::SESSION_KEY);
+        } catch ( ImportException $e ) {
+            @unlink($dest);
+            U::flashError($e->getMessage());
+            return new RedirectResponse($copy_url);
+        } catch ( ExportException $e ) {
+            @unlink($dest);
+            U::flashError($e->getMessage());
+            return new RedirectResponse($copy_url);
+        } catch ( \Throwable $e ) {
+            @unlink($dest);
+            error_log('Course copy export failed: '.$e->getMessage());
+            U::flashError(__('Could not copy that course.'));
+            return new RedirectResponse($copy_url);
+        }
+        return new RedirectResponse($copy_url);
     }
 
     /**
@@ -3282,137 +3709,7 @@ function goToCanvas(anchors) {
         <?php
         if ( $pending_token !== '' ) {
             $OUTPUT->footerStart();
-            $import_site_domain = self::importSiteDomain();
-            $import_course_title = self::importReplaceCourseTitle();
-            $import_member_count = self::importReplaceMemberCount();
-            $import_replace_confirm = sprintf(
-                __('WARNING: This permanently deletes this course\'s pages, files, quizzes, resource links, and ALL GRADEBOOK RESULTS on %s in course "%s" (%s members), then imports. Student scores cannot be recovered. Continue?'),
-                $import_site_domain !== '' ? $import_site_domain : __('this site'),
-                $import_course_title !== '' ? $import_course_title : __('this course'),
-                $import_member_count === null ? __('unknown') : number_format($import_member_count)
-            );
-            ?>
-<script>
-function importReplaceMode(){
-    var v = $('input[name="cc_replace_choice"]:checked').val();
-    return v === 'replace' ? 'replace' : 'add';
-}
-function typedImportDomain(){
-    var raw = $.trim($('#cc_replace_domain_input').val() || '');
-    raw = raw.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
-    raw = raw.split('/')[0];
-    raw = raw.split(':')[0];
-    return raw.toLowerCase();
-}
-function typedImportTitle(){
-    var raw = $.trim($('#cc_replace_title_input').val() || '');
-    raw = raw.replace(/\s+/g, ' ');
-    return raw.toLowerCase();
-}
-function typedImportMembers(){
-    var raw = $.trim($('#cc_replace_members_input').val() || '');
-    raw = raw.replace(/[,\s]/g, '');
-    if ( ! /^\d+$/.test(raw) ) {
-        return null;
-    }
-    return parseInt(raw, 10);
-}
-function importDomainMatches(){
-    var expected = <?= json_encode($import_site_domain) ?>;
-    return expected !== '' && typedImportDomain() === expected;
-}
-function importTitleMatches(){
-    var expected = <?= json_encode(self::normalizeImportTitle($import_course_title)) ?>;
-    return expected !== '' && typedImportTitle() === expected;
-}
-function importMembersMatch(){
-    var expected = <?= json_encode($import_member_count) ?>;
-    if ( expected === null || typeof expected !== 'number' ) {
-        return false;
-    }
-    return typedImportMembers() === expected;
-}
-function importConfirmMatches(){
-    return importDomainMatches() && importTitleMatches() && importMembersMatch();
-}
-function syncImportReplace(){
-    var replace = importReplaceMode() === 'replace';
-    var match = importConfirmMatches();
-    $('input[name="cc_replace"]').val(replace && match ? 'replace' : 'add');
-    $('input[name="cc_replace_domain"]').val($('#cc_replace_domain_input').val() || '');
-    $('input[name="cc_replace_title"]').val($('#cc_replace_title_input').val() || '');
-    $('input[name="cc_replace_members"]').val($('#cc_replace_members_input').val() || '');
-    if ( replace ) {
-        $('#import-replace-warning').show();
-        $('.import-submit').removeClass('btn-primary').addClass('btn-danger');
-    } else {
-        $('#import-replace-warning').hide();
-        $('.import-submit').removeClass('btn-danger').addClass('btn-primary');
-    }
-    if ( importAlreadyBusy() ) {
-        return;
-    }
-    $('.import-submit').prop('disabled', replace && ! match);
-}
-function importAlreadyBusy(){
-    return $('.import-submit[aria-busy="true"]').length > 0;
-}
-function startImportBusy(btn){
-    var label = <?= json_encode(__('Importing...')) ?>;
-    $('.import-submit').prop('disabled', true).attr('aria-busy', 'true');
-    if ( ! btn ) {
-        btn = $('.import-submit').get(0);
-    }
-    if ( btn ) {
-        $(btn).html('<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> '+label);
-    }
-}
-function confirmImportReplace(btn){
-    if ( importAlreadyBusy() ) {
-        return false;
-    }
-    syncImportReplace();
-    if ( importReplaceMode() === 'replace' ) {
-        if ( ! importDomainMatches() || ! importTitleMatches() || ! importMembersMatch() ) {
-            alert(<?= json_encode(__('Type this site\'s domain, this course\'s title, and the number of members to confirm deleting this course\'s content.')) ?>);
-            return false;
-        }
-        if ( ! confirm(<?= json_encode($import_replace_confirm) ?>) ) {
-            return false;
-        }
-    }
-    startImportBusy(btn);
-    return true;
-}
-function importSelectedModules(btn){
-    var keys = [];
-    $('#void input.import-module-key[type="checkbox"]').each(function(){
-         if ( ! $(this).is(':checked') ) return;
-         var v = $(this).val();
-         if ( v ) {
-            keys.push(v);
-         }
-    });
-    $("#import_modules_real").val(keys.join(','));
-    if ( keys.length < 1 ) {
-        alert(<?= json_encode(__('Please select at least one module')) ?>);
-        return false;
-    }
-    if ( ! confirmImportReplace(btn) ) {
-        return false;
-    }
-    $("#import-selected-real").submit();
-    return false;
-}
-$(function(){
-    $('input[name="cc_replace_choice"]').on('change', syncImportReplace);
-    $('#cc_replace_domain_input').on('input', syncImportReplace);
-    $('#cc_replace_title_input').on('input', syncImportReplace);
-    $('#cc_replace_members_input').on('input', syncImportReplace);
-    syncImportReplace();
-});
-</script>
-            <?php
+            $this->echoImportPendingScript(false);
             $OUTPUT->footerEnd();
         } else {
             $OUTPUT->footer();
@@ -3613,6 +3910,10 @@ $(function(){
         if ( $pending !== null ) {
             Pending::clear();
         }
+        $copyPending = Pending::load($context_id, $user_id, CourseCopy::SESSION_KEY);
+        if ( $copyPending !== null ) {
+            Pending::clear(CourseCopy::SESSION_KEY);
+        }
         Courses::releaseContextAfterDelete($context_id);
 
         U::flashSuccess(__('Course deleted.'));
@@ -3665,6 +3966,26 @@ $(function(){
         global $CFG;
         $cid = (int) $contextId;
         return rtrim((string) $CFG->wwwroot, '/').'/courses/'.$cid.self::ROUTE.'/import';
+    }
+
+    /**
+     * Course Copy tab URL derived from the Export tab URL (same session query).
+     *
+     * @param mixed $export_url
+     * @return string
+     */
+    public static function copyTabUrl($export_url)
+    {
+        if ( ! is_string($export_url) || $export_url === '' ) {
+            return '';
+        }
+        $query = strpos($export_url, '?');
+        $path = $query === false ? $export_url : substr($export_url, 0, $query);
+        $tail = $query === false ? '' : substr($export_url, $query);
+        if ( substr($path, -7) === '/export' ) {
+            return substr($path, 0, -7).'/copy'.$tail;
+        }
+        return $export_url;
     }
 
     /**
@@ -3893,28 +4214,55 @@ $(function(){
     }
 
     /**
-     * Confirm, subset, or cancel a stashed cartridge (second request after upload).
+     * Replace-confirmation script shared by Import and Course Copy.
      *
+     * @param bool $copyMode
+     */
+    private function echoImportPendingScript($copyMode) {
+        $import_site_domain = self::importSiteDomain();
+        $import_course_title = self::importReplaceCourseTitle();
+        $import_course_title_norm = self::normalizeImportTitle($import_course_title);
+        $import_member_count = self::importReplaceMemberCount();
+        $import_busy_label = $copyMode ? __('Copying...') : __('Importing...');
+        $import_replace_confirm = sprintf(
+            $copyMode
+                ? __('WARNING: This permanently deletes this course\'s pages, files, quizzes, resource links, and ALL GRADEBOOK RESULTS on %s in course "%s" (%s members), then copies. Student scores cannot be recovered. Continue?')
+                : __('WARNING: This permanently deletes this course\'s pages, files, quizzes, resource links, and ALL GRADEBOOK RESULTS on %s in course "%s" (%s members), then imports. Student scores cannot be recovered. Continue?'),
+            $import_site_domain !== '' ? $import_site_domain : __('this site'),
+            $import_course_title !== '' ? $import_course_title : __('this course'),
+            $import_member_count === null ? __('unknown') : number_format($import_member_count)
+        );
+        include __DIR__ . '/templates/Settings/import_pending_js.inc.php';
+    }
+
+    /**
+     * Confirm, subset, or cancel a stashed cartridge (second request after upload or copy).
+     *
+     * @param string|null $sessionKey Pending bucket. Course copy uses its own key.
      * @return RedirectResponse
      */
-    private function importPendingPost($import_url, $action)
+    private function importPendingPost($import_url, $action, $sessionKey = null)
     {
+        $isCopy = $sessionKey === CourseCopy::SESSION_KEY;
         $token = U::get($_POST, 'cc_pending', '');
         $cid = ReqScope::currentContextId();
         $uid = ReqScope::loggedInUserId();
-        if ( ! Pending::matches($cid, $uid, $token) ) {
-            U::flashError(__('The uploaded cartridge expired. Please upload it again.'));
+        $expired = $isCopy
+            ? __('The course copy expired. Please choose the course again.')
+            : __('The uploaded cartridge expired. Please upload it again.');
+        if ( ! Pending::matches($cid, $uid, $token, $sessionKey) ) {
+            U::flashError($expired);
             return new RedirectResponse($import_url);
         }
-        $pending = Pending::load($cid, $uid);
+        $pending = Pending::load($cid, $uid, $sessionKey);
         if ( $pending === null ) {
-            U::flashError(__('The uploaded cartridge expired. Please upload it again.'));
+            U::flashError($expired);
             return new RedirectResponse($import_url);
         }
 
         if ( $action === 'cancel' ) {
-            Pending::clear();
-            U::flashSuccess(__('Upload cancelled.'));
+            Pending::clear($sessionKey);
+            U::flashSuccess($isCopy ? __('Copy cancelled.') : __('Upload cancelled.'));
             return new RedirectResponse($import_url);
         }
 
@@ -3943,7 +4291,7 @@ $(function(){
                     $pkg->close();
                 }
             } catch ( ImportException $e ) {
-                Pending::clear();
+                Pending::clear($sessionKey);
                 U::flashError($e->getMessage());
                 return new RedirectResponse($import_url);
             }
@@ -3965,11 +4313,11 @@ $(function(){
             U::flashError($e->getMessage());
             return new RedirectResponse($import_url);
         } catch ( \Throwable $e ) {
-            U::flashError(__('Import failed: ').$e->getMessage());
+            U::flashError(($isCopy ? __('Copy failed: ') : __('Import failed: ')).$e->getMessage());
             return new RedirectResponse($import_url);
         }
         $name = $pending['name'];
-        Pending::clear();
+        Pending::clear($sessionKey);
 
         $created = (int) ($row['created_count'] ?? 0);
         $dup = (int) ($row['duplicate_count'] ?? 0);
@@ -3977,7 +4325,9 @@ $(function(){
         $errn = (int) ($row['error_count'] ?? 0);
         $iid = (int) ($row['import_id'] ?? 0);
         $msg = sprintf(
-            __('Imported %1$s: %2$d created, %3$d duplicates, %4$d copies, %5$d errors (import #%6$d).'),
+            $isCopy
+                ? __('Copied %1$s: %2$d created, %3$d duplicates, %4$d copies, %5$d errors (import #%6$d).')
+                : __('Imported %1$s: %2$d created, %3$d duplicates, %4$d copies, %5$d errors (import #%6$d).'),
             $name !== '' ? $name : 'cartridge',
             $created,
             $dup,
@@ -4003,15 +4353,18 @@ $(function(){
     public static function courseHeadingTitle() {
         global $CFG, $PDOX;
 
-        $title = U::get($_SESSION, 'context_title');
-        if ( is_string($title) && trim($title) !== '' ) {
-            return trim($title);
-        }
         $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
-        if ( isset($_SESSION[$ltiKey]['context_title']) ) {
-            $fromLti = $_SESSION[$ltiKey]['context_title'];
-            if ( is_string($fromLti) && trim($fromLti) !== '' ) {
-                return trim($fromLti);
+        $lti = (isset($_SESSION[$ltiKey]) && is_array($_SESSION[$ltiKey])) ? $_SESSION[$ltiKey] : null;
+        if ( LTIX::launchContextApplies($lti) ) {
+            $title = U::get($_SESSION, 'context_title');
+            if ( is_string($title) && trim($title) !== '' ) {
+                return trim($title);
+            }
+            if ( is_array($lti) && isset($lti['context_title']) ) {
+                $fromLti = $lti['context_title'];
+                if ( is_string($fromLti) && trim($fromLti) !== '' ) {
+                    return trim($fromLti);
+                }
             }
         }
         $context_id = ReqScope::currentContextId();

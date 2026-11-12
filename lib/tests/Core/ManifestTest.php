@@ -57,6 +57,20 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
         $this->assertSame(array(), $doc['modules']);
     }
 
+    public function testAnonymousLessonViewDoesNotUseTheSessionManifest()
+    {
+        $_SESSION['id'] = 3;
+        $_SESSION['context_id'] = 4;
+        $_SESSION['manifest_id'] = 99;
+        \Tsugi\Core\ReqScope::reset();
+        \Tsugi\Core\ReqScope::beginAnonymousLessonView(15);
+        $this->assertSame(0, Manifest::resolvedId());
+        $this->assertSame(99, $_SESSION['manifest_id']);
+        $this->assertArrayNotHasKey('manifest_id', $_SESSION['lti'] ?? array());
+        \Tsugi\Core\ReqScope::endAnonymousLessonView();
+        \Tsugi\Core\ReqScope::reset();
+    }
+
     public function testStarterBlankTitle()
     {
         $doc = Manifest::starter('  ');
@@ -114,6 +128,9 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
     public function testResolvedIdUsesSession()
     {
         $this->assertSame(0, Manifest::resolvedId());
+        $_SESSION['id'] = 1;
+        $_SESSION['context_id'] = 42;
+        \Tsugi\Core\ReqScope::resetIdentity();
         Manifest::rememberInSession(12);
         $this->assertSame(12, Manifest::resolvedId());
     }
@@ -164,6 +181,9 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
             'title' => 'Electric Course',
         );
         Manifest::setMCache($fake);
+        $_SESSION['id'] = 1;
+        $_SESSION['context_id'] = 42;
+        \Tsugi\Core\ReqScope::resetIdentity();
         Manifest::rememberInSession(77);
 
         $this->assertSame($json, Manifest::loadJson(77));
@@ -191,6 +211,9 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
         $fake->enabled = true;
         $fake->store[Manifest::cacheKey(99)] = $json;
         Manifest::setMCache($fake);
+        $_SESSION['id'] = 1;
+        $_SESSION['context_id'] = 42;
+        \Tsugi\Core\ReqScope::resetIdentity();
         Manifest::rememberInSession(99);
 
         $l = Manifest::currentLessons();
@@ -207,6 +230,23 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
         $l = Manifest::currentLessons();
         $this->assertInstanceOf(\Tsugi\Services\Lessons\LessonsService::class, $l);
         $this->assertSame('Python for Everybody (PY4E)', $l->lessons->title);
+    }
+
+    public function testResolvedIdClearsManifestWhenContextIsZero()
+    {
+        $previous = $_SERVER['REQUEST_URI'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/lessons';
+        Manifest::rememberInSession(99);
+
+        $this->assertSame(99, Manifest::activeId());
+        $this->assertSame(0, Manifest::resolvedId());
+        $this->assertSame(0, Manifest::activeId());
+
+        if ( $previous === null ) {
+            unset($_SERVER['REQUEST_URI']);
+        } else {
+            $_SERVER['REQUEST_URI'] = $previous;
+        }
     }
 
     public function testValidateJsonAcceptsStarter()
@@ -495,6 +535,62 @@ class ManifestTest extends \PHPUnit\Framework\TestCase
             ),
         );
         return $doc;
+    }
+
+    public function testInvalidSaveDoesNotReachTheDatabase()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Manifest::saveNewVersion(1, array('title' => 'No modules'));
+    }
+
+    public function testCourseKeepsTenNewestManifests()
+    {
+        $this->assertSame(10, Manifest::RETAIN_VERSIONS);
+        $rows = array();
+        for ( $version = 1; $version <= 12; $version++ ) {
+            $rows[] = array('manifest_id' => 100 + $version, 'version' => (string) $version);
+        }
+        $drop = Manifest::idsPastRetention($rows, 112);
+        sort($drop);
+        $this->assertSame(array(101, 102), $drop);
+    }
+
+    public function testRetentionKeepsAShortHistory()
+    {
+        $rows = array();
+        for ( $version = 1; $version <= 10; $version++ ) {
+            $rows[] = array('manifest_id' => $version, 'version' => $version);
+        }
+        $this->assertSame(array(), Manifest::idsPastRetention($rows, 10));
+        array_pop($rows);
+        $this->assertSame(array(), Manifest::idsPastRetention($rows, 9));
+        $this->assertSame(array(), Manifest::idsPastRetention(array(), 1));
+    }
+
+    public function testRetentionNeverDropsTheSavedManifest()
+    {
+        $rows = array();
+        for ( $version = 1; $version <= 12; $version++ ) {
+            $rows[] = array('manifest_id' => $version, 'version' => $version);
+        }
+        $drop = Manifest::idsPastRetention($rows, 1);
+        sort($drop);
+        $this->assertSame(array(2), $drop);
+        $this->assertNotContains(1, $drop);
+    }
+
+    public function testRetentionOrdersByVersionNotInputOrder()
+    {
+        $rows = array(
+            array('manifest_id' => 9, 'version' => 1),
+            array('manifest_id' => 3, 'version' => 6),
+            array('manifest_id' => 8, 'version' => 2),
+            array('manifest_id' => 4, 'version' => 5),
+            array('manifest_id' => 7, 'version' => 3),
+            array('manifest_id' => 5, 'version' => 4),
+        );
+        $drop = Manifest::idsPastRetention($rows, 3, 5);
+        $this->assertSame(array(9), $drop);
     }
 
     public function testNormalizeShortTitle()

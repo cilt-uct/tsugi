@@ -78,6 +78,13 @@ class CatalogRepository {
     }
 
     /**
+     * Numbered rows first. 0 means unset and sorts after every other order.
+     */
+    private static function catalogOrderSql() {
+        return 'CASE WHEN CAT.sort_order = 0 THEN 1 ELSE 0 END ASC, CAT.sort_order ASC, CAT.title ASC, CAT.catalog_id ASC';
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public static function listAdmin() {
@@ -93,7 +100,7 @@ class CatalogRepository {
              FROM {$p}course_catalog AS CAT
              LEFT JOIN {$p}lti_context AS C ON CAT.context_id = C.context_id
              LEFT JOIN {$p}manifest AS MF ON C.manifest_id = MF.manifest_id
-             ORDER BY CAT.sort_order ASC, CAT.title ASC, CAT.catalog_id ASC"
+             ORDER BY ".self::catalogOrderSql()
         );
         return is_array($rows) ? $rows : array();
     }
@@ -124,6 +131,7 @@ class CatalogRepository {
                     CAT.short_description, CAT.description, CAT.published, CAT.sort_order, CAT.new_window,
                     CAT.hero_bytes, CAT.hero_updated_at,
                     COALESCE(NULLIF(MF.title, ''), C.title) AS context_title,
+                    C.anonymous_lessons,
                     CI.hero_bytes AS context_hero_bytes, CI.hero_updated_at AS context_hero_updated_at,
                     CI.icon_bytes, CI.icon_updated_at,
                     {$memberSelect}
@@ -134,7 +142,7 @@ class CatalogRepository {
              {$memberJoin}
              WHERE CAT.published = 1
                AND (CAT.context_id IS NULL OR C.deleted IS NULL OR C.deleted = 0)
-             ORDER BY CAT.sort_order ASC, CAT.title ASC, CAT.catalog_id ASC",
+             ORDER BY ".self::catalogOrderSql(),
             $params
         );
         if ( ! is_array($rows) ) {
@@ -180,6 +188,7 @@ class CatalogRepository {
                     CAT.new_window, CAT.hero_bytes, CAT.hero_updated_at, CAT.user_id,
                     CAT.created_at, CAT.updated_at,
                     COALESCE(NULLIF(MF.title, ''), C.title) AS context_title,
+                    C.anonymous_lessons,
                     CI.hero_bytes AS context_hero_bytes, CI.hero_updated_at AS context_hero_updated_at,
                     CI.icon_bytes, CI.icon_updated_at,
                     {$memberSelect}
@@ -196,6 +205,43 @@ class CatalogRepository {
         }
         $out = self::withDisplayUrls(array($row));
         return $out[0] ?? null;
+    }
+
+    /**
+     * Published catalog id for a course, or 0 when it is not listed.
+     *
+     * @param mixed $context_id
+     * @return int
+     */
+    public static function publishedIdForContext($context_id) {
+        global $CFG, $PDOX;
+
+        $cid = (int) $context_id;
+        if ( $cid < 1 || ! isset($PDOX) || $PDOX === false ) {
+            return 0;
+        }
+        try {
+            LTIX::getConnection();
+        } catch ( \Throwable $e ) {
+            return 0;
+        }
+        $stmt = $PDOX->queryReturnError(
+            "SELECT catalog_id FROM {$CFG->dbprefix}course_catalog
+             WHERE context_id = :CID AND published = 1
+             ORDER BY catalog_id
+             LIMIT 1",
+            array(':CID' => $cid),
+            false
+        );
+        if ( ! is_object($stmt) || empty($stmt->success) ) {
+            return 0;
+        }
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+        if ( ! is_array($row) ) {
+            return 0;
+        }
+        return (int) ($row['catalog_id'] ?? 0);
     }
 
     /**
@@ -580,6 +626,7 @@ class CatalogRepository {
                 ? self::iconUrl($id, is_string($iconAt) ? $iconAt : null)
                 : '';
             $row['enrolled'] = ! empty($row['membership_id']);
+            $row['preview_url'] = self::previewUrl($row);
             if ( array_key_exists('description', $row) ) {
                 $row['has_detail'] = self::hasRichDescription($row['description']);
             }
@@ -594,6 +641,19 @@ class CatalogRepository {
             $out[] = $row;
         }
         return $out;
+    }
+
+    /**
+     * Lessons URL when this catalog row's course allows anonymous preview.
+     *
+     * @param array<string, mixed> $row
+     * @return string
+     */
+    public static function previewUrl(array $row) {
+        if ( (int) ($row['anonymous_lessons'] ?? 0) !== 1 ) {
+            return '';
+        }
+        return Courses::lessonsUrl($row['context_id'] ?? 0);
     }
 
     public static function validHttpUrl($url) {

@@ -2,6 +2,7 @@
 
 namespace Tsugi\Core;
 
+use Tsugi\Services\Plus\GradeSync;
 use Tsugi\Util\U;
 
 /**
@@ -20,6 +21,21 @@ class ReqScope {
 
     /** Filled from a cookieless LTI tool session. */
     const ORIGIN_LTI = 'lti';
+
+    /** No Google, Plus, or tool launch is stored in this session. */
+    const SESSION_NONE = 'none';
+
+    /** Google site login. Consumer key google.com, no launch post. */
+    const SESSION_GOOGLE = 'google';
+
+    /** Plus launch. Cookie session with plus_context_launch on the launch row. */
+    const SESSION_PLUS = 'plus';
+
+    /** LTI tool launch. A stored launch post that is not Plus. */
+    const SESSION_LTI = 'lti';
+
+    /** Same consumer key as Courses::GOOGLE_KEY. */
+    const GOOGLE_KEY = 'google.com';
 
     /** @var self|null */
     private static $current = null;
@@ -189,11 +205,16 @@ class ReqScope {
      * Course id already stored on this request, or 0.
      *
      * Reads the course on ReqScope::current(). A missing course is 0.
-     * A logged-in user does not need a course.
+     * A logged-in user does not need a course. During an anonymous lesson
+     * view, this is the course being read.
      *
      * @return int
      */
     public static function currentContextId() {
+        $view = self::anonymousLessonContextId();
+        if ( $view > 0 ) {
+            return $view;
+        }
         return self::walkerScopeId(self::current(), 'context');
     }
 
@@ -206,6 +227,135 @@ class ReqScope {
      */
     public static function isLoggedIn() {
         return self::loggedInUserId() !== 0;
+    }
+
+    /**
+     * Tenant key id for this session, or 0.
+     *
+     * Google login, a Plus launch, and a tool launch all store it on
+     * $_SESSION['lti']['key_id'] when the session is established. Later
+     * course changes leave that field in place. A session with no launch
+     * row has no key.
+     *
+     * @return int
+     */
+    public static function keyId() {
+        return self::ltiFieldInt('key_id');
+    }
+
+    /**
+     * Which login this session is.
+     *
+     * Google, then Plus, then an LTI tool launch. Anything else is
+     * SESSION_NONE, including a cookie session that has not logged in.
+     *
+     * @return string SESSION_GOOGLE, SESSION_PLUS, SESSION_LTI, or SESSION_NONE
+     */
+    public static function sessionType() {
+        if ( self::isGoogleSession() ) {
+            return self::SESSION_GOOGLE;
+        }
+        if ( self::isPlusSession() ) {
+            return self::SESSION_PLUS;
+        }
+        if ( self::isLtiSession() ) {
+            return self::SESSION_LTI;
+        }
+        return self::SESSION_NONE;
+    }
+
+    /**
+     * True for a Google site login.
+     *
+     * The consumer key is google.com and the session has no launch post.
+     * A Plus launch and a tool launch both store a launch post.
+     *
+     * @return bool
+     */
+    public static function isGoogleSession() {
+        if ( self::hasLaunchPost() ) {
+            return false;
+        }
+        $key = null;
+        if ( isset($_SESSION) && is_array($_SESSION) ) {
+            $key = $_SESSION['oauth_consumer_key'] ?? null;
+        }
+        if ( $key === null ) {
+            $key = self::ltiField('key_key');
+        }
+        return $key === self::GOOGLE_KEY;
+    }
+
+    /**
+     * True for the Plus launch stored in this session.
+     *
+     * plus_context_launch is set by PlusShell::remember() and is left in
+     * place on site URLs. A Google login has no launch post, so it is not Plus.
+     *
+     * @return bool
+     */
+    public static function isPlusSession() {
+        if ( self::isGoogleSession() ) {
+            return false;
+        }
+        return self::ltiFieldInt('plus_context_launch') === 1;
+    }
+
+    /**
+     * True for an LTI tool launch that is not Plus.
+     *
+     * The session has a stored launch post. Plus also has a launch post;
+     * plus_context_launch makes that session Plus instead.
+     *
+     * @return bool
+     */
+    public static function isLtiSession() {
+        if ( self::isGoogleSession() || self::isPlusSession() ) {
+            return false;
+        }
+        return self::hasLaunchPost();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function launchRow() {
+        $ltiKey = defined('TSUGI_SESSION_LTI') ? TSUGI_SESSION_LTI : 'lti';
+        if ( ! isset($_SESSION) || ! is_array($_SESSION) ) {
+            return array();
+        }
+        $row = $_SESSION[$ltiKey] ?? null;
+        return is_array($row) ? $row : array();
+    }
+
+    /**
+     * True when a launch post is stored. Matches empty() on lti_post.
+     *
+     * @return bool
+     */
+    private static function hasLaunchPost() {
+        $postKey = defined('TSUGI_SESSION_LTI_POST') ? TSUGI_SESSION_LTI_POST : 'lti_post';
+        if ( ! isset($_SESSION) || ! is_array($_SESSION) ) {
+            return false;
+        }
+        return ! empty($_SESSION[$postKey]);
+    }
+
+    /**
+     * @param string $field
+     * @return mixed
+     */
+    private static function ltiField($field) {
+        $row = self::launchRow();
+        return $row[$field] ?? null;
+    }
+
+    /**
+     * @param string $field
+     * @return int
+     */
+    private static function ltiFieldInt($field) {
+        return (int) (self::ltiField($field) ?? 0);
     }
 
     /**
@@ -226,8 +376,61 @@ class ReqScope {
      * @return int
      */
     public static function currentContextIdLegacy() {
+        $view = self::anonymousLessonContextId();
+        if ( $view > 0 ) {
+            return $view;
+        }
         $identity = self::identity();
         return (int) $identity['context_id'];
+    }
+
+    /**
+     * Read one manifest course's lessons without joining that course.
+     *
+     * Does not write the session and does not create a membership. Course
+     * id readers report $context_id until endAnonymousLessonView().
+     *
+     * @param int $context_id
+     */
+    public static function beginAnonymousLessonView($context_id) {
+        $context_id = (int) $context_id;
+        if ( $context_id < 1 ) {
+            return;
+        }
+        self::set('lesson_view_context', $context_id);
+    }
+
+    /**
+     * End the read-only lesson view for this request.
+     */
+    public static function endAnonymousLessonView() {
+        unset(self::$storedValues['lesson_view_context']);
+        if ( self::$current ) {
+            self::attachValues(self::$current);
+        }
+    }
+
+    /**
+     * Course being read anonymously, or 0.
+     *
+     * @return int
+     */
+    public static function anonymousLessonContextId() {
+        $id = self::get('lesson_view_context', 0);
+        if ( ! is_numeric($id) ) {
+            return 0;
+        }
+        $id = (int) $id;
+        return $id > 0 ? $id : 0;
+    }
+
+    /**
+     * True while a read-only lesson view is in effect.
+     *
+     * @return bool
+     */
+    public static function isAnonymousLessonView() {
+        return self::anonymousLessonContextId() > 0;
     }
 
     /**
@@ -791,7 +994,7 @@ class ReqScope {
         LTIX::getConnection();
         $p = $CFG->dbprefix;
         $linkRow = $PDOX->rowDie(
-            "SELECT link_id, link_key, title, published
+            "SELECT link_id, link_key, title, published, guid AS link_guid
              FROM {$p}lti_link
              WHERE link_id = :LID AND context_id = :CID
                AND (deleted IS NULL OR deleted = 0)",
@@ -800,7 +1003,7 @@ class ReqScope {
         if ( ! $linkRow ) {
             throw new ReqScopeException('Link not found in this context.', 404);
         }
-        $link = new Link();
+        $link = new Link($linkRow);
         $link->id = (int) $linkRow['link_id'];
         $link->title = $linkRow['title'];
         $result = self::ensureResult($link->id, (int) $rc->user->id);
@@ -830,7 +1033,7 @@ class ReqScope {
         $p = $CFG->dbprefix;
 
         $userRow = $PDOX->rowDie(
-            "SELECT user_id, user_key, displayname, email, locale, image
+            "SELECT user_id, user_key, displayname, email, locale, image, guid AS user_guid
              FROM {$p}lti_user
              WHERE user_id = :UID AND (deleted IS NULL OR deleted = 0)",
             array(':UID' => $user_id)
@@ -840,7 +1043,7 @@ class ReqScope {
         }
 
         $contextRow = $PDOX->rowDie(
-            "SELECT c.context_id, c.context_key, c.title, k.key_key
+            "SELECT c.context_id, c.context_key, c.title, c.guid AS context_guid, k.key_key
              FROM {$p}lti_context AS c
              LEFT JOIN {$p}lti_key AS k ON c.key_id = k.key_id
              WHERE c.context_id = :CID AND (c.deleted IS NULL OR c.deleted = 0)",
@@ -870,7 +1073,7 @@ class ReqScope {
             $effective = max($role, $role_override);
         }
 
-        $user = new User();
+        $user = new User($userRow);
         $user->id = (int) $userRow['user_id'];
         $user->key = $userRow['user_key'];
         $user->displayname = $userRow['displayname'];
@@ -901,7 +1104,7 @@ class ReqScope {
         $published = null;
         if ( $link_id !== null && $link_id > 0 ) {
             $linkRow = $PDOX->rowDie(
-                "SELECT link_id, link_key, title, published
+                "SELECT link_id, link_key, title, published, guid AS link_guid
                  FROM {$p}lti_link
                  WHERE link_id = :LID AND context_id = :CID
                    AND (deleted IS NULL OR deleted = 0)",
@@ -910,7 +1113,7 @@ class ReqScope {
             if ( ! $linkRow ) {
                 throw new ReqScopeException('Link not found in this context.', 404);
             }
-            $link = new Link();
+            $link = new Link($linkRow);
             $link->id = (int) $linkRow['link_id'];
             $link->title = $linkRow['title'];
             $published = (int) $linkRow['published'];
@@ -1171,7 +1374,7 @@ class ReqScope {
         }
         LTIX::getConnection();
         $userRow = $PDOX->rowDie(
-            "SELECT user_id, user_key, displayname, email, locale, image
+            "SELECT user_id, user_key, displayname, email, locale, image, guid AS user_guid
              FROM {$CFG->dbprefix}lti_user
              WHERE user_id = :UID AND (deleted IS NULL OR deleted = 0)",
             array(':UID' => (int) $user_id)
@@ -1179,7 +1382,7 @@ class ReqScope {
         if ( ! is_array($userRow) ) {
             return null;
         }
-        $user = new User();
+        $user = new User($userRow);
         $user->id = (int) $userRow['user_id'];
         $user->key = $userRow['user_key'];
         $user->displayname = $userRow['displayname'];
@@ -1211,7 +1414,7 @@ class ReqScope {
         LTIX::getConnection();
         $p = $CFG->dbprefix;
         $row = $PDOX->rowDie(
-            "SELECT c.context_id, c.context_key, c.title, k.key_key
+            "SELECT c.context_id, c.context_key, c.title, c.guid AS context_guid, k.key_key
              FROM {$p}lti_context AS c
              LEFT JOIN {$p}lti_key AS k ON c.key_id = k.key_id
              WHERE c.context_id = :CID AND (c.deleted IS NULL OR c.deleted = 0)",
@@ -1230,7 +1433,7 @@ class ReqScope {
      * @return Context
      */
     private static function contextFromRow(array $row) {
-        $context = new Context();
+        $context = new Context($row);
         $context->id = (int) $row['context_id'];
         $context->title = $row['title'];
         $context->context_id = $row['context_key'];
@@ -1299,6 +1502,7 @@ class ReqScope {
                AND (deleted IS NULL OR deleted = 0)",
             array(':LID' => $link_id, ':UID' => $user_id)
         );
+        $created = false;
         if ( ! $row ) {
             $PDOX->queryDie(
                 "INSERT INTO {$p}lti_result
@@ -1306,6 +1510,7 @@ class ReqScope {
                  VALUES (:LID, :UID, NOW(), NOW())",
                 array(':LID' => $link_id, ':UID' => $user_id)
             );
+            $created = true;
             $row = $PDOX->rowDie(
                 "SELECT result_id, grade
                  FROM {$p}lti_result
@@ -1316,6 +1521,9 @@ class ReqScope {
         }
         if ( ! $row ) {
             throw new ReqScopeException('Could not load result.', 500);
+        }
+        if ( $created ) {
+            GradeSync::ensureLineItem((int) $link_id);
         }
 
         $result = new Result();

@@ -8,6 +8,11 @@ require_once "src/Lumos/Application.php";
 require_once "src/Lumos/Router.php";
 require_once "src/Util/U.php";
 
+$rootAutoload = dirname(__DIR__, 3) . '/vendor/autoload.php';
+if ( file_exists($rootAutoload) ) {
+    require_once $rootAutoload;
+}
+
 use \Tsugi\Controllers\Courses;
 use \Tsugi\Core\Manifest;
 use \Tsugi\Core\ReqScope;
@@ -138,6 +143,87 @@ class CoursesControllerTest extends \PHPUnit\Framework\TestCase
         $_SESSION['oauth_consumer_key'] = 'google.com';
         \Tsugi\Core\ReqScope::resetIdentity();
         $this->assertNull(Courses::gateResponse());
+    }
+
+    public function testGateAllowsPlusLaunchOnItsOwnCourse()
+    {
+        $_SESSION['id'] = 7;
+        $_SESSION['oauth_consumer_key'] = 'sakai.example.edu';
+        $_SESSION['lti_post'] = array('context_id' => 'lms-course');
+        $_SESSION['lti'] = array(
+            'context_id' => 42,
+            'link_id' => 3,
+            'plus_course' => 1,
+            'plus_launch_link_id' => 9,
+            'plus_context_launch' => 1,
+        );
+        $saved = $_SERVER['REQUEST_URI'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/tsugi/courses/42/home';
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $this->assertNull(Courses::gateResponse());
+        } finally {
+            if ( $saved === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $saved;
+            }
+        }
+    }
+
+    public function testGateRefusesPlusLaunchOnAnotherCourse()
+    {
+        $_SESSION['id'] = 7;
+        $_SESSION['oauth_consumer_key'] = 'sakai.example.edu';
+        $_SESSION['lti_post'] = array('context_id' => 'lms-course');
+        $_SESSION['lti'] = array(
+            'context_id' => 42,
+            'link_id' => 9,
+            'plus_course' => 1,
+            'plus_launch_link_id' => 9,
+            'plus_context_launch' => 1,
+        );
+        $saved = $_SERVER['REQUEST_URI'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/tsugi/courses/99';
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $response = Courses::gateResponse();
+            $this->assertNotNull($response);
+            $this->assertSame(403, $response->getStatusCode());
+        } finally {
+            if ( $saved === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $saved;
+            }
+        }
+    }
+
+    public function testGateRefusesPlusCourseWithoutPlusLaunch()
+    {
+        $_SESSION['id'] = 7;
+        $_SESSION['oauth_consumer_key'] = 'sakai.example.edu';
+        $_SESSION['lti_post'] = array('context_id' => 'lms-course');
+        $_SESSION['lti'] = array(
+            'context_id' => 42,
+            'link_id' => 3,
+            'plus_course' => 1,
+            'plus_launch_link_id' => 9,
+        );
+        $saved = $_SERVER['REQUEST_URI'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/tsugi/courses/42';
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $response = Courses::gateResponse();
+            $this->assertNotNull($response);
+            $this->assertSame(403, $response->getStatusCode());
+        } finally {
+            if ( $saved === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $saved;
+            }
+        }
     }
 
     public function testEnsureActiveContextNoOpWhenSame()
@@ -480,5 +566,331 @@ class CoursesControllerTest extends \PHPUnit\Framework\TestCase
         $this->assertArrayNotHasKey('context_title', $_SESSION);
         $this->assertArrayNotHasKey('context_id', $_SESSION['lti']);
         $this->assertArrayNotHasKey('manifest_id', $_SESSION['lti']);
+    }
+
+    public function testReleaseUnmountedCourseKeepsLaunchRow()
+    {
+        if ( ! defined('COOKIE_SESSION') ) {
+            define('COOKIE_SESSION', true);
+        }
+        $previous = $_SERVER['REQUEST_URI'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/grades';
+        $_SESSION['context_id'] = 10;
+        $_SESSION['context_title'] = 'Tsugi Plus 01';
+        $_SESSION['context_key'] = 'abc';
+        $_SESSION['isinstructor'] = true;
+        $_SESSION['manifest_id'] = 299;
+        $_SESSION['lti_post'] = array('user_id' => 'x');
+        $_SESSION['lti'] = array(
+            'context_id' => 10,
+            'context_title' => 'Tsugi Plus 01',
+            'manifest_id' => 299,
+            'user_id' => 5,
+        );
+
+        $this->assertTrue(Courses::releaseUnmountedCourse());
+        $this->assertArrayNotHasKey('context_id', $_SESSION);
+        $this->assertArrayNotHasKey('context_title', $_SESSION);
+        $this->assertArrayNotHasKey('isinstructor', $_SESSION);
+        $this->assertSame(10, $_SESSION['lti']['context_id']);
+        $this->assertSame('Tsugi Plus 01', $_SESSION['lti']['context_title']);
+        $this->assertSame(5, $_SESSION['lti']['user_id']);
+        $this->assertSame(0, Manifest::activeId());
+        $this->assertFalse(\Tsugi\Core\LTIX::launchContextApplies($_SESSION['lti']));
+
+        $_SERVER['REQUEST_URI'] = '/courses/10/lessons';
+        $this->assertTrue(\Tsugi\Core\LTIX::launchContextApplies($_SESSION['lti']));
+        $this->assertFalse(Courses::releaseUnmountedCourse());
+
+        $_SERVER['REQUEST_URI'] = '/grades';
+        $_SESSION['oauth_consumer_key'] = 'google.com';
+        unset($_SESSION['lti_post']);
+        $_SESSION['context_id'] = 36;
+        $_SESSION['context_title'] = 'Site';
+        $_SESSION['lti']['context_id'] = 36;
+        $_SESSION['lti']['key_key'] = 'google.com';
+        $this->assertFalse(Courses::releaseUnmountedCourse());
+        $this->assertSame(36, $_SESSION['context_id']);
+        $this->assertSame('Site', $_SESSION['context_title']);
+
+        $_SERVER['REQUEST_URI'] = '/grades';
+        unset($_SESSION['oauth_consumer_key']);
+        $_SESSION['lti_post'] = array('user_id' => 'x');
+        $_SESSION['context_id'] = 10;
+        $_SESSION['context_title'] = 'Tsugi Plus 01';
+        $_SESSION['lti']['context_id'] = 10;
+        $_SESSION['lti']['context_title'] = 'Tsugi Plus 01';
+        $_SESSION['lti']['plus_context_launch'] = 1;
+        unset($_SESSION['lti']['key_key']);
+        $this->assertFalse(Courses::releaseUnmountedCourse());
+        $this->assertSame(10, $_SESSION['context_id']);
+        $this->assertSame('Tsugi Plus 01', $_SESSION['context_title']);
+        $this->assertSame(10, $_SESSION['lti']['context_id']);
+
+        if ( $previous === null ) {
+            unset($_SERVER['REQUEST_URI']);
+        } else {
+            $_SERVER['REQUEST_URI'] = $previous;
+        }
+    }
+
+    public function testLoggedOutCourseUrlGoesToLogin()
+    {
+        $previous = $_SERVER['REQUEST_URI'] ?? null;
+        $previousHost = $_SERVER['HTTP_HOST'] ?? null;
+        $previousPort = $_SERVER['SERVER_PORT'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SERVER['HTTP_HOST'] = 'localhost';
+        $_SERVER['SERVER_PORT'] = '80';
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $request = Request::create('/courses/42/home', 'GET');
+            $response = Courses::enter($this->mockApp, $request, 42);
+            $this->assertInstanceOf(\Symfony\Component\HttpFoundation\RedirectResponse::class, $response);
+            $this->assertSame(302, $response->getStatusCode());
+            $this->assertSame('http://localhost/app/login', $response->headers->get('Location'));
+            $this->assertSame('http://localhost/courses/42/home', \Tsugi\Controllers\Login::peekReturnUrl());
+        } finally {
+            if ( $previous === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $previous;
+            }
+            if ( $previousHost === null ) {
+                unset($_SERVER['HTTP_HOST']);
+            } else {
+                $_SERVER['HTTP_HOST'] = $previousHost;
+            }
+            if ( $previousPort === null ) {
+                unset($_SERVER['SERVER_PORT']);
+            } else {
+                $_SERVER['SERVER_PORT'] = $previousPort;
+            }
+        }
+    }
+
+    public function testPlusLaunchWithErrorReturnSkipsLogin()
+    {
+        $_SESSION['lti'] = array(
+            'plus_context_launch' => 1,
+            'context_id' => 42,
+        );
+        $_SESSION['lti_post'] = array(
+            'launch_presentation_return_url' => 'https://lms.example/return',
+            'launch_presentation_error_return_url' => 'https://lms.example/error',
+        );
+        \Tsugi\Core\ReqScope::resetIdentity();
+        $request = Request::create('/courses/42/home', 'GET');
+        $response = Courses::enter($this->mockApp, $request, 42);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\RedirectResponse::class, $response);
+        $this->assertSame(
+            'https://lms.example/error?lti_errormsg=Must%20be%20logged%20in',
+            $response->headers->get('Location')
+        );
+        $this->assertNull(\Tsugi\Controllers\Login::peekReturnUrl());
+    }
+
+    public function testLtiLaunchWithoutErrorReturnUsesTheLaunchReturn()
+    {
+        $_SESSION['oauth_consumer_key'] = 'canvas.example.edu';
+        $_SESSION['lti_post'] = array(
+            'launch_presentation_return_url' => 'https://lms.example/done',
+        );
+        \Tsugi\Core\ReqScope::resetIdentity();
+        $request = Request::create('/courses/42/home', 'GET');
+        $response = Courses::enter($this->mockApp, $request, 42);
+        $this->assertSame(
+            'https://lms.example/done?lti_errormsg=Must%20be%20logged%20in',
+            $response->headers->get('Location')
+        );
+    }
+
+    public function testLti13JwtErrorReturnSkipsLogin()
+    {
+        $_SESSION['oauth_consumer_key'] = 'canvas.example.edu';
+        $_SESSION['lti_post'] = array('id_token' => 'jwt');
+        $body = new \stdClass();
+        $body->{\Tsugi\Util\LTI13::PRESENTATION_CLAIM} = (object) array(
+            'return_url' => 'https://lms.example/return',
+            'error_return_url' => 'https://lms.example/jwt-error',
+        );
+        $_SESSION['tsugi_jwt'] = (object) array('body' => $body);
+        \Tsugi\Core\ReqScope::resetIdentity();
+        $request = Request::create('/courses/42/home', 'GET');
+        $response = Courses::enter($this->mockApp, $request, 42);
+        $this->assertSame(
+            'https://lms.example/jwt-error?lti_errormsg=Must%20be%20logged%20in',
+            $response->headers->get('Location')
+        );
+    }
+
+    public function testStaleJwtDoesNotOverrideTheCurrentLti11Return()
+    {
+        $previous = $_SERVER['REQUEST_URI'] ?? null;
+        $previousHost = $_SERVER['HTTP_HOST'] ?? null;
+        $previousPort = $_SERVER['SERVER_PORT'] ?? null;
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SERVER['HTTP_HOST'] = 'localhost';
+        $_SERVER['SERVER_PORT'] = '80';
+        $_SESSION['oauth_consumer_key'] = 'canvas.example.edu';
+        $_SESSION['lti_post'] = array(
+            'lti_message_type' => 'basic-lti-launch-request',
+            'lti_version' => 'LTI-1p0',
+            'launch_presentation_return_url' => 'https://lms.example/current',
+        );
+        $body = new \stdClass();
+        $body->{\Tsugi\Util\LTI13::PRESENTATION_CLAIM} = (object) array(
+            'error_return_url' => 'https://old-platform.example/error',
+        );
+        $_SESSION['tsugi_jwt'] = (object) array('body' => $body);
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $request = Request::create('/courses/42/home', 'GET');
+            $response = Courses::enter($this->mockApp, $request, 42);
+            $this->assertSame(
+                'https://lms.example/current?lti_errormsg=Must%20be%20logged%20in',
+                $response->headers->get('Location')
+            );
+        } finally {
+            if ( $previous === null ) {
+                unset($_SERVER['REQUEST_URI']);
+            } else {
+                $_SERVER['REQUEST_URI'] = $previous;
+            }
+            if ( $previousHost === null ) {
+                unset($_SERVER['HTTP_HOST']);
+            } else {
+                $_SERVER['HTTP_HOST'] = $previousHost;
+            }
+            if ( $previousPort === null ) {
+                unset($_SERVER['SERVER_PORT']);
+            } else {
+                $_SERVER['SERVER_PORT'] = $previousPort;
+            }
+        }
+    }
+
+    public function testPostedReturnUrlDoesNotReplaceTheStoredLaunch()
+    {
+        $_SESSION['lti'] = array(
+            'plus_context_launch' => 1,
+            'context_id' => 42,
+        );
+        $_SESSION['lti_post'] = array(
+            'launch_presentation_error_return_url' => 'https://lms.example/error?stay=1#back',
+        );
+        $_POST['launch_presentation_error_return_url'] = 'https://evil.example/phish';
+        \Tsugi\Core\ReqScope::resetIdentity();
+        try {
+            $request = Request::create('/courses/42/home', 'POST');
+            $response = Courses::enter($this->mockApp, $request, 42);
+            $this->assertSame(
+                'https://lms.example/error?stay=1&lti_errormsg=Must%20be%20logged%20in#back',
+                $response->headers->get('Location')
+            );
+        } finally {
+            unset($_POST['launch_presentation_error_return_url']);
+        }
+    }
+
+    public function testMembershipFailureSendsTheUserHome()
+    {
+        if ( ! function_exists('__') ) {
+            require_once __DIR__.'/../../include/setup_i18n.php';
+        }
+        $method = new \ReflectionMethod(Courses::class, 'switchFailedResponse');
+        $response = $method->invoke(null, 'You are not a member of that course.');
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\RedirectResponse::class, $response);
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame('http://localhost/app', $response->headers->get('Location'));
+        $this->assertSame(
+            'You are not a member of that course.',
+            $_SESSION[\Tsugi\Util\U::FLASH_ERROR] ?? null
+        );
+    }
+
+    public function testMembershipFailureOnAPlusLaunchUsesTheErrorReturn()
+    {
+        $_SESSION['lti'] = array(
+            'plus_context_launch' => 1,
+            'context_id' => 42,
+        );
+        $_SESSION['lti_post'] = array(
+            'launch_presentation_error_return_url' => 'https://lms.example/error',
+        );
+        $method = new \ReflectionMethod(Courses::class, 'switchFailedResponse');
+        $response = $method->invoke(null, 'You are not a member of that course.');
+        $this->assertSame(
+            'https://lms.example/error?lti_errormsg=You%20are%20not%20a%20member%20of%20that%20course.',
+            $response->headers->get('Location')
+        );
+        $this->assertArrayNotHasKey(\Tsugi\Util\U::FLASH_ERROR, $_SESSION);
+    }
+
+    public function testCourseSwitchFailureRendersTheMessage()
+    {
+        if ( ! function_exists('__') ) {
+            require_once __DIR__.'/../../include/setup_i18n.php';
+        }
+        $method = new \ReflectionMethod(Courses::class, 'switchFailedResponse');
+        $response = $method->invoke(null, 'Course not found.');
+        $this->assertSame(400, $response->getStatusCode());
+        $body = $response->getContent();
+        $this->assertStringContainsString('Cannot open this course', $body);
+        $this->assertStringContainsString('Course not found.', $body);
+    }
+
+    public function testAnonymousLessonRestIsTheReadOnlyOutline()
+    {
+        $this->assertTrue(Courses::isAnonymousLessonRest('lessons'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('/lessons/'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('lessons/week-1'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('content'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('content/week-1'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('content/week-1/extra'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('content_launch/week-1'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('outline'));
+        $this->assertTrue(Courses::isAnonymousLessonRest('outline/week-1'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('outline/week-1/extra'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('outline_launch/week-1'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('lessons/_author'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('lessons/_author/export'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('lessons/week-1/extra'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('lessons_launch/week-1'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('quiz1'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('pages/3'));
+        $this->assertFalse(Courses::isAnonymousLessonRest(''));
+        $this->assertFalse(Courses::isAnonymousLessonRest('files/Student/notes.pdf'));
+        $this->assertFalse(Courses::isAnonymousPageRest('files/Student/notes.pdf'));
+        $this->assertFalse(Courses::isAnonymousLessonRest('files/download/'.str_repeat('ab', 32)));
+        $this->assertFalse(Courses::isAnonymousPageRest('files/download/'.str_repeat('ab', 32)));
+        $this->assertTrue(Courses::isAnonymousPageRest('pages'));
+        $this->assertTrue(Courses::isAnonymousPageRest('pages/syllabus'));
+        $this->assertFalse(Courses::isAnonymousPageRest('pages/add'));
+        $this->assertFalse(Courses::isAnonymousPageRest('pages/edit/4'));
+        $this->assertFalse(Courses::isAnonymousPageRest('pages/manage'));
+        $this->assertFalse(Courses::isAnonymousPageRest('pages/json'));
+        $this->assertFalse(Courses::isAnonymousPageRest('pages/analytics'));
+        $this->assertFalse(Courses::isAnonymousPageRest('quiz1'));
+    }
+
+    public function testAnonymousPreviewDoesNotOpenFileUrls()
+    {
+        $method = new \ReflectionMethod(Courses::class, 'anonymousContentRequest');
+        $sha = str_repeat('ab', 32);
+        $paths = array(
+            'files/Student/notes.pdf',
+            'files/Public/syllabus.pdf',
+            'files/download/'.$sha,
+            'files/Imported/week.zip',
+        );
+        foreach ( $paths as $path ) {
+            $get = Request::create('/'.$path, 'GET');
+            $post = Request::create('/'.$path, 'POST');
+            $this->assertFalse($method->invoke(null, $get, $path), $path);
+            $this->assertFalse($method->invoke(null, $post, $path), $path);
+        }
+        $lesson = Request::create('/lessons', 'GET');
+        $this->assertTrue($method->invoke(null, $lesson, 'lessons'));
     }
 }

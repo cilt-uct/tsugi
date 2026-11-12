@@ -251,8 +251,8 @@ class Output {
         // If we are in an iframe use different margins
 ?>
 </head>
-<body prefix="oer: http://oerschema.org">
-<a href="#main-content" class="skip-link"><?= _m('Skip to main content') ?></a>
+<body<?= \Tsugi\Services\StudentView\StudentView::bodyAttribute() ?> prefix="oer: http://oerschema.org">
+<a href="#main-content" class="skip-link"><?= _m('Skip to main content') ?><span class="skip-link-mark" aria-hidden="true">💚</span><span class="skip-link-mark" aria-hidden="true">⌨️</span></a>
 <div id="body_container">
 <script>
 if (window!=window.top) {
@@ -406,7 +406,7 @@ EOF;
             .'<script src="'.$s.'/js/jquery.timeago-1.6.3.js"></script>'."\n"
             .'<script src="'.$s.'/js/handlebars-v4.0.2.js"></script>'."\n"
             .'<script src="'.$s.'/tmpljs-3.8.0/tmpl.min.js"></script>'."\n"
-            .'<script src="'.$s.'/js/tsugiscripts.js"></script>'."\n";
+            .'<script src="'.$s.'/js/tsugiscripts.js?v=20261105"></script>'."\n";
     }
 
     function footerStart() {
@@ -435,9 +435,9 @@ function googleTranslateElementInit() {
         }
 
         // Load notifications web component
-        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Notifications/tsugi-notifications.js') . '"></script>' . "\n");
-        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Calendar/tsugi-calendar-due.js') . '"></script>' . "\n");
-        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Discussions/tsugi-discussions.js') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Notifications/tsugi-notifications.js?v=2026111104') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Calendar/tsugi-calendar-due.js?v=2026111105') . '"></script>' . "\n");
+        echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Discussions/tsugi-discussions.js?v=2026111105') . '"></script>' . "\n");
         echo('<script type="module" src="' . htmlspecialchars($CFG->wwwroot . '/lib/src/Controllers/static/Courses/tsugi-courses.js') . '"></script>' . "\n");
 
         // Register service worker for push notifications and offline support (if enabled)
@@ -592,7 +592,9 @@ $('a').each(function (x) {
             unset($_SESSION['lti.gradeChangeNotify']);
         }
 
-        echo("\n</main>\n</div></body>\n</html>\n");
+        echo("\n</main>\n</div>\n");
+        echo(\Tsugi\Services\StudentView\StudentView::barHtml());
+        echo("</body>\n</html>\n");
 
         $ob_output = ob_get_contents();
         ob_end_clean();
@@ -1133,11 +1135,20 @@ $('a').each(function (x) {
         }
         $retval .= $pad.'<li class="dropdown">'."\n";
         $dropdown_link_class = 'dropdown-toggle';
-        if ( strpos($entry->link, '<img') !== false ) {
-            // Drop down link contains an image so add class to style
+        $is_image_toggle = strpos($entry->link, '<img') !== false;
+        if ( $is_image_toggle ) {
+            // Drop down link contains an image so add class to style.
+            // A button stays in the tab order. An href="#" link was easy to miss,
+            // and the narrow-menu rule hides a.dropdown-toggle entirely.
             $dropdown_link_class .= ' dropdown-img';
+            $aria = '';
+            if ( preg_match('/\balt="([^"]*)"/', $entry->link, $m) ) {
+                $aria = ' aria-label="'.$m[1].'"';
+            }
+            $retval .= $pad.'  <button type="button" class="'.$dropdown_link_class.'" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"'.$aria.'>'.$entry->link.' <span class="fa fa-caret-down" aria-hidden="true"></span></button>'."\n";
+        } else {
+            $retval .= $pad.'  <a href="#" class="'.$dropdown_link_class.'" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.$entry->link.' <span class="fa fa-caret-down" aria-hidden="true"></span></a>'."\n";
         }
-        $retval .= $pad.'  <a href="#" class="'.$dropdown_link_class.'" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.$entry->link.' <span class="fa fa-caret-down" aria-hidden="true"></span></a>'."\n";
         $retval .= $pad.'  <ul class="dropdown-menu">'."\n";
         foreach($entry->href as $child) {
            $retval .= $this->recurseNav($child, $depth+1);
@@ -1157,14 +1168,17 @@ $('a').each(function (x) {
         }
 
         $collapse_id = $is_tool_menu ? 'tsugi_tool_nav_collapse' : 'tsugi_main_nav_collapse';
+        $has_menu = ($set->left && count($set->left->menu) > 0)
+            || ($set->right && count($set->right->menu) > 0);
+        $toggle = '';
+        if ( $has_menu ) {
+            $toggle = '<button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#'.$collapse_id.'" aria-controls="'.$collapse_id.'" aria-expanded="false" aria-label="Toggle navigation">'
+                .'<span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button>';
+        }
 $retval .= <<< EOF
   <div class="container-fluid">
     <div class="navbar-header">
-      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#$collapse_id" aria-controls="$collapse_id" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-      </button>
+      $toggle
 
 EOF;
 
@@ -1663,8 +1677,9 @@ $( function() {
             $ret .= '<link href="'.htmlspecialchars($theme["font-url"]).'" rel="stylesheet">'."\n";
         }
         $ret .= self::getThemeCss($theme);
-        $ret .= '<link href="'.$s.'/css/tsugi2.css" rel="stylesheet">'."\n";
+        $ret .= '<link href="'.$s.'/css/tsugi2.css?v=2026111104" rel="stylesheet">'."\n";
         $ret .= self::navbarAlignCss();
+        $ret .= \Tsugi\Services\StudentView\StudentView::css();
         if ( isset($CFG->extra_css) ) {
             $ret .= '<style>'."\n".$CFG->extra_css."\n</style>\n";
         }
@@ -1707,7 +1722,27 @@ body {
   margin-right: 0.4em;
   flex: 0 0 32px;
 }
-#tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img img {
+#tsugi_main_nav_bar button.dropdown-toggle.dropdown-img {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 0 6px;
+  color: var(--secondary-menu, #fff);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 50px;
+}
+#tsugi_main_nav_bar button.dropdown-toggle.dropdown-img:focus,
+#tsugi_main_nav_bar button.dropdown-toggle.dropdown-img:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+#tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img img,
+#tsugi_main_nav_bar .navbar-nav > li.dropdown > button.dropdown-img img {
   width: 2em;
   height: 2em;
   max-width: 2em;
@@ -1772,7 +1807,8 @@ body {
     align-items: center;
     transform: translateY(2px);
   }
-  #tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img {
+  #tsugi_main_nav_bar .navbar-nav > li.dropdown > a.dropdown-img,
+  #tsugi_main_nav_bar .navbar-nav > li.dropdown > button.dropdown-img {
     display: inline-flex;
     align-items: center;
     min-height: 50px;

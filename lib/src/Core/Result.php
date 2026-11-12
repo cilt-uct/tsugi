@@ -9,6 +9,7 @@ use \Tsugi\UI\Output;
 use \Tsugi\Util\Net;
 use \Tsugi\Google\GoogleClassroom;
 use \Tsugi\Grades\GradeUtil;
+use \Tsugi\Services\Plus\GradeSync;
 
 /**
  * This is a class to provide access to the user's result data.
@@ -322,6 +323,19 @@ class Result extends Entity {
             if ( is_array($debug_log) )  $debug_log[] = $msg;
         }
 
+        // A Plus course sends the real point total. The 0–1 line item below
+        // stays for an ordinary resource link.
+        if ( GradeSync::deliverIfPlus(
+            $result_id,
+            $grade,
+            is_string($comment) ? $comment : null,
+            $activity_progress,
+            $grading_progress,
+            $debug_log
+        ) ) {
+            return true;
+        }
+
         // Check if we don't have a lineitem_url but do have a lineitems url so we can create a lineitem
         if ( empty($lti13_lineitem) && !empty($lti13_lineitems) ) {
             if ( ! is_string($title) || empty($title) ) {
@@ -408,13 +422,18 @@ class Result extends Entity {
             }
         }
 
-        // Check is this is a Google Classroom Launch
+        // Check is this is a Google Classroom Launch.
+        // The quiz page is the site login, so the Classroom ids live on the result.
         $GradeSendTransport = false;
-        if ( isset($_SESSION[TSUGI_SESSION_LTI]) && isset($_SESSION[TSUGI_SESSION_LTI]['gc_submit_id']) ) {
+        $sessionSubmit = $_SESSION[TSUGI_SESSION_LTI]['gc_submit_id'] ?? null;
+        $storedStatus = null;
+        if ( ! (is_string($sessionSubmit) && $sessionSubmit !== '') && ! empty($result_id) ) {
+            $storedStatus = GoogleClassroom::deliverStored((int) $result_id, $grade);
+        }
+        if ( (is_string($sessionSubmit) && $sessionSubmit !== '') || $storedStatus !== null ) {
             if ( is_array($debug_log) )  $debug_log[] = "Using Google Classroom";
             $GradeSendTransport = "Google";
-            // TODO: Need to send to the user from $row
-            $status = GoogleClassroom::gradeSend(intval($grade*100));
+            $status = $storedStatus !== null ? $storedStatus : GoogleClassroom::gradeSend($grade);
             error_log("Sending Classroom grade of $grade ");
 
         // LTI 1.3 grade passback - Prefer if available

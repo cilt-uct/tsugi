@@ -22,6 +22,9 @@ $DATABASE_UNINSTALL = array(
 "drop table if exists {$CFG->dbprefix}lti_tool_deployment_org",
 "drop table if exists {$CFG->dbprefix}lti_tool_deployment",
 "drop table if exists {$CFG->dbprefix}lti_tool_registration",
+"drop table if exists {$CFG->dbprefix}lti_gclass_queue",
+"drop table if exists {$CFG->dbprefix}lti_gclass_log",
+"drop table if exists {$CFG->dbprefix}lti_context_plus_log",
 "drop table if exists {$CFG->dbprefix}lti_result",
 "drop table if exists {$CFG->dbprefix}lti_service",
 "drop table if exists {$CFG->dbprefix}lti_membership",
@@ -108,6 +111,12 @@ array( "{$CFG->dbprefix}lti_key",
     lms_token_url       TEXT NULL,
     lms_token_audience  TEXT NULL,
 
+    -- Default IANA zone copied onto a new Plus context. Existing courses keep their own.
+    timezone            VARCHAR(64) NULL,
+
+    -- 1 when this tenant supports a Tsugi Plus course launch.
+    plus                TINYINT(1) NOT NULL DEFAULT 0,
+
     -- Our cache of the LMS data
     lms_cache_keyset    TEXT NULL,
     lms_cache_pubkey    TEXT NULL,
@@ -134,9 +143,18 @@ array( "{$CFG->dbprefix}lti_key",
     login_count         BIGINT DEFAULT 0,
     login_time          BIGINT DEFAULT 0,
 
+    -- An omitted guid gets an unswapped MySQL UUID() (version 1).
+    -- Same bytes as UUID_TO_BIN(UUID()). Inserts and backfill pass Guid::uuid7().
+    -- UNHEX, REPLACE, and UUID are allowed in a default on MySQL 8.0.13+ and
+    -- MariaDB 10.5. UUID_TO_BIN is not allowed in a MariaDB 10.5 default.
+    -- Explicit NULL stays NULL. The unique key allows more than one NULL.
+    -- Upgrade adds this unique key. It does not add this default.
+    guid                BINARY(16) NULL DEFAULT (UNHEX(REPLACE(UUID(), '-', ''))),
+
     -- deploy_sha256 participates in uniqueness; NULL deploy_sha256 (wildcard deploy_key)
     -- allows multiple rows per key_sha256 in typical MySQL UNIQUE-with-NULL semantics.
     CONSTRAINT `{$CFG->dbprefix}lti_key_const_1` UNIQUE(key_sha256, deploy_sha256),
+    CONSTRAINT `{$CFG->dbprefix}lti_key_const_guid` UNIQUE (`guid`),
     CONSTRAINT `{$CFG->dbprefix}lti_key_const_pk` PRIMARY KEY (key_id)
  ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
@@ -181,14 +199,25 @@ array( "{$CFG->dbprefix}lti_user",
     login_count         BIGINT DEFAULT 0,
     login_time          BIGINT DEFAULT 0,
 
-    -- Google classroom token for this user
+    -- Google classroom token for this user. gc_status is the last
+    -- refresh or call error. Null means the last check succeeded.
     gc_token            TEXT NULL,
+    gc_status           VARCHAR(512) NULL,
+    gc_checked_at       TIMESTAMP NULL,
 
     ipaddr              VARCHAR(64),
     entity_version      INTEGER NOT NULL DEFAULT 0,
     created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP NULL,
     deleted_at          TIMESTAMP NULL,
+
+    -- An omitted guid gets an unswapped MySQL UUID() (version 1).
+    -- Same bytes as UUID_TO_BIN(UUID()). Inserts and backfill pass Guid::uuid7().
+    -- UNHEX, REPLACE, and UUID are allowed in a default on MySQL 8.0.13+ and
+    -- MariaDB 10.5. UUID_TO_BIN is not allowed in a MariaDB 10.5 default.
+    -- Explicit NULL stays NULL. The unique key allows more than one NULL.
+    -- Upgrade adds this unique key. It does not add this default.
+    guid                BINARY(16) NULL DEFAULT (UNHEX(REPLACE(UUID(), '-', ''))),
 
     CONSTRAINT `{$CFG->dbprefix}lti_user_ibfk_1`
         FOREIGN KEY (`key_id`)
@@ -197,6 +226,12 @@ array( "{$CFG->dbprefix}lti_user",
 
     CONSTRAINT `{$CFG->dbprefix}lti_user_const_1` UNIQUE(key_id, user_sha256),
     CONSTRAINT `{$CFG->dbprefix}lti_user_const_2` UNIQUE(key_id, subject_sha256),
+    CONSTRAINT `{$CFG->dbprefix}lti_user_const_guid` UNIQUE (`guid`),
+    INDEX `{$CFG->dbprefix}lti_user_indx_email` (email(255)),
+    INDEX `{$CFG->dbprefix}lti_user_indx_profile` (profile_id),
+    -- Google login: key_id and email, newest updated_at first.
+    -- UNIQUE(key_id, user_sha256) walks every user on that key.
+    INDEX `{$CFG->dbprefix}lti_user_indx_key_email` (key_id, email(255), updated_at),
     CONSTRAINT `{$CFG->dbprefix}lti_user_const_pk` PRIMARY KEY (user_id)
 ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
@@ -299,9 +334,30 @@ array( "{$CFG->dbprefix}lti_context",
     -- Active course manifest version (NULL = file-based $CFG->lessons)
     manifest_id         INTEGER NULL,
 
+    -- 1 when a Plus launch controls this course. 0 for file-based lessons and ordinary resource links.
+    plus_course         TINYINT(1) NOT NULL DEFAULT 0,
+    -- 1 when anyone may open this course's lessons without membership.
+    anonymous_lessons   TINYINT(1) NOT NULL DEFAULT 0,
+    -- Deployment id from the Plus launch. Token calls read this.
+    lti13_deployment_id TEXT NULL,
+    -- lti_link of the Plus launch. No foreign key: lti_link already points here.
+    plus_launch_link_id INTEGER NULL,
+    -- When the Names and Roles pull last started.
+    nrps_at             TIMESTAMP NULL,
+    -- IANA zone for line-item endDateTime. Null sends the due day with no shift.
+    timezone            VARCHAR(64) NULL,
+
     created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP NULL,
     deleted_at          TIMESTAMP NULL,
+
+    -- An omitted guid gets an unswapped MySQL UUID() (version 1).
+    -- Same bytes as UUID_TO_BIN(UUID()). Inserts and backfill pass Guid::uuid7().
+    -- UNHEX, REPLACE, and UUID are allowed in a default on MySQL 8.0.13+ and
+    -- MariaDB 10.5. UUID_TO_BIN is not allowed in a MariaDB 10.5 default.
+    -- Explicit NULL stays NULL. The unique key allows more than one NULL.
+    -- Upgrade adds this unique key. It does not add this default.
+    guid                BINARY(16) NULL DEFAULT (UNHEX(REPLACE(UUID(), '-', ''))),
 
     CONSTRAINT `{$CFG->dbprefix}lti_context_ibfk_1`
         FOREIGN KEY (`key_id`)
@@ -324,6 +380,7 @@ array( "{$CFG->dbprefix}lti_context",
     -- Deployment scope and registration ownership reference (context_id, key_id)
     -- so a course link cannot leave this tenant key.
     CONSTRAINT `{$CFG->dbprefix}lti_context_const_2` UNIQUE(context_id, key_id),
+    CONSTRAINT `{$CFG->dbprefix}lti_context_const_guid` UNIQUE (`guid`),
     CONSTRAINT `{$CFG->dbprefix}lti_context_const_pk` PRIMARY KEY (context_id),
 
     INDEX `{$CFG->dbprefix}lti_context_indx_1` (org_id)
@@ -485,6 +542,14 @@ array( "{$CFG->dbprefix}lti_link",
     ags_resource_id     VARCHAR(256) NULL,
     ags_tag             VARCHAR(256) NULL,
 
+    -- Google coursework id when this column is mirrored. The link_key stays
+    -- the lesson resource id. File-based Classroom courses leave this empty
+    -- and keep the coursework id in link_key.
+    gc_coursework       VARCHAR(64) NULL,
+    -- Google course id for that coursework. The launch URL is not a course page,
+    -- so a later grade send reads the course from here.
+    gc_course           VARCHAR(64) NULL,
+
     json                MEDIUMTEXT NULL,
     settings            MEDIUMTEXT NULL,
     settings_url        TEXT NULL,
@@ -496,6 +561,14 @@ array( "{$CFG->dbprefix}lti_link",
     created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP NULL,
     deleted_at          TIMESTAMP NULL,
+
+    -- An omitted guid gets an unswapped MySQL UUID() (version 1).
+    -- Same bytes as UUID_TO_BIN(UUID()). Inserts and backfill pass Guid::uuid7().
+    -- UNHEX, REPLACE, and UUID are allowed in a default on MySQL 8.0.13+ and
+    -- MariaDB 10.5. UUID_TO_BIN is not allowed in a MariaDB 10.5 default.
+    -- Explicit NULL stays NULL. The unique key allows more than one NULL.
+    -- Upgrade adds this unique key. It does not add this default.
+    guid                BINARY(16) NULL DEFAULT (UNHEX(REPLACE(UUID(), '-', ''))),
 
     CONSTRAINT `{$CFG->dbprefix}lti_link_ibfk_1`
         FOREIGN KEY (`context_id`)
@@ -509,7 +582,48 @@ array( "{$CFG->dbprefix}lti_link",
         ON DELETE SET NULL ON UPDATE CASCADE,
 
     CONSTRAINT `{$CFG->dbprefix}lti_link_const_1` UNIQUE(link_sha256, context_id),
+    CONSTRAINT `{$CFG->dbprefix}lti_link_const_guid` UNIQUE (`guid`),
     CONSTRAINT `{$CFG->dbprefix}lti_link_const_pk` PRIMARY KEY (link_id)
+) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
+
+// One row per upward call on a context: roster, line item, or score.
+// A replay inserts another row. It does not change this one.
+array( "{$CFG->dbprefix}lti_context_plus_log",
+"create table {$CFG->dbprefix}lti_context_plus_log (
+    context_plus_log_id INTEGER NOT NULL AUTO_INCREMENT,
+    context_id          INTEGER NOT NULL,
+    link_id             INTEGER NULL,
+    user_id             INTEGER NULL,
+
+    -- roster, lineitem_create, lineitem_update, score
+    kind                VARCHAR(32) NOT NULL,
+    success             TINYINT(1) NOT NULL DEFAULT 0,
+    http_response       INTEGER NULL,
+    url                 TEXT NULL,
+    request             MEDIUMTEXT NULL,
+    detail              MEDIUMTEXT NULL,
+
+    created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_context_plus_log_const_pk` PRIMARY KEY (context_plus_log_id),
+
+    INDEX `{$CFG->dbprefix}lti_context_plus_log_indx_1` (context_id, created_at),
+
+    CONSTRAINT `{$CFG->dbprefix}lti_context_plus_log_ibfk_1`
+        FOREIGN KEY (`context_id`)
+        REFERENCES `{$CFG->dbprefix}lti_context` (`context_id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_context_plus_log_ibfk_2`
+        FOREIGN KEY (`link_id`)
+        REFERENCES `{$CFG->dbprefix}lti_link` (`link_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_context_plus_log_ibfk_3`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE
+
 ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
 array( "{$CFG->dbprefix}lti_link_activity",
@@ -664,6 +778,8 @@ array( "{$CFG->dbprefix}lti_result",
     deleted_at         TIMESTAMP NULL,
     attempted_at       TIMESTAMP NULL,
     retrieved_at       TIMESTAMP NULL,
+    -- Last Plus line-item or score error. Cleared when a score send succeeds.
+    server_status      VARCHAR(512) NULL,
 
     CONSTRAINT `{$CFG->dbprefix}lti_result_ibfk_1`
         FOREIGN KEY (`link_id`)
@@ -692,7 +808,109 @@ array( "{$CFG->dbprefix}lti_result",
     
     -- Indexes for performance optimization (grades queries)
     KEY `{$CFG->dbprefix}lti_result_indx_link_deleted_grade` (link_id, deleted, grade),
-    KEY `{$CFG->dbprefix}lti_result_indx_link_user_grade` (link_id, user_id, grade, deleted)
+    KEY `{$CFG->dbprefix}lti_result_indx_link_user_grade` (link_id, user_id, grade, deleted),
+    -- Grade list: WHERE link_id ORDER BY updated_at LIMIT n
+    KEY `{$CFG->dbprefix}lti_result_indx_link_updated` (link_id, updated_at)
+) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
+
+// One waiting Classroom grade per result. A successful send deletes the row.
+// Reset clears the error and leaves the row. It does not call Google.
+array( "{$CFG->dbprefix}lti_gclass_queue",
+"create table {$CFG->dbprefix}lti_gclass_queue (
+    gclass_queue_id     INTEGER NOT NULL AUTO_INCREMENT,
+    context_id          INTEGER NOT NULL,
+    link_id             INTEGER NULL,
+    user_id             INTEGER NULL,
+    result_id           INTEGER NOT NULL,
+    owner_id            INTEGER NOT NULL,
+
+    grade               DOUBLE NULL,
+    gc_course           VARCHAR(64) NULL,
+    gc_coursework       TEXT NULL,
+    gc_submit_id        TEXT NULL,
+
+    -- pending, or error after a send that did not reach Classroom
+    state               VARCHAR(16) NOT NULL DEFAULT 'pending',
+    detail              VARCHAR(512) NULL,
+
+    created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP NULL,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_const_pk` PRIMARY KEY (gclass_queue_id),
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_const_1` UNIQUE (result_id),
+
+    INDEX `{$CFG->dbprefix}lti_gclass_queue_indx_1` (context_id, state),
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_ibfk_1`
+        FOREIGN KEY (`context_id`)
+        REFERENCES `{$CFG->dbprefix}lti_context` (`context_id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_ibfk_2`
+        FOREIGN KEY (`link_id`)
+        REFERENCES `{$CFG->dbprefix}lti_link` (`link_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_ibfk_3`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_ibfk_4`
+        FOREIGN KEY (`result_id`)
+        REFERENCES `{$CFG->dbprefix}lti_result` (`result_id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_queue_ibfk_5`
+        FOREIGN KEY (`owner_id`)
+        REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+        ON DELETE CASCADE ON UPDATE CASCADE
+
+) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
+
+// One row per Classroom attempt. Reset does not delete these.
+array( "{$CFG->dbprefix}lti_gclass_log",
+"create table {$CFG->dbprefix}lti_gclass_log (
+    gclass_log_id       INTEGER NOT NULL AUTO_INCREMENT,
+    context_id          INTEGER NOT NULL,
+    link_id             INTEGER NULL,
+    user_id             INTEGER NULL,
+    result_id           INTEGER NULL,
+
+    -- score, coursework_create, reconnect, due_date
+    kind                VARCHAR(32) NOT NULL,
+    success             TINYINT(1) NOT NULL DEFAULT 0,
+    http_response       INTEGER NULL,
+    url                 TEXT NULL,
+    request             MEDIUMTEXT NULL,
+    detail              MEDIUMTEXT NULL,
+
+    created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_log_const_pk` PRIMARY KEY (gclass_log_id),
+
+    INDEX `{$CFG->dbprefix}lti_gclass_log_indx_1` (context_id, created_at),
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_log_ibfk_1`
+        FOREIGN KEY (`context_id`)
+        REFERENCES `{$CFG->dbprefix}lti_context` (`context_id`)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_log_ibfk_2`
+        FOREIGN KEY (`link_id`)
+        REFERENCES `{$CFG->dbprefix}lti_link` (`link_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_log_ibfk_3`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `{$CFG->dbprefix}lti_user` (`user_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+
+    CONSTRAINT `{$CFG->dbprefix}lti_gclass_log_ibfk_4`
+        FOREIGN KEY (`result_id`)
+        REFERENCES `{$CFG->dbprefix}lti_result` (`result_id`)
+        ON DELETE SET NULL ON UPDATE CASCADE
+
 ) ENGINE = InnoDB DEFAULT CHARSET=utf8"),
 
 // Nonce is not connected using foreign key for performance
@@ -1037,6 +1255,7 @@ array( "{$CFG->dbprefix}lti_content",
     target              VARCHAR(32) NOT NULL DEFAULT 'window',
 
     -- Placement custom parameters. Not the registration message custom.
+    -- A deep link content item's custom object is stored here.
     custom              JSON NULL,
 
     resource_link_id    TEXT NOT NULL,
@@ -1387,8 +1606,9 @@ $DATABASE_POST_CREATE = function($table) {
 
     if ( $table == "{$CFG->dbprefix}lti_key") {
         $shaval = lti_sha256('12345');
-        $sql= "insert into {$CFG->dbprefix}lti_key (key_sha256, key_key, secret) values
-            ( '$shaval', '12345', 'secret')";
+        $guid_12345 = \Tsugi\Core\Guid::uuid7();
+        $sql= "insert into {$CFG->dbprefix}lti_key (key_sha256, key_key, secret, guid) values
+            ( '$shaval', '12345', 'secret', UNHEX('{$guid_12345}'))";
         error_log("Post-create: ".$sql);
         echo("Post-create: ".$sql."<br/>\n");
         $q = $PDOX->queryDie($sql);
@@ -1396,8 +1616,9 @@ $DATABASE_POST_CREATE = function($table) {
         // Secret is big ugly string for the google key - in case we launch internally in Koseu
         $secret = bin2hex(openssl_random_pseudo_bytes(16));
         $shaval = lti_sha256('google.com');
-        $sql = "insert into {$CFG->dbprefix}lti_key (key_sha256, secret, key_key) values
-            ( '$shaval', '$secret', 'google.com')";
+        $guid_google = \Tsugi\Core\Guid::uuid7();
+        $sql = "insert into {$CFG->dbprefix}lti_key (key_sha256, secret, key_key, guid) values
+            ( '$shaval', '$secret', 'google.com', UNHEX('{$guid_google}'))";
         error_log("Post-create: ".$sql);
         echo("Post-create: ".$sql."<br/>\n");
         $q = $PDOX->queryDie($sql);
@@ -1530,6 +1751,11 @@ $DATABASE_UPGRADE = function($oldversion) {
         // stores service_id and a sourcedid. Old results are not scanned.
         array('lti_link', 'upward', 'TINYINT(1) NOT NULL DEFAULT 0'),
 
+        // 2026-10-28 Classroom coursework id for a manifest course column.
+        // The resource link id stays in link_key.
+        array('lti_link', 'gc_coursework', 'VARCHAR(64) NULL'),
+        array('lti_link', 'gc_course', 'VARCHAR(64) NULL'),
+
         // 2026-10-13 Extra credit is outside the 100. Existing categories stay regular.
         array('lti_category', 'extra_credit', 'TINYINT(1) NOT NULL DEFAULT 0'),
 
@@ -1545,6 +1771,25 @@ $DATABASE_UPGRADE = function($oldversion) {
 
         // 2026-10-18 Optional earlier course. Same type as context_id. No foreign key.
         array('lti_context', 'previous_context_id', 'INTEGER NULL'),
+
+        // 2026-10-24 Plus course. Existing courses stay ordinary.
+        array('lti_context', 'plus_course', 'TINYINT(1) NOT NULL DEFAULT 0'),
+        array('lti_context', 'lti13_deployment_id', 'TEXT NULL'),
+        array('lti_context', 'plus_launch_link_id', 'INTEGER NULL'),
+        array('lti_context', 'nrps_at', 'TIMESTAMP NULL'),
+        array('lti_context', 'timezone', 'VARCHAR(64) NULL'),
+
+        // 2026-11-03 This course allows anonymous lesson preview. Existing courses stay closed.
+        array('lti_context', 'anonymous_lessons', 'TINYINT(1) NOT NULL DEFAULT 0'),
+        array('lti_key', 'timezone', 'VARCHAR(64) NULL'),
+        array('lti_key', 'plus', 'TINYINT(1) NOT NULL DEFAULT 0'),
+
+        // 2026-10-26 Last Plus score or line-item error shown in the grade book.
+        array('lti_result', 'server_status', 'VARCHAR(512) NULL'),
+
+        // 2026-10-27 Last Classroom refresh error, and the last successful check.
+        array('lti_user', 'gc_status', 'VARCHAR(512) NULL'),
+        array('lti_user', 'gc_checked_at', 'TIMESTAMP NULL'),
     );
 
     foreach ( $add_some_fields as $add_field ) {
@@ -1642,11 +1887,15 @@ $DATABASE_UPGRADE = function($oldversion) {
 
     // DROP INDEX index_name ON tbl_name
     $keep_issuer_index = $PDOX->columnExists('issuer_id', $CFG->dbprefix."lti_key");
+    // The unique guid key is added later in this upgrade. This pass must not
+    // drop it when the table already has it.
+    $keep_guid_index = $CFG->dbprefix."lti_key_const_guid";
     foreach($indexes as $index) {
         if ( strcasecmp($index, "PRIMARY") == 0 ) continue;
         if ( strcasecmp($index, "ibfk") == 0 ) continue;
         // lti_key_const_2 backs issuer_id until lti_issuer phase 3 (2026-10-01 UTC)
         if ( $keep_issuer_index && $index === $CFG->dbprefix."lti_key_const_2" ) continue;
+        if ( $index === $keep_guid_index ) continue;
         $command = isset($needed_indexes[$index]) ? $needed_indexes[$index] : null;
         if ( is_string($command) ) continue;
         $sql = "DROP INDEX ".$index." ON ".$CFG->dbprefix."lti_key";
@@ -1942,7 +2191,11 @@ $DATABASE_UPGRADE = function($oldversion) {
         "{$CFG->dbprefix}lti_result_indx_link_deleted_grade" => 
             "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_deleted_grade` ON {$CFG->dbprefix}lti_result (link_id, deleted, grade)",
         "{$CFG->dbprefix}lti_result_indx_link_user_grade" => 
-            "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_user_grade` ON {$CFG->dbprefix}lti_result (link_id, user_id, grade, deleted)"
+            "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_user_grade` ON {$CFG->dbprefix}lti_result (link_id, user_id, grade, deleted)",
+        // Grade list pages sort one link by updated_at and then LIMIT.
+        // UNIQUE(link_id, user_id) finds the rows but cannot keep that order.
+        "{$CFG->dbprefix}lti_result_indx_link_updated" =>
+            "CREATE INDEX `{$CFG->dbprefix}lti_result_indx_link_updated` ON {$CFG->dbprefix}lti_result (link_id, updated_at)"
     );
     
     foreach($indexes_to_create as $index_name => $sql) {
@@ -2378,9 +2631,174 @@ $DATABASE_UPGRADE = function($oldversion) {
         if ( ! $q->success ) die("Unable to add {$link_category_fk}: ".$q->errorImplode."<br/>\n");
     }
 
+    // Existing tables only. A fresh CREATE already has the expression default
+    // and the unique key. This adds a nullable column with neither. The unique
+    // key is added in the next block. It does not add the expression default,
+    // and it does not alter a column that is already there. Existing rows stay
+    // NULL until admin/lti-maint/backfill-guid.php. MySQL 8.0.12+, Aurora MySQL 8, and
+    // MariaDB 10.3.2+ add the column with ALGORITHM=INSTANT. MySQL 5.6/5.7
+    // and MySQL 8.0 before 8.0.12 use ALGORITHM=INPLACE, LOCK=NONE so the
+    // copy does not block reads or writes. Any other server gets a plain
+    // ALTER TABLE, which may lock the table while it copies.
+    $guid_tables = array('lti_user', 'lti_context', 'lti_key', 'lti_link');
+    $guid_missing = array();
+    foreach ( $guid_tables as $guid_table ) {
+        $guid_physical = "{$p}{$guid_table}";
+        if ( $PDOX->metadata($guid_physical) === false ) {
+            echo("Skipping guid column, table missing: {$guid_physical}<br/>\n");
+            continue;
+        }
+        $guid_column = $PDOX->rowDie(
+            "SELECT COLUMN_TYPE AS column_type, IS_NULLABLE AS is_nullable
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = :table_name
+              AND COLUMN_NAME = 'guid'",
+            array(':table_name' => $guid_physical));
+        if ( $guid_column === false ) {
+            $guid_missing[] = $guid_physical;
+            continue;
+        }
+        $guid_type = strtolower((string) $guid_column['column_type']);
+        $guid_nullable = strtoupper((string) $guid_column['is_nullable']);
+        if ( $guid_type !== 'binary(16)' || $guid_nullable !== 'YES' ) {
+            die("guid on {$guid_physical} is {$guid_type} nullable={$guid_nullable}; expected binary(16) YES. Not altering it.<br/>\n");
+        }
+    }
+
+    if ( count($guid_missing) > 0 ) {
+        $guid_server = $PDOX->serverVersion();
+        foreach ( $guid_missing as $guid_physical ) {
+            $sql = "ALTER TABLE {$guid_physical} ADD COLUMN guid BINARY(16) NULL";
+            if ( $guid_server['add_column'] === 'instant' ) {
+                $sql .= ', ALGORITHM=INSTANT';
+            } else if ( $guid_server['add_column'] === 'inplace' ) {
+                $sql .= ', ALGORITHM=INPLACE, LOCK=NONE';
+            }
+            echo("Upgrading: ".$sql."<br/>\n");
+            error_log("Upgrading: ".$sql);
+            $q = $PDOX->queryReturnError($sql);
+            if ( ! $q->success && $guid_server['add_column'] !== '' ) {
+                $plain = "ALTER TABLE {$guid_physical} ADD COLUMN guid BINARY(16) NULL";
+                $warn = "guid add with ".$guid_server['add_column']." failed: ".$q->errorImplode."; retrying: ".$plain;
+                echo(htmlentities($warn)."<br/>\n");
+                error_log($warn);
+                $q->closeCursor();
+                $q = $PDOX->queryReturnError($plain);
+            }
+            if ( ! $q->success ) die("Unable to add guid on {$guid_physical}: ".$q->errorImplode."<br/>\n");
+        }
+    }
+
+    // Unique key on guid. A fresh CREATE already has it. This adds it once the
+    // column is there. Multiple NULLs are allowed, so this can run before
+    // backfill. A repeated non-NULL guid stops the upgrade. The expression
+    // default stays on fresh CREATE only.
+    //
+    // A secondary unique index is INPLACE on MySQL 5.6+ and MariaDB 10.0+ and
+    // does not copy the table. LOCK=NONE lets reads and writes continue. MySQL
+    // 5.5 and older MariaDB get a plain ALTER TABLE, which may lock the table
+    // while it copies. If INPLACE is rejected, this retries that plain
+    // statement. A duplicate guid is not retried.
+    foreach ( $guid_tables as $guid_table ) {
+        $guid_physical = "{$p}{$guid_table}";
+        if ( $PDOX->metadata($guid_physical) === false ) {
+            continue;
+        }
+        if ( ! $PDOX->columnExists('guid', $guid_physical) ) {
+            continue;
+        }
+        $guid_index = "{$p}{$guid_table}_const_guid";
+        if ( $PDOX->indexExists($guid_index, $guid_physical) ) {
+            continue;
+        }
+        $plain = "ALTER TABLE {$guid_physical} ADD CONSTRAINT `{$guid_index}` UNIQUE (`guid`)";
+        $sql = $plain.', ALGORITHM=INPLACE, LOCK=NONE';
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+        if ( ! $q->success ) {
+            $err = (string) $q->errorImplode;
+            $duplicate = (stripos($err, '1062') !== false) || (stripos($err, 'Duplicate entry') !== false);
+            if ( $duplicate ) {
+                die("Unable to add {$guid_index} on {$guid_physical}: duplicate guid values. ".$err."<br/>\n");
+            }
+            $warn = "guid unique index with INPLACE failed: ".$err."; retrying: ".$plain;
+            echo(htmlentities($warn)."<br/>\n");
+            error_log($warn);
+            $q->closeCursor();
+            $q = $PDOX->queryReturnError($plain);
+        }
+        if ( ! $q->success ) {
+            $err = (string) $q->errorImplode;
+            $duplicate = (stripos($err, '1062') !== false) || (stripos($err, 'Duplicate entry') !== false);
+            if ( $duplicate ) {
+                die("Unable to add {$guid_index} on {$guid_physical}: duplicate guid values. ".$err."<br/>\n");
+            }
+            die("Unable to add {$guid_index} on {$guid_physical}: ".$err."<br/>\n");
+        }
+    }
+
+    // email is TEXT. A 255-char prefix covers an address and lets
+    // unsubscribe opt-out match email = :E instead of scanning LOWER(email).
+    $email_index = "{$CFG->dbprefix}lti_user_indx_email";
+    if ( ! $PDOX->indexExists($email_index, "{$CFG->dbprefix}lti_user") ) {
+        $sql = "CREATE INDEX `{$email_index}` ON {$CFG->dbprefix}lti_user (email(255))";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+        if ( ! $q->success ) {
+            $message = "Non-Fatal error creating index: ".$q->errorImplode;
+            error_log($message);
+            echo($message."<br/>\n");
+        }
+    }
+
+    // Admin profile list counts lti_user rows per profile. profile_id has no key,
+    // so each count scanned lti_user.
+    $profile_index = "{$CFG->dbprefix}lti_user_indx_profile";
+    if ( ! $PDOX->indexExists($profile_index, "{$CFG->dbprefix}lti_user") ) {
+        $sql = "CREATE INDEX `{$profile_index}` ON {$CFG->dbprefix}lti_user (profile_id)";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+        if ( ! $q->success ) {
+            $message = "Non-Fatal error creating index: ".$q->errorImplode;
+            error_log($message);
+            echo($message."<br/>\n");
+        }
+    }
+
+    // Google login: WHERE key_id AND email ORDER BY updated_at DESC LIMIT 1.
+    // UNIQUE(key_id, user_sha256) finds the key but then walks every user on it.
+    $key_email_index = "{$CFG->dbprefix}lti_user_indx_key_email";
+    if ( ! $PDOX->indexExists($key_email_index, "{$CFG->dbprefix}lti_user") ) {
+        $sql = "CREATE INDEX `{$key_email_index}` ON {$CFG->dbprefix}lti_user (key_id, email(255), updated_at)";
+        echo("Upgrading: ".$sql."<br/>\n");
+        error_log("Upgrading: ".$sql);
+        $q = $PDOX->queryReturnError($sql);
+        if ( ! $q->success ) {
+            $message = "Non-Fatal error creating index: ".$q->errorImplode;
+            error_log($message);
+            echo($message."<br/>\n");
+        }
+    }
+
+    // Notice only. These rows share an issuer, client id, and deployment id.
+    foreach ( \Tsugi\Services\Admin\AdminService::issuerClientDuplicateRows() as $identity_row ) {
+        $stored_deploy = \Tsugi\Util\U::get($identity_row, 'deploy_key');
+        $deploy_label = (is_string($stored_deploy) && trim($stored_deploy) !== '') ? trim($stored_deploy) : '(none)';
+        $message = 'Duplicate (client id, issuer, deployment id): client_id='.\Tsugi\Util\U::get($identity_row, 'lms_client')
+            .' issuer='.\Tsugi\Util\U::get($identity_row, 'lms_issuer')
+            .' deployment_id='.$deploy_label
+            .' key_id='.\Tsugi\Util\U::get($identity_row, 'key_id');
+        error_log($message);
+        echo(htmlentities($message)."<br/>\n");
+    }
+
     // When you increase this number in any database.php file,
     // make sure to update the global value in setup.php
-    return 202610180002;
+    return 202611070000;
 
 }; // Don't forget the semicolon on anonymous functions :)
 

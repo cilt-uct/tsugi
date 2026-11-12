@@ -37,6 +37,9 @@ if ( $stmt->success ) {
         error_log("Warning: DB current version=$actualdbversion expected version=$CFG->dbversion");
     }
 }
+if ( is_object($PDOX) ) {
+    echo \Tsugi\Services\Admin\AdminService::issuerClientDuplicateNotice();
+}
 ?>
 <div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
    <div id="iframe-spinner" role="status" aria-live="polite">
@@ -53,6 +56,38 @@ echo("<p>\n");
 echo("Current PHP Version: ". phpversion(). "\n");
 if ( version_compare(PHP_VERSION, TSUGI_MINIMUM_PHP) < 0 ) {
     echo(' - <span style="color: red;">The recommended minimum PHP version is '.TSUGI_MINIMUM_PHP.".</span>\n");
+}
+if ( is_object($PDOX) ) {
+    $db_version_stmt = $PDOX->queryReturnError("SELECT VERSION() AS version", false, false);
+    if ( $db_version_stmt->success ) {
+        $db_version_row = $db_version_stmt->fetch(\PDO::FETCH_ASSOC);
+        $db_version_stmt->closeCursor();
+        $db_version = is_array($db_version_row) ? ($db_version_row['version'] ?? '') : '';
+        if ( is_string($db_version) && $db_version !== '' ) {
+            $aurora_version = '';
+            $aurora_stmt = $PDOX->queryReturnError("SHOW VARIABLES LIKE 'aurora_version'", false, false);
+            if ( $aurora_stmt->success ) {
+                $aurora_row = $aurora_stmt->fetch(\PDO::FETCH_ASSOC);
+                $aurora_stmt->closeCursor();
+                if ( is_array($aurora_row) ) {
+                    $aurora_version = (string) ($aurora_row['Value'] ?? '');
+                }
+            }
+            if ( $aurora_version !== '' ) {
+                $aurora_label = 'Aurora '.$aurora_version;
+            } else if ( stripos($db_version, 'aurora') !== false ) {
+                $aurora_label = 'Aurora';
+            } else {
+                $aurora_label = 'not Aurora';
+            }
+            echo("<br/>\n");
+            echo("Current Database Version: ".htmlspecialchars($db_version, ENT_QUOTES, 'UTF-8').
+                " (".htmlspecialchars($aurora_label, ENT_QUOTES, 'UTF-8').")\n");
+            if ( tsugi_mysql_version_too_low($db_version) ) {
+                echo(' - <span style="color: red;">The recommended minimum MySQL version is '.TSUGI_MINIMUM_MYSQL.".</span>\n");
+            }
+        }
+    }
 }
 echo("</p>\n");
 if ( function_exists('curl_init') ) {
@@ -126,6 +161,11 @@ if ( $php_charset && strtoupper($php_charset) !== 'UTF-8' ) {
   <a href="#" title="Check database size"
   onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'dbsize.php', _TSUGI.spinnerUrl); return false;" >
   Check database size
+  </a></li>
+<li>
+  <a href="#" title="GUID status"
+  onclick="showModalIframeUrl(this.title, 'iframe-dialog', 'iframe-frame', 'guid', _TSUGI.spinnerUrl, true); return false;" >
+  GUID status
   </a></li>
 <li><a href="info.php" target="_blank">PHP Info</a></li>
 <li>

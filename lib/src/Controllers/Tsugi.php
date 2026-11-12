@@ -35,7 +35,11 @@ class Tsugi extends \Tsugi\Lumos\Application {
             \Tsugi\Controllers\Grades::routes($this);
             \Tsugi\Controllers\Home::routes($this);
             \Tsugi\Controllers\Lessons::routes($this);
+            \Tsugi\Controllers\Content::routes($this);
+            \Tsugi\Controllers\Outline::routes($this);
             \Tsugi\Controllers\Settings::routes($this);
+            \Tsugi\Controllers\Instructor::routes($this);
+            \Tsugi\Controllers\Student::routes($this);
             \Tsugi\Controllers\Labs::routes($this);
             \Tsugi\Controllers\LaunchController::routes($this);
             \Tsugi\Controllers\Login::routes($this);
@@ -44,6 +48,7 @@ class Tsugi extends \Tsugi\Lumos\Application {
             \Tsugi\Controllers\Map::routes($this);
             \Tsugi\Controllers\Pages::routes($this);
             \Tsugi\Controllers\Profile::routes($this);
+            \Tsugi\Controllers\Roster::routes($this);
             \Tsugi\Controllers\Quiz1::routes($this);
             if ( is_array($CFG->getExtension('stripe')) ) {
                 \Tsugi\Controllers\Stripe::routes($this);
@@ -55,5 +60,18 @@ class Tsugi extends \Tsugi\Lumos\Application {
             \Tsugi\Controllers\Notifications::routes($this);
             \Tsugi\Controllers\ReqScopeDebug::routes($this);
         });
+    }
+
+    /**
+     * A Plus launch on a site URL stops before the tool action runs.
+     *
+     * @param object $instance
+     * @param string $method
+     * @return void
+     */
+    protected function beforeControllerAction($instance, $method) {
+        if ( $instance instanceof Tool ) {
+            Tool::exitPlusLeftCourse();
+        }
     }
 }

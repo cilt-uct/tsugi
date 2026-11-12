@@ -3,6 +3,7 @@
 namespace Tsugi\Services\Files;
 
 use Tsugi\Blob\BlobUtil;
+use Tsugi\Core\Guid;
 use Tsugi\Core\LTIX;
 use Tsugi\Util\U;
 
@@ -59,10 +60,11 @@ class FileRepository {
         if ( ! $row ) {
             $stmt = $PDOX->queryReturnError(
                 "INSERT IGNORE INTO {$CFG->dbprefix}lti_link
-                    (link_sha256, link_key, context_id, title, path, updated_at)
+                    (guid, link_sha256, link_key, context_id, title, path, updated_at)
                  VALUES
-                    (:SHA, :KEY, :CID, :TITLE, :PATH, NOW())",
+                    (UNHEX(:GUID), :SHA, :KEY, :CID, :TITLE, :PATH, NOW())",
                 array(
+                    ':GUID' => Guid::uuid7(),
                     ':SHA' => $sha,
                     ':KEY' => $link_key,
                     ':CID' => $context_id,
@@ -252,6 +254,99 @@ class FileRepository {
             }
         }
         return null;
+    }
+
+    /**
+     * Files link for this course, or 0 when the course has no Files link yet.
+     *
+     * Does not create a link.
+     *
+     * @param mixed $context_id
+     * @return int
+     */
+    public static function existingLinkId($context_id) {
+        global $CFG, $PDOX;
+
+        $context_id = (int) $context_id;
+        if ( $context_id < 1 || ! isset($PDOX) || $PDOX === false ) {
+            return 0;
+        }
+        try {
+            LTIX::getConnection();
+        } catch ( \Throwable $e ) {
+            return 0;
+        }
+        $link_key = 'lms:'.self::HREF_PREFIX;
+        $sha = function_exists('lti_sha256') ? lti_sha256($link_key) : hash('sha256', $link_key);
+        $row = $PDOX->rowDie(
+            "SELECT link_id FROM {$CFG->dbprefix}lti_link
+             WHERE context_id = :CID AND link_sha256 = :SHA",
+            array(':CID' => $context_id, ':SHA' => $sha)
+        );
+        if ( ! is_array($row) ) {
+            return 0;
+        }
+        return (int) ($row['link_id'] ?? 0);
+    }
+
+    /**
+     * Non-private files an instructor can place on the course home.
+     *
+     * Folders and the Private tree are omitted. Every row is a file a student
+     * can open by its course path.
+     *
+     * @param mixed $context_id
+     * @return list<array{path:string,name:string,image:bool}>
+     */
+    public static function listForHome($context_id) {
+        $link_id = self::existingLinkId($context_id);
+        if ( $link_id < 1 ) {
+            return array();
+        }
+        $out = array();
+        foreach ( self::allItems($link_id, (int) $context_id) as $row ) {
+            if ( ! is_array($row) ) {
+                continue;
+            }
+            $meta = self::decodeMeta($row);
+            if ( $meta['kind'] !== self::KIND_FILE || self::isPrivatePath($meta['folder']) ) {
+                continue;
+            }
+            $path = self::pathFromFileRow($row);
+            if ( ! is_string($path) || $path === '' ) {
+                continue;
+            }
+            $name = isset($row['file_name']) && is_string($row['file_name']) ? $row['file_name'] : $path;
+            $ctype = isset($row['contenttype']) && is_string($row['contenttype']) ? $row['contenttype'] : '';
+            $out[] = array(
+                'path' => $path,
+                'name' => $name,
+                'image' => self::isImageFile($name, $ctype),
+            );
+        }
+        usort($out, function ($a, $b) {
+            return strcasecmp($a['path'], $b['path']);
+        });
+        return $out;
+    }
+
+    /**
+     * True for image/* content, or a common image extension when the type is missing.
+     *
+     * @param mixed $name
+     * @param mixed $contentType
+     */
+    public static function isImageFile($name, $contentType) {
+        $ctype = strtolower(trim((string) $contentType));
+        $semi = strpos($ctype, ';');
+        if ( $semi !== false ) {
+            $ctype = trim(substr($ctype, 0, $semi));
+        }
+        if ( strpos($ctype, 'image/') === 0 ) {
+            return true;
+        }
+        $ext = strtolower(pathinfo((string) $name, PATHINFO_EXTENSION));
+        return in_array($ext, array('png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'), true);
     }
 
     /**

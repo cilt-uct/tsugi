@@ -18,6 +18,8 @@ use \Tsugi\Core\SQLDialect;
 use \Tsugi\Core\Keyset;
 use \Tsugi\OAuth\OAuthUtil;
 use \Tsugi\Crypt\AesOpenSSL;
+use \Tsugi\Services\Plus\GradeSync;
+use \Tsugi\Services\Plus\PlusShell;
 
 use \Firebase\JWT\JWT;
 
@@ -294,6 +296,36 @@ class LTIX {
     }
 
     /**
+     * Bind an ID token nonce to the authenticated state from oidc_login.
+     * Returns true on success or an error string. This does not consume state:
+     * postMessage/postverify may revisit the callback before it forwards to a tool.
+     * JWT signature validation and the existing nonce replay check still apply.
+     */
+    public static function checkOidcNonce($state, $nonce) {
+        global $CFG;
+
+        if ( ! is_string($state) || $state === '' ) {
+            return 'Missing OIDC state';
+        }
+        try {
+            $decoded = JWT::decode($state, new \Firebase\JWT\Key($CFG->cookiesecret, 'HS256'));
+        } catch (\Exception $e) {
+            return 'Unable to decode OIDC state';
+        }
+        if ( ! isset($decoded->time) || ! is_int($decoded->time) || abs($decoded->time - time()) > 60 ) {
+            return 'Bad time in OIDC state';
+        }
+        if ( ! isset($decoded->signature) || $decoded->signature !== self::getBrowserSignature() ) {
+            return 'Invalid browser signature in OIDC state';
+        }
+        if ( ! isset($decoded->nonce) || ! is_string($decoded->nonce) || $decoded->nonce === '' ||
+             ! is_string($nonce) || $nonce === '' || ! hash_equals($decoded->nonce, $nonce) ) {
+            return 'Missing or mismatched OIDC nonce';
+        }
+        return true;
+    }
+
+    /**
      * Extract all of the post data, set up data in tables, and set up session.
      */
     public static function setupSession($needed=self::ALL, $request_data=false) {
@@ -336,6 +368,16 @@ class LTIX {
             $msg = '';
             if ( is_string($post) ) $msg = $post . ' ';
             self::abort_with_error_log('LTI Launch Error: '.$msg, $request_data);
+        }
+
+        // Tools also accept direct posts. Enforce nonce binding here before creating
+        // a launch session, so bypassing oidc_launch cannot bypass its nonce check.
+        if ( $LTI13 ) {
+            $state = U::get($request_data === false ? $_POST : $request_data, 'state');
+            $nonce_check = self::checkOidcNonce($state, U::get($post, 'nonce'));
+            if ( $nonce_check !== true ) {
+                self::abort_with_error_log($nonce_check);
+            }
         }
 
         // We make up a Session ID Key because we don't want a new one
@@ -1171,19 +1213,24 @@ class LTIX {
             c.lti13_lineitems AS lti13_lineitems, c.lti13_membership_url AS lti13_membership_url,
             c.lti13_context_groups_url AS lti13_context_groups_url,
             c.settings AS context_settings, c.manifest_id AS manifest_id,
+            c.plus_course AS plus_course, c.plus_launch_link_id AS plus_launch_link_id,
+            c.lti13_deployment_id AS lti13_deployment_id, c.timezone AS context_timezone,
+            c.short_title AS context_short_title, k.timezone AS key_timezone,
+            k.plus AS key_plus, k.guid AS key_guid, c.guid AS context_guid,
             l.link_id, l.path AS link_path, l.title AS link_title, l.settings AS link_settings, l.settings_url AS link_settings_url,
             l.lti13_lineitem AS lti13_lineitem, l.upward AS upward, l.settings AS link_settings,
+            l.guid AS link_guid,
             u.user_id, u.displayname AS user_displayname, u.email AS user_email, u.user_key AS user_key, u.image AS user_image,
             u.locale AS user_locale,
-            u.subscribe AS subscribe, u.user_sha256 AS user_sha256,
-            m.membership_id, m.role, m.role_override,
+            u.subscribe AS subscribe, u.user_sha256 AS user_sha256, u.guid AS user_guid,
+            m.membership_id, m.role, m.role_override, m.deleted AS membership_deleted,
             r.result_id, r.grade, r.result_url, r.sourcedid";
 
         if ( $for_user_subject ) {
             $sql .= ",
             f.user_id AS for_user_id, f.displayname AS for_user_displayname, f.email AS for_user_email,
             f.user_key as for_user_key, f.image AS for_user_image, f.locale AS for_user_locale,
-            f.subscribe AS for_subscribe, f.user_sha256 AS for_user_sha256,
+            f.subscribe AS for_subscribe, f.user_sha256 AS for_user_sha256, f.guid AS for_user_guid,
             fm.membership_id AS for_membership_id, fm.role AS for_user_role, fm.role_override AS for_user_role_override";
         }
 
@@ -1264,10 +1311,13 @@ class LTIX {
 
         // TODO: Fix this per SO - but wait until the migrations have run in production
         // https://stackoverflow.com/questions/44474250/which-is-better-in-mysql-an-ifnull-or-or-logic/44474286
+        // A soft-deleted membership is still loaded, for a file course or a
+        // manifest course. adjustData() clears deleted when this launch arrives.
+        // Filtering m.deleted here drops the whole row and rejects the launch.
+        // A permanent block is a separate feature, not this filter.
         $sql .= "\nAND (c.deleted IS NULL OR c.deleted = 0)
             AND (l.deleted IS NULL OR l.deleted = 0)
             AND (u.deleted IS NULL OR u.deleted = 0)
-            AND (m.deleted IS NULL OR m.deleted = 0)
             AND (r.deleted IS NULL OR r.deleted = 0)";
 
         if ( $profile_table ) {
@@ -1378,11 +1428,12 @@ class LTIX {
         // https://dev.mysql.com/doc/refman/5.6/en/insert-on-duplicate.html
         if ( $row['context_id'] === null && isset($post['context_id']) ) {
             $sql = "INSERT INTO {$p}lti_context
-                ( context_key, context_sha256, settings_url, title, key_id, created_at, updated_at ) VALUES
-                ( :context_key, :context_sha256, :settings_url, :title, :key_id, NOW(), NOW() )
+                ( guid, context_key, context_sha256, settings_url, title, key_id, created_at, updated_at ) VALUES
+                ( UNHEX(:guid), :context_key, :context_sha256, :settings_url, :title, :key_id, NOW(), NOW() )
                 ON DUPLICATE KEY UPDATE updated_at = NOW();";
             $context_settings_url = U::get($post, 'context_settings_url', null);
             $PDOX->queryDie($sql, array(
+                ':guid' => Guid::uuid7(),
                 ':context_key' => $post['context_id'],
                 ':context_sha256' => lti_sha256($post['context_id']),
                 ':settings_url' => $context_settings_url,
@@ -1398,11 +1449,12 @@ class LTIX {
         // if we didn't get context_id from post, we can't update lti_link either
         if ( $row['link_id'] === null && $row['context_id'] !== null && isset($post['link_id']) ) {
             $sql = "INSERT INTO {$p}lti_link
-                ( link_key, link_sha256, settings_url, title, context_id, path, created_at, updated_at ) VALUES
-                    ( :link_key, :link_sha256, :settings_url, :title, :context_id, :path, NOW(), NOW() )
+                ( guid, link_key, link_sha256, settings_url, title, context_id, path, created_at, updated_at ) VALUES
+                    ( UNHEX(:guid), :link_key, :link_sha256, :settings_url, :title, :context_id, :path, NOW(), NOW() )
                     ON DUPLICATE KEY UPDATE updated_at = NOW();";
             $link_settings_url = U::get($post, 'link_settings_url', null);
             $PDOX->queryDie($sql, array(
+                ':guid' => Guid::uuid7(),
                 ':link_key' => $post['link_id'],
                 ':link_sha256' => lti_sha256($post['link_id']),
                 ':settings_url' => $link_settings_url,
@@ -1430,10 +1482,11 @@ class LTIX {
         if ( $row['user_id'] === null && isset($post['user_id']) && U::isNotEmpty($post['user_id']) ) {
             $sql = "INSERT INTO {$p}lti_user
                 /*PDOX pk: user_id lk: user_sha256,key_id */
-                ( user_key, user_sha256, displayname, email, image, locale, key_id, created_at, updated_at ) VALUES
-                ( :user_key, :user_sha256, :displayname, :email, :image, :locale, :key_id, NOW(), NOW() )
+                ( guid, user_key, user_sha256, displayname, email, image, locale, key_id, created_at, updated_at ) VALUES
+                ( UNHEX(:guid), :user_key, :user_sha256, :displayname, :email, :image, :locale, :key_id, NOW(), NOW() )
                 ON DUPLICATE KEY UPDATE updated_at = NOW();";
             $PDOX->queryDie($sql, array(
+                ':guid' => Guid::uuid7(),
                 ':user_key' => $post['user_id'],
                 ':user_sha256' => lti_sha256($post['user_id']),
                 ':displayname' => $user_displayname,
@@ -1480,11 +1533,12 @@ class LTIX {
         if ( $row['user_id'] === null && U::isNotEmpty($post_user_subject) ) {
             $sql = "INSERT INTO {$p}lti_user
                 /*PDOX pk: user_id lk: subject_sha256,user_sha256,key_id */
-                ( user_key, user_sha256, subject_key, subject_sha256, displayname, email, image, locale, key_id, created_at, updated_at ) VALUES
-                ( :user_key, :user_sha256, :subject_key, :subject_sha256, :displayname, :email, :image, :locale, :key_id, NOW(), NOW() )
+                ( guid, user_key, user_sha256, subject_key, subject_sha256, displayname, email, image, locale, key_id, created_at, updated_at ) VALUES
+                ( UNHEX(:guid), :user_key, :user_sha256, :subject_key, :subject_sha256, :displayname, :email, :image, :locale, :key_id, NOW(), NOW() )
                 ON DUPLICATE KEY UPDATE
                 user_id=LAST_INSERT_ID(user_id), updated_at = NOW();";
             $PDOX->queryDie($sql, array(
+                ':guid' => Guid::uuid7(),
                 ':user_key' => $lti11_transition_user_id,
                 ':user_sha256' => $lti11_transition_user_id_sha256,
                 ':subject_key' => $post_user_subject,
@@ -1552,7 +1606,9 @@ class LTIX {
             $sql = "INSERT INTO {$p}lti_membership
                 ( context_id, user_id, role, created_at, updated_at ) VALUES
                 ( :context_id, :user_id, :role, NOW(), NOW() )
-                ON DUPLICATE KEY UPDATE updated_at = NOW();";
+                ON DUPLICATE KEY UPDATE
+                membership_id = LAST_INSERT_ID(membership_id),
+                deleted = 0, deleted_at = NULL, updated_at = NOW();";
             $PDOX->queryDie($sql, array(
                 ':context_id' => $row['context_id'],
                 ':user_id' => $row['user_id'],
@@ -1605,6 +1661,7 @@ class LTIX {
                 ':user_id' => $row['user_id']));
             $row['result_id'] = $PDOX->lastInsertId();
             $actions[] = "=== Inserted result id=".$row['result_id'];
+            GradeSync::ensureLineItem((int) $row['link_id']);
        }
 
         // Set these values to null if they were not in the post
@@ -1664,8 +1721,12 @@ class LTIX {
             $actions[] = "=== Updated result id=".$row['result_id']." lti13_lineitem=".$row['lti13_lineitem'];
         }
 
+        // A Plus course keeps course service URLs unless this request is /plus.
+        // Other launches still overwrite them.
+        $plusRefresh = PlusShell::mayRefreshCourse($row['plus_course'] ?? 0);
+
         // Here we handle lti13_membership_url
-        if ( isset($row['context_id']) && isset($post['lti13_membership_url']) &&
+        if ( $plusRefresh && isset($row['context_id']) && isset($post['lti13_membership_url']) &&
             array_key_exists('lti13_membership_url',$row) && $post['lti13_membership_url'] != $row['lti13_membership_url'] ) {
             $sql = "UPDATE {$p}lti_context
                 SET lti13_membership_url = :lti13_membership_url, updated_at = NOW()
@@ -1678,7 +1739,7 @@ class LTIX {
         }
 
         // Here we handle lti13_context_groups_url
-        if ( isset($row['context_id']) && isset($post['lti13_context_groups_url']) &&
+        if ( $plusRefresh && isset($row['context_id']) && isset($post['lti13_context_groups_url']) &&
             array_key_exists('lti13_context_groups_url',$row) && $post['lti13_context_groups_url'] != $row['lti13_context_groups_url'] ) {
             $sql = "UPDATE {$p}lti_context
                 SET lti13_context_groups_url = :lti13_context_groups_url, updated_at = NOW()
@@ -1692,7 +1753,7 @@ class LTIX {
 
 
         // Here we handle lti13_lineitems
-        if ( isset($row['context_id']) && isset($post['lti13_lineitems']) &&
+        if ( $plusRefresh && isset($row['context_id']) && isset($post['lti13_lineitems']) &&
             array_key_exists('lti13_lineitems',$row) && $post['lti13_lineitems'] != $row['lti13_lineitems'] ) {
             $sql = "UPDATE {$p}lti_context
                 SET lti13_lineitems = :lti13_lineitems, updated_at = NOW()
@@ -1704,8 +1765,23 @@ class LTIX {
             $actions[] = "=== Updated result id=".$row['result_id']." lti13_lineitems=".$row['lti13_lineitems'];
         }
 
+        if ( $plusRefresh && (int) ($row['plus_course'] ?? 0) === 1 && isset($row['context_id']) ) {
+            $deployment = U::get($post, 'deployment_id');
+            if ( is_string($deployment) && $deployment !== '' && $deployment !== ($row['lti13_deployment_id'] ?? null) ) {
+                $sql = "UPDATE {$p}lti_context
+                    SET lti13_deployment_id = :deployment, updated_at = NOW()
+                    WHERE context_id = :context_id";
+                $PDOX->queryDie($sql, array(
+                    ':deployment' => $deployment,
+                    ':context_id' => $row['context_id']));
+                $row['lti13_deployment_id'] = $deployment;
+                $actions[] = "=== Updated context=".$row['context_id']." lti13_deployment_id=".$deployment;
+            }
+        }
+
         // Here we handle updates to context_title, link_title, user_displayname, user_email, or role
-        if ( isset($row['context_id']) && isset($post['context_title']) && $post['context_title'] != $row['context_title'] ) {
+        if ( isset($row['context_id']) && isset($post['context_title']) && $post['context_title'] != $row['context_title']
+            && PlusShell::mayReplaceTitle($row['plus_course'] ?? 0, $row['context_title'] ?? '') ) {
             $sql = "UPDATE {$p}lti_context SET title = :title, updated_at = NOW() WHERE context_id = :context_id";
             $PDOX->queryDie($sql, array(
                 ':title' => $post['context_title'],
@@ -1716,7 +1792,7 @@ class LTIX {
 
         // Grab the context scoped service URLs...
         $context_services = array('ext_memberships_id', 'ext_memberships_url', 'lineitems_url', 'memberships_url');
-        if ( isset($row['context_id']) ) {
+        if ( $plusRefresh && isset($row['context_id']) ) {
             foreach($context_services as $context_service ) {
                 if ( isset($post[$context_service]) && $post[$context_service] != $row[$context_service] ) {
                     $sql = "UPDATE {$p}lti_context SET {$context_service} = :value, updated_at = NOW()
@@ -1762,6 +1838,16 @@ class LTIX {
                     $actions[] = "=== Updated user=".$row['user_id']." {$user_field}=".$post[$user_field];
                 }
             }
+        }
+
+        if ( isset($row['membership_id']) && (int) ($row['membership_deleted'] ?? 0) === 1 ) {
+            $sql = "UPDATE {$p}lti_membership
+                SET deleted = 0, deleted_at = NULL, updated_at = NOW()
+                WHERE membership_id = :membership_id";
+            $PDOX->queryDie($sql, array(
+                ':membership_id' => $row['membership_id']));
+            $row['membership_deleted'] = 0;
+            $actions[] = "=== Restored membership id=".$row['membership_id'];
         }
 
         if ( isset($row['membership_id']) && isset($post['role']) && $post['role'] != $row['role'] ) {
@@ -2006,12 +2092,18 @@ class LTIX {
         $_SESSION['HEARTBEAT_COUNT'] = 0;
 
         // Site URLs (buildmenu): leave leftover /courses/{id} sandbox, use Google-login course.
+        // A non-Google, non-Plus site URL is not the stored launch course. Drop the
+        // top-level course fields. A Plus session keeps its course. The launch row
+        // stays for a later /courses/{id} match.
         if ( class_exists('\Tsugi\Controllers\Courses') ) {
             \Tsugi\Controllers\Courses::restoreSiteLoginContext();
+            \Tsugi\Controllers\Courses::releaseUnmountedCourse();
         }
 
         $LTI = $_SESSION[TSUGI_SESSION_LTI] ?? null;
-        self::rejectDeletedContext($PDOX, $LTI);
+        if ( self::launchContextApplies(is_array($LTI) ? $LTI : null) ) {
+            self::rejectDeletedContext($PDOX, $LTI);
+        }
         if ( count($needed) == 0 && $LTI === null ) {
             self::provisionReqScope(null);
             return $TSUGI_LAUNCH;
@@ -2027,6 +2119,34 @@ class LTIX {
         $launch = self::buildLaunch($LTI);
         self::provisionReqScope($LTI);
         return $launch;
+    }
+
+    /**
+     * True when this request's course is the course stored on the launch row.
+     *
+     * A cookieless tool launch is that row. A cookie /courses/{id} request
+     * matches when the URL id is the row's context_id. Any other cookie URL
+     * matches only when $_SESSION['context_id'] is that same id. A request
+     * course of 0 does not match.
+     *
+     * @param mixed $LTI
+     */
+    public static function launchContextApplies($LTI) {
+        $ltiContext = is_array($LTI) ? (int) ($LTI['context_id'] ?? 0) : 0;
+        if ( ! defined('COOKIE_SESSION') ) {
+            return $ltiContext > 0;
+        }
+        $requestContext = 0;
+        if ( class_exists('\Tsugi\Controllers\Courses')
+                && \Tsugi\Controllers\Courses::isCourseMountedRequest() ) {
+            $requestContext = \Tsugi\Controllers\Courses::courseIdFromRequest();
+        } else {
+            $requestContext = (int) ($_SESSION['context_id'] ?? 0);
+        }
+        if ( $ltiContext < 1 ) {
+            return $requestContext > 0;
+        }
+        return $requestContext === $ltiContext;
     }
 
     /**
@@ -2064,17 +2184,19 @@ class LTIX {
             if ( isset($_SESSION['id']) ) {
                 $user_id = (int) $_SESSION['id'];
             }
-            if ( isset($_SESSION['context_id']) ) {
-                $context_id = (int) $_SESSION['context_id'];
-            }
             if ( $user_id < 1 && $lti_user > 0 ) {
                 $user_id = $lti_user;
-                $context_id = $lti_context;
-                if ( $lti_link > 0 ) {
+            }
+            if ( self::launchContextApplies($LTI) ) {
+                if ( class_exists('\Tsugi\Controllers\Courses')
+                        && \Tsugi\Controllers\Courses::isCourseMountedRequest() ) {
+                    $context_id = \Tsugi\Controllers\Courses::courseIdFromRequest();
+                } else if ( isset($_SESSION['context_id']) ) {
+                    $context_id = (int) $_SESSION['context_id'];
+                }
+                if ( $lti_link > 0 && $lti_context > 0 && $lti_context === $context_id ) {
                     $link_id = $lti_link;
                 }
-            } else if ( $lti_link > 0 && $lti_context > 0 && $lti_context === $context_id ) {
-                $link_id = $lti_link;
             }
         }
         $post = $_SESSION[TSUGI_SESSION_LTI_POST] ?? null;
@@ -2120,6 +2242,32 @@ class LTIX {
         self::abort_with_error_log('Course has been deleted');
     }
 
+    /**
+     * Keep a repaired guid on the launch row so the next request does not query again.
+     *
+     * The constructor returns hex. The launch row keeps the BINARY(16) form.
+     *
+     * @param string $alias
+     * @param string|null $hex
+     */
+    private static function rememberBinaryGuid($alias, $hex) {
+        if ( ! is_string($hex) || ! preg_match('/^[0-9a-f]{32}$/', $hex) ) {
+            return;
+        }
+        if ( ! isset($_SESSION[TSUGI_SESSION_LTI]) || ! is_array($_SESSION[TSUGI_SESSION_LTI]) ) {
+            return;
+        }
+        $current = $_SESSION[TSUGI_SESSION_LTI][$alias] ?? null;
+        if ( is_string($current) && strlen($current) === 16 ) {
+            return;
+        }
+        $binary = hex2bin($hex);
+        if ( ! is_string($binary) || strlen($binary) !== 16 ) {
+            return;
+        }
+        $_SESSION[TSUGI_SESSION_LTI][$alias] = $binary;
+    }
+
     public static function buildLaunch($LTI) {
         global $CFG, $TSUGI_LAUNCH, $TSUGI_KEY;
         global $OUTPUT, $USER, $PROFILE, $CONTEXT, $LINK, $RESULT, $ROSTER;
@@ -2136,7 +2284,8 @@ class LTIX {
 
         // Populate the $USER $CONTEXT and $LINK objects
         if ( isset($LTI['user_id']) && ! is_object($USER) ) {
-            $USER = new \Tsugi\Core\User();
+            $USER = new \Tsugi\Core\User($LTI);
+            self::rememberBinaryGuid('user_guid', $USER->guid);
             $USER->launch = $TSUGI_LAUNCH;
             $USER->id = $LTI['user_id'];
             $USER->key = $LTI['user_key'];
@@ -2173,7 +2322,12 @@ class LTIX {
 
         $TSUGI_LAUNCH->for_user = null;
         if ( isset($LTI['for_user_id']) ) {
-            $for_user = new \Tsugi\Core\User();
+            $forRow = array('user_id' => $LTI['for_user_id']);
+            if ( array_key_exists('for_user_guid', $LTI) ) {
+                $forRow['user_guid'] = $LTI['for_user_guid'];
+            }
+            $for_user = new \Tsugi\Core\User($forRow);
+            self::rememberBinaryGuid('for_user_guid', $for_user->guid);
             $for_user->launch = $TSUGI_LAUNCH;
             $for_user->id = $LTI['for_user_id'];
             $for_user->key = $LTI['for_user_key'];
@@ -2195,7 +2349,8 @@ class LTIX {
         }
 
         if ( isset($LTI['key_id']) && ! is_object($TSUGI_KEY) ) {
-            $TSUGI_KEY = new \Tsugi\Core\Key();
+            $TSUGI_KEY = new \Tsugi\Core\Key($LTI);
+            self::rememberBinaryGuid('key_guid', $TSUGI_KEY->guid);
             $TSUGI_KEY->launch = $TSUGI_LAUNCH;
             $TSUGI_KEY->id = $LTI['key_id'];
             if (isset($LTI['key_title']) ) $TSUGI_KEY->title = $LTI['key_title'];
@@ -2204,8 +2359,11 @@ class LTIX {
             $TSUGI_LAUNCH->key = $TSUGI_KEY;
         }
 
-        if ( isset($LTI['context_id']) && ! is_object($CONTEXT) ) {
-            $CONTEXT = new \Tsugi\Core\Context();
+        $courseApplies = self::launchContextApplies(is_array($LTI) ? $LTI : null);
+
+        if ( $courseApplies && isset($LTI['context_id']) && ! is_object($CONTEXT) ) {
+            $CONTEXT = new \Tsugi\Core\Context($LTI);
+            self::rememberBinaryGuid('context_guid', $CONTEXT->guid);
             $CONTEXT->launch = $TSUGI_LAUNCH;
             $CONTEXT->id = $LTI['context_id'];
             if (isset($LTI['context_title']) ) $CONTEXT->title = $LTI['context_title'];
@@ -2215,8 +2373,9 @@ class LTIX {
             $TSUGI_LAUNCH->context = $CONTEXT;
         }
 
-        if ( isset($LTI['link_id']) && ! is_object($LINK) ) {
-            $LINK = new \Tsugi\Core\Link();
+        if ( $courseApplies && isset($LTI['link_id']) && ! is_object($LINK) ) {
+            $LINK = new \Tsugi\Core\Link($LTI);
+            self::rememberBinaryGuid('link_guid', $LINK->guid);
             $LINK->launch = $TSUGI_LAUNCH;
             $LINK->id = $LTI['link_id'];
             if (isset($LTI['link_title']) ) $LINK->title = $LTI['link_title'];
@@ -2247,7 +2406,7 @@ class LTIX {
             $TSUGI_LAUNCH->link = $LINK;
         }
 
-        if ( isset($LTI['result_id']) && ! is_object($RESULT) ) {
+        if ( $courseApplies && isset($LTI['result_id']) && ! is_object($RESULT) ) {
             $RESULT = new \Tsugi\Core\Result();
             $RESULT->launch = $TSUGI_LAUNCH;
             $RESULT->id = $LTI['result_id'];
@@ -2255,7 +2414,7 @@ class LTIX {
             $TSUGI_LAUNCH->result = $RESULT;
         }
 
-        if ( $TSUGI_LAUNCH->ltiRawParameter(LTIConstants::EXT_CONTEXT_MEMBERSHIP_ID) && ! is_object($ROSTER)) {
+        if ( $courseApplies && $TSUGI_LAUNCH->ltiRawParameter(LTIConstants::EXT_CONTEXT_MEMBERSHIP_ID) && ! is_object($ROSTER)) {
             $ROSTER = new \Tsugi\Core\Roster();
             $ROSTER->id = $TSUGI_LAUNCH->ltiRawParameter(LTIConstants::EXT_CONTEXT_MEMBERSHIP_ID);
             $ROSTER->url = $TSUGI_LAUNCH->ltiRawParameter(LTIConstants::EXT_CONTEXT_MEMBERSHIP_URL);
@@ -2976,7 +3135,7 @@ class LTIX {
 
                 // Set up user
                 $insertUser = "INSERT INTO {$p}lti_user
-                        ( user_key, user_sha256, displayname, email, locale, json, key_id, created_at, updated_at ) VALUES ";
+                        ( guid, user_key, user_sha256, displayname, email, locale, json, key_id, created_at, updated_at ) VALUES ";
 
                 // Set up membership
                 $insertMembership = "INSERT INTO {$p}lti_membership
@@ -2991,7 +3150,7 @@ class LTIX {
                 $insertUserMembershipArray = [];
                 foreach($ROSTER->data as $user) {
                     array_push($insertUserArray,
-                            "('". $user['user_id'] ."', '".
+                            "(UNHEX('".Guid::uuid7()."'), '". $user['user_id'] ."', '".
                                     lti_sha256($user['user_id']) ."', '".
                                     $user['user_name'] ."', '".
                                     $user['user_email'] ."', '".

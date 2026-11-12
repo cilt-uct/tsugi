@@ -76,20 +76,23 @@ class Pages extends Tool {
     {
         global $CFG, $OUTPUT;
 
-        $this->requireAuth();
+        $anonymous = ReqScope::isAnonymousLessonView();
+        if ( ! $anonymous ) {
+            $this->requireAuth();
+        }
 
         LTIX::getConnection();
 
         $context_id = ReqScope::currentContextId();
 
-        $is_instructor = $this->isInstructor();
+        $is_instructor = $anonymous ? false : $this->isInstructor();
 
         if (!$logical_key && isset($_GET['logical_key']) && U::strlen($_GET['logical_key']) > 0) {
             $logical_key = $_GET['logical_key'];
         }
 
         $page = null;
-        $published_only = !$is_instructor;
+        $published_only = $anonymous || !$is_instructor;
         if ($logical_key) {
             $page = PageRepository::loadByLogicalKey($context_id, $logical_key, $published_only);
         } else {
@@ -101,14 +104,15 @@ class Pages extends Tool {
                 }
             }
         }
-        
-        // Record learner analytics for this tool (not per-page within the tool)
-        $analytics_path = self::ROUTE;
-        $analytics_title = self::NAME;
-        $this->lmsRecordLaunchAnalytics($analytics_path, $analytics_title);
-        
+
+        if ( ! $anonymous ) {
+            $analytics_path = self::ROUTE;
+            $analytics_title = self::NAME;
+            $this->lmsRecordLaunchAnalytics($analytics_path, $analytics_title);
+        }
+
         // If instructor/admin, add an analytics button
-        $is_admin = $this->isAdmin();
+        $is_admin = $anonymous ? false : $this->isAdmin();
         $show_analytics = $is_instructor || $is_admin;
         
         $tool_home = $this->toolHome(self::ROUTE);
@@ -140,7 +144,7 @@ class Pages extends Tool {
                     </span>
                 </h1>
                 <div class="page-content">
-                    <?= $this->expandPageHtml($page['body']) ?>
+                    <?= \Tsugi\Services\Pages\PageRepository::renderEmbeddedMedia($this->expandPageHtml($page['body'])) ?>
                 </div>
             <?php else: ?>
                 <h1 style="display: flex; justify-content: space-between; align-items: center;">
@@ -447,7 +451,7 @@ class Pages extends Tool {
                                <?= U::get($_POST, 'is_main') ? 'checked' : '' ?>>
                         This is the main page
                     </label>
-                    <p class="help-block">If checked, this page will become the main page (shown at /pages). Any existing main page will be unset.</p>
+                    <p class="help-block">If checked, this page is the one shown at /pages. The course home is chosen with the gear on Home. Any existing main page will be unset.</p>
                 </div>
                 
                 <div class="form-group">
@@ -473,7 +477,7 @@ class Pages extends Tool {
         </style>
         <?php \Tsugi\UI\CKEditor::renderLinkPickerModal('Insert link'); ?>
 
-        <?php \Tsugi\UI\CKEditor::renderScriptTag(); ?>
+        <?php \Tsugi\UI\CKEditor::renderPagesEditorAssets(); ?>
         <script type="text/javascript">
         <?php $json_url = $tool_home . '/json'; ?>
         <?php $lessons_json_url = $tool_home . '/lessons-json'; ?>
@@ -485,11 +489,13 @@ class Pages extends Tool {
         var pagesBase = '<?= htmlspecialchars($pages_base) ?>';
         var appHome = '<?= htmlspecialchars(isset($apphome) ? $apphome : '') ?>';
         var currentPageId = <?= isset($current_page_id) ? (int)$current_page_id : 'null' ?>;
+        window.tsugiPagesEditor = true;
 
         <?php \Tsugi\UI\CKEditor::renderConfigScript(); ?>
 
         <?php \Tsugi\UI\CKEditor::renderLinkPickerScript(); ?>
         </script>
+        <?php \Tsugi\UI\CKEditor::renderPagesEditorModule(); ?>
         <?php
         $OUTPUT->footerEnd();
     }
@@ -527,10 +533,9 @@ class Pages extends Tool {
             PageRepository::generateLogicalKey($title)
         );
 
-        $page_count = PageRepository::countForContext($context_id);
-        if ($page_count == 0) {
-            $is_main = 1;
-        } else if ($is_main) {
+        // The first page is not main unless the box is checked. /pages still
+        // shows a lone page through its single-page fallback.
+        if ($is_main) {
             PageRepository::clearMain($context_id);
         }
 
@@ -612,7 +617,7 @@ class Pages extends Tool {
                                <?= (U::get($_POST, 'is_main', $page['is_main'])) ? 'checked' : '' ?>>
                         This is the main page
                     </label>
-                    <p class="help-block">If checked, this page will become the main page (shown at /pages). Any existing main page will be unset.</p>
+                    <p class="help-block">If checked, this page is the one shown at /pages. The course home is chosen with the gear on Home. Any existing main page will be unset.</p>
                 </div>
                 
                 <div class="form-group">
@@ -639,7 +644,7 @@ class Pages extends Tool {
         </style>
         <?php \Tsugi\UI\CKEditor::renderLinkPickerModal('Insert link'); ?>
 
-        <?php \Tsugi\UI\CKEditor::renderScriptTag(); ?>
+        <?php \Tsugi\UI\CKEditor::renderPagesEditorAssets(); ?>
         <script type="text/javascript">
         <?php $json_url = $tool_home . '/json'; ?>
         <?php $lessons_json_url = $tool_home . '/lessons-json'; ?>
@@ -651,11 +656,13 @@ class Pages extends Tool {
         var pagesBase = '<?= htmlspecialchars($pages_base) ?>';
         var appHome = '<?= htmlspecialchars(isset($apphome) ? $apphome : '') ?>';
         var currentPageId = <?= isset($current_page_id) ? (int)$current_page_id : 'null' ?>;
+        window.tsugiPagesEditor = true;
 
         <?php \Tsugi\UI\CKEditor::renderConfigScript(); ?>
 
         <?php \Tsugi\UI\CKEditor::renderLinkPickerScript(); ?>
         </script>
+        <?php \Tsugi\UI\CKEditor::renderPagesEditorModule(); ?>
         <?php
         $OUTPUT->footerEnd();
     }

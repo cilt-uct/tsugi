@@ -3,6 +3,7 @@
 namespace Tsugi\Controllers;
 
 use Tsugi\Util\U;
+use Tsugi\Core\Guid;
 use Tsugi\Core\LTIX;
 use Tsugi\Core\Manifest;
 use Tsugi\Grades\GradeUtil;
@@ -46,33 +47,143 @@ class Lessons extends Tool {
         });
     }
 
+    /**
+     * Drop the old on/off switch. Install links follow the Classroom connection.
+     */
+    public static function applyClassroomViewQuery() {
+        unset($_SESSION['gclass'], $_SESSION['nostyle']);
+    }
+
+    /**
+     * A connected Classroom teacher sees install links.
+     */
+    public static function classroomInstallView() {
+        self::applyClassroomViewQuery();
+        return isset($_SESSION['gc_count']) && (int) $_SESSION['gc_count'] > 0;
+    }
+
+    /**
+     * A connected Classroom teacher on a lessons page that shows install links.
+     * A learner in this course is never this, even if they teach classes of their own.
+     * Manifest courses keep the icons off until this session asks for them.
+     * File-based lessons stay off unless lessons_global_classroom is on.
+     */
+    protected static function isGoogleClassroomInstructor() {
+        if ( ! self::classroomInstallView() || ! self::viewerIsCourseInstructor() ) {
+            return false;
+        }
+        if ( self::lessonsUseManifest() ) {
+            return self::classroomInstallLinksOpen();
+        }
+        return self::showFileClassroomLinks();
+    }
+
+    /**
+     * Manifest course, connected Classroom teacher. The show/hide link is for them.
+     */
+    private static function canToggleClassroomInstallLinks() {
+        if ( ! self::lessonsUseManifest() ) {
+            return false;
+        }
+        if ( ! self::classroomInstallView() || ! self::viewerIsCourseInstructor() ) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Session-only. Missing means the install icons stay hidden.
+     */
+    private static function classroomInstallLinksOpen() {
+        return isset($_SESSION['gc_install_links']) && (int) $_SESSION['gc_install_links'] === 1;
+    }
+
+    /**
+     * Instructor or administrator of the course on screen.
+     */
+    public static function viewerIsCourseInstructor() {
+        $contextId = (int) ReqScope::currentContextId();
+        if ( $contextId < 1 ) {
+            $contextId = (int) ReqScope::currentContextIdLegacy();
+        }
+        $userId = (int) ReqScope::loggedInUserIdLegacy();
+        if ( $contextId < 1 || $userId < 1 ) {
+            return false;
+        }
+        if ( isset($_SESSION['admin']) && $_SESSION['admin'] == 'yes' ) {
+            return true;
+        }
+        $member = \Tsugi\Core\Membership::ensureInSession($contextId, $userId);
+        return $member && $member->isInstructor();
+    }
+
+    /**
+     * The lessons on screen belong to a manifest course.
+     */
+    private static $manifestLessons = null;
+
+    private static $manifestContext = null;
+
+    private static function lessonsUseManifest() {
+        $contextId = (int) ReqScope::currentContextId();
+        if ( $contextId < 1 ) {
+            $contextId = (int) ReqScope::currentContextIdLegacy();
+        }
+        if ( self::$manifestContext === $contextId && self::$manifestLessons !== null ) {
+            return self::$manifestLessons;
+        }
+        self::$manifestContext = $contextId;
+        self::$manifestLessons = $contextId > 0 && \Tsugi\Core\Manifest::idForContext($contextId) > 0;
+        return self::$manifestLessons;
+    }
+
+    /**
+     * File-based lessons show install icons only when the extension is on.
+     */
+    private static function showFileClassroomLinks() {
+        global $CFG;
+        return (bool) $CFG->getExtension('lessons_global_classroom', false);
+    }
+
     public function get(Request $request, $anchor=null)
     {
         global $OUTPUT;
 
-        $l = Manifest::currentLessons($anchor);
+        $l = $this->loadViewLessons($anchor);
         if ( ! $l ) {
             die_with_error_log('Cannot find lessons.json ($CFG->lessons) or an active course manifest');
         }
 
         Tool::applyGradeRefreshAfterLaunchReturn();
 
-        // Turning on and off styling
-        if ( isset($_GET['nostyle']) ) {
-            if ( $_GET['nostyle'] == 'yes' ) {
-                $_SESSION['nostyle'] = 'yes';
-            } else {
-                unset($_SESSION['nostyle']);
-            }
+        self::applyClassroomViewQuery();
+
+        // static:: so Content keeps launches and module links on /content.
+        // Author links below stay on self::ROUTE (/lessons).
+        $viewRoute = static::ROUTE;
+        $l->toolHome = $this->toolHome($viewRoute);
+
+        // Unknown anchor: back to this view's index (avoids rendering every
+        // module at /lessons/bob, which breaks relative URLs).
+        if ( $anchor !== null && $anchor !== '' && $l->getModuleByAnchor($anchor) === null ) {
+            $url = U::addSession($this->toolHome($viewRoute));
+            return new RedirectResponse($url);
         }
 
-        $l->toolHome = $this->toolHome(self::ROUTE);
+        if ( isset($_GET['classroom_links']) ) {
+            if ( self::canToggleClassroomInstallLinks() ) {
+                if ( (string) $_GET['classroom_links'] === 'show' ) {
+                    $_SESSION['gc_install_links'] = 1;
+                } else {
+                    unset($_SESSION['gc_install_links']);
+                }
+            }
+            return new RedirectResponse(U::addSession(U::get_rest_path()));
+        }
 
-        // If we have an anchor in the path but it doesn't exist, redirect to /lessons
-        // (avoids rendering "all lessons" from /lessons/bob which breaks relative URLs)
-        if ( $anchor !== null && $anchor !== '' && $l->getModuleByAnchor($anchor) === null ) {
-            $url = U::addSession($this->toolHome(self::ROUTE));
-            return new RedirectResponse($url);
+        $entry = $this->viewEntryRedirect($l, $anchor);
+        if ( $entry instanceof Response ) {
+            return $entry;
         }
 
         $OUTPUT->header();
@@ -80,24 +191,40 @@ class Lessons extends Tool {
         $menu = false;
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
-        if ( $this->isInstructor() ) {
-            echo('<span style="position: fixed; right: 10px; top: 75px; z-index: 999; background-color: white; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">');
+        if ( $this->isInstructor() && ! ReqScope::isAnonymousLessonView() ) {
+            $corner = '';
             if ( $this->canAuthorLessons() ) {
-                $author_url = U::addSession($this->toolHome(self::ROUTE) . '/_author');
-                echo('<a href="'.htmlspecialchars($author_url).'" class="btn btn-default btn-sm"><i class="fa fa-pencil" aria-hidden="true"></i> '.__('Author').'</a>');
-            } else if ( $this->canExportLessonsV2() ) {
+                $author_url = $this->authorLinkUrl($anchor);
+                $corner = '<a href="'.htmlspecialchars($author_url).'" class="btn btn-default btn-sm"><i class="fa fa-pencil" aria-hidden="true"></i> '.__('Author').'</a>';
+            } else if ( $this->canExportLessonsV2() && $this->authorFromView() === null ) {
                 $export_v2_url = U::addSession($this->toolHome(self::ROUTE) . '/_author/export-v2');
-                echo('<a href="'.htmlspecialchars($export_v2_url).'" class="btn btn-default btn-sm"><i class="fa fa-download" aria-hidden="true"></i> '.__('Export lessons.json v2').'</a>');
+                $corner = '<a href="'.htmlspecialchars($export_v2_url).'" class="btn btn-default btn-sm"><i class="fa fa-download" aria-hidden="true"></i> '.__('Export lessons.json v2').'</a>';
             }
-            echo('</span>');
+            if ( $this->authorFromView() === 'outline' ) {
+                Outline::setCornerHtml($corner);
+            } else if ( $corner !== '' ) {
+                echo('<span style="position: fixed; right: 10px; top: 56px; z-index: 999; background-color: white; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">');
+                echo($corner);
+                echo('</span>');
+            }
         }
         self::header($l);
-        echo('<div class="container">');
-        self::render($l);
-        echo('</div>');
+        $this->openLessonsView();
+        static::render($l);
+        $this->closeLessonsView();
         $OUTPUT->footerStart();
-        self::footer($l);
+        static::footer($l);
         $OUTPUT->footerEnd();
+    }
+
+    /**
+     * Lessons and Content load the requested module. Outline loads the whole document.
+     *
+     * @param mixed $anchor
+     * @return LessonsService|false
+     */
+    protected function loadViewLessons($anchor) {
+        return Manifest::currentLessons($anchor);
     }
 
     /**
@@ -105,7 +232,26 @@ class Lessons extends Tool {
      */
     public function redirectToIndex(Request $request, $anchor=null, $path=null)
     {
-        return new RedirectResponse($this->toolHome(self::ROUTE));
+        return new RedirectResponse($this->toolHome(static::ROUTE));
+    }
+
+    /**
+     * Lessons shows every module on the index. Content opens the first module.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     * @param mixed $anchor
+     * @return Response|null
+     */
+    protected function viewEntryRedirect($lessons, $anchor) {
+        return null;
+    }
+
+    protected function openLessonsView() {
+        echo('<div class="container">');
+    }
+
+    protected function closeLessonsView() {
+        echo('</div>');
     }
 
     /**
@@ -122,6 +268,103 @@ class Lessons extends Tool {
      */
     private function canExportLessonsV2() {
         return Manifest::currentDocument() !== false;
+    }
+
+    /**
+     * Author stays on /lessons/_author. Opened from Content or Outline, the
+     * link carries the module so Back returns to that view.
+     *
+     * @param mixed $anchor
+     */
+    private function authorLinkUrl($anchor) {
+        $url = $this->toolHome(self::ROUTE) . '/_author';
+        $from = $this->authorFromView();
+        if ( $from === null ) {
+            return U::addSession($url);
+        }
+        $url = U::add_url_parm($url, 'from', $from);
+        if ( self::isLessonAnchor($anchor) ) {
+            $url = U::add_url_parm($url, 'module', (string) $anchor);
+        }
+        return U::addSession($url);
+    }
+
+    /**
+     * @return string|null content, outline, or null when this is Lessons
+     */
+    private function authorFromView() {
+        if ( static::ROUTE === Content::ROUTE ) {
+            return 'content';
+        }
+        if ( static::ROUTE === Outline::ROUTE ) {
+            return 'outline';
+        }
+        return null;
+    }
+
+    /**
+     * Where the author page's back button goes.
+     *
+     * @return array{from: string, module: string, label: string, url: string}
+     */
+    private function authorReturnSpec() {
+        $from = (isset($_GET['from']) && is_string($_GET['from'])) ? $_GET['from'] : '';
+        $module = (isset($_GET['module']) && is_string($_GET['module'])) ? $_GET['module'] : '';
+        if ( $from === 'content' ) {
+            $route = Content::ROUTE;
+            $label = __('Back to Content');
+        } else if ( $from === 'outline' ) {
+            $route = Outline::ROUTE;
+            $label = __('Back to Outline');
+        } else {
+            return array(
+                'from' => '',
+                'module' => '',
+                'label' => __('Back to Lessons'),
+                'url' => $this->toolHome(self::ROUTE),
+            );
+        }
+        $lessonsHome = $this->toolHome(self::ROUTE);
+        $url = $lessonsHome;
+        $at = strrpos($lessonsHome, self::ROUTE);
+        if ( $at !== false ) {
+            $url = substr($lessonsHome, 0, $at) . $route;
+        }
+        $kept = '';
+        if ( self::isLessonAnchor($module) ) {
+            $kept = $module;
+            $url .= '/'.rawurlencode($module);
+        }
+        return array(
+            'from' => $from,
+            'module' => $kept,
+            'label' => $label,
+            'url' => $url,
+        );
+    }
+
+    /**
+     * Keep from=content on author URLs reached from that view.
+     *
+     * @param string $url
+     */
+    private function withAuthorReturn($url) {
+        $spec = $this->authorReturnSpec();
+        if ( $spec['from'] === '' ) {
+            return $url;
+        }
+        $url = U::add_url_parm($url, 'from', $spec['from']);
+        if ( $spec['module'] !== '' ) {
+            $url = U::add_url_parm($url, 'module', $spec['module']);
+        }
+        return $url;
+    }
+
+    /**
+     * @param mixed $anchor
+     */
+    private static function isLessonAnchor($anchor) {
+        return is_string($anchor) && (bool) preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $anchor);
     }
 
     /**
@@ -152,8 +395,9 @@ class Lessons extends Tool {
         $lessons_json = json_encode($lessons_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $export_url = U::addSession($this->toolHome(self::ROUTE) . '/_author/export');
         $export_v2_url = U::addSession($this->toolHome(self::ROUTE) . '/_author/export-v2');
-        $import_url = U::addSession($this->toolHome(self::ROUTE) . '/_author/import');
+        $import_url = U::addSession($this->withAuthorReturn($this->toolHome(self::ROUTE) . '/_author/import'));
 
+        $return = $this->authorReturnSpec();
         $files_json_url = U::addSession($this->controllerUrl(Files::ROUTE) . '/json');
         $files_home_url = U::addSession($this->controllerUrl(Files::ROUTE));
         $pages_home = $this->controllerUrl(Pages::ROUTE);
@@ -163,7 +407,7 @@ class Lessons extends Tool {
         $lessons_json_url = U::addSession($pages_home . '/lessons-json');
         $pages_base = $pages_home;
         $app_home = (isset($CFG->apphome) && is_string($CFG->apphome)) ? rtrim($CFG->apphome, '/') : '';
-        $lessons_url = U::addSession($this->toolHome(self::ROUTE));
+        $lessons_url = U::addSession($return['url']);
         $quiz1_home_url = U::addSession($this->controllerUrl(Quiz1::ROUTE));
         $quiz1_list = array();
         try {
@@ -207,8 +451,8 @@ class Lessons extends Tool {
         $OUTPUT->bodyStart();
         $OUTPUT->topNav();
         $OUTPUT->flashMessages();
-        echo('<span style="position: fixed; right: 10px; top: 75px; z-index: 999; background-color: white; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">');
-        echo('<a href="'.htmlspecialchars($lessons_url).'" class="btn btn-default btn-sm"><i class="fa fa-arrow-left" aria-hidden="true"></i> '.__('Back to Lessons').'</a>');
+        echo('<span style="position: fixed; right: 10px; top: 56px; z-index: 999; background-color: white; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">');
+        echo('<a href="'.htmlspecialchars($lessons_url).'" class="btn btn-default btn-sm"><i class="fa fa-arrow-left" aria-hidden="true"></i> '.htmlspecialchars($return['label']).'</a>');
         echo('</span>');
 
         require_once __DIR__ . '/../UI/CKEditor.php';
@@ -546,10 +790,11 @@ class Lessons extends Tool {
         }
         $PDOX->queryDie(
             "INSERT INTO {$CFG->dbprefix}lti_link
-                (link_key, link_sha256, title, context_id, published, created_at, updated_at)
+                (guid, link_key, link_sha256, title, context_id, published, created_at, updated_at)
              VALUES
-                (:link_key, :link_sha256, :title, :context_id, 0, NOW(), NOW())",
+                (UNHEX(:guid), :link_key, :link_sha256, :title, :context_id, 0, NOW(), NOW())",
             array(
+                ':guid' => Guid::uuid7(),
                 ':link_key' => $resourceLinkId,
                 ':link_sha256' => $sha,
                 ':title' => $title,
@@ -776,7 +1021,8 @@ class Lessons extends Tool {
                 $title = $picked['title'];
             }
             LtiContentService::refuseDroppedPost($picked['url']);
-            $content = LtiContentService::placeAt($context_id, $deploymentId, $title, $picked['url'], $resourceLinkId);
+            $custom = isset($picked['custom']) && is_array($picked['custom']) ? $picked['custom'] : array();
+            $content = LtiContentService::placeAt($context_id, $deploymentId, $title, $picked['url'], $resourceLinkId, $custom);
         } catch ( \InvalidArgumentException $ex ) {
             return new Response(json_encode(['success' => false, 'error' => $ex->getMessage()]), 400, ['Content-Type' => 'application/json']);
         }
@@ -1083,7 +1329,7 @@ class Lessons extends Tool {
      */
     public function authorImport(Request $request)
     {
-        $author_url = U::addSession($this->toolHome(self::ROUTE) . '/_author');
+        $author_url = U::addSession($this->withAuthorReturn($this->toolHome(self::ROUTE) . '/_author'));
         if ( ! $this->canAuthorLessons() ) {
             return new Response('Lesson authoring is not enabled', 403);
         }
@@ -1180,10 +1426,11 @@ class Lessons extends Tool {
     {
         global $CFG;
 
-        $toolHome = self::determineToolHome(self::ROUTE);
-        $redirect_path = U::addSession(self::determineParentPath(self::ROUTE));
+        $toolHome = static::determineToolHome(static::ROUTE);
+        $redirect_path = U::addSession(static::determineParentPath(static::ROUTE));
         if ( $redirect_path == '') $redirect_path = '/';
 
+        self::exitPlusLeftCourse();
         $l = Manifest::currentLessons();
         if ( ! $l ) {
             $app->tsugiFlashError(__('Cannot find lessons.json ($CFG->lessons) or an active course manifest'));
@@ -1423,7 +1670,7 @@ $(function(){
      * @param array<string,array<string,mixed>> $duedates
      * @param bool $show_rollup_due_date If false (all-modules cards), status-only due badge (no date). Rollup Upcoming: show percent if above zero; at 0% cards show nothing, single-module title still shows upcoming due badge with date.
      */
-    private static function echoModuleAggregateProgressBadge(\Tsugi\Services\Lessons\LessonsService $lessons, $possible_points, $actual_points, $rlids, $allgrades, $duedates, $show_rollup_due_date = true) {
+    protected static function echoModuleAggregateProgressBadge(\Tsugi\Services\Lessons\LessonsService $lessons, $possible_points, $actual_points, $rlids, $allgrades, $duedates, $show_rollup_due_date = true) {
         if ( $possible_points <= 0 ) {
             return;
         }
@@ -1434,22 +1681,22 @@ $(function(){
                 return;
             }
             if ( $percent == 100 ) {
-                echo('<span class="progress-badge progress-badge-check" title="Complete: 100%">100%</span>');
+                echo('<span class="tsugi-progress-badge tsugi-progress-badge-check" title="Complete: 100%">100%</span>');
             } else {
-                echo('<span class="progress-badge progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
+                echo('<span class="tsugi-progress-badge tsugi-progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
             }
             return;
         }
         $rollup = $lessons->moduleWorstDueRollup($rlids, $allgrades, $duedates);
         if ( $rollup === null ) {
             if ( $percent > 0 ) {
-                echo('<span class="progress-badge progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
+                echo('<span class="tsugi-progress-badge tsugi-progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
             }
             return;
         }
         if ( $rollup['modifier'] === 'tsugi-assignments-due-future' ) {
             if ( $percent > 0 ) {
-                echo('<span class="progress-badge progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
+                echo('<span class="tsugi-progress-badge tsugi-progress-badge-percent" title="Progress: '.$percent.'%">'.$percent.'%</span>');
                 return;
             }
             if ( ! $show_rollup_due_date ) {
@@ -1482,7 +1729,7 @@ $(function(){
     private static function moduleCardIconColorStyle($percent, $hasDueMode, $rollup) {
         if ( ! $hasDueMode ) {
             if ( $percent == 100 ) {
-                return 'color: #155724;';
+                return 'color: #0c3d17;';
             }
             if ( $percent > 0 && $percent < 100 ) {
                 return 'color: #084298;';
@@ -1490,7 +1737,7 @@ $(function(){
             return '';
         }
         if ( $percent == 100 ) {
-            return 'color: #155724;';
+            return 'color: #0c3d17;';
         }
         if ( $rollup === null ) {
             if ( $percent > 0 && $percent < 100 ) {
@@ -1502,11 +1749,11 @@ $(function(){
             case 'tsugi-assignments-due-past':
                 return 'color: #b02a37;';
             case 'tsugi-assignments-due-soon':
-                return 'color: #856404;';
+                return 'color: #5c4500;';
             case 'tsugi-assignments-due-future':
                 return 'color: #495057;';
             case 'tsugi-assignments-due-completed':
-                return 'color: #155724;';
+                return 'color: #0c3d17;';
             case 'tsugi-assignments-due-neutral':
             default:
                 return 'color: #6c757d;';
@@ -1528,9 +1775,119 @@ $(function(){
         $title_line = $lessons->position . ': ' . $module->title;
         echo(htmlentities($title_line));
         self::echoModuleAggregateProgressBadge($lessons, $possible_points, $actual_points, $rlids, $allgrades, $duedates);
+        if ( isset($module->anchor) ) {
+            self::echoClassroomModuleInstall((string) $module->anchor, (string) $module->title);
+        }
         echo("</h1>\n");
         if ( isset($module->image) ) {
             echo('<div class="tsugi-lessons-module-title-clearfix" style="clear:both;"></div>'."\n");
+        }
+    }
+
+    /**
+     * Previous / All / Next. Content uses the same bar without All.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     * @param bool $showAll Card view includes All. Content leaves it off.
+     */
+    protected static function echoModulePager($lessons, $showAll = true) {
+        if ( $lessons->getSetting('prev-next') == "right" ) {
+            echo('<div typeof="oer:Lesson" style="float:right; padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
+        } else if ( $lessons->getSetting('prev-next') == "left" ) {
+            echo('<div typeof="oer:Lesson" style="float:left; padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
+        } else {
+            echo('<div typeof="oer:Lesson" style="padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
+        }
+        $all = U::get_rest_parent();
+        list($prevAnchor, $nextAnchor) = static::pagerStepAnchors($lessons);
+        if ( $prevAnchor === null || $prevAnchor === '' ) {
+            echo('<li class="previous" style="visibility:hidden" aria-hidden="true">&larr; '.__('Previous').'</li>'."\n");
+        } else {
+            $prev = $all . '/' . urlencode($prevAnchor);
+            echo('<li class="previous"><a href="'.$prev.'">&larr; '.__('Previous').'</a></li>'."\n");
+        }
+        if ( $showAll ) {
+            echo('<li><a href="'.$all.'">'.__('All').' ('.$lessons->position.' / '.count($lessons->lessons->modules).')</a></li>');
+        }
+        if ( $nextAnchor === null || $nextAnchor === '' ) {
+            echo('<li class="next" style="visibility:hidden" aria-hidden="true">&rarr; '.__('Next').'</li>'."\n");
+        } else {
+            $next = $all . '/' . urlencode($nextAnchor);
+            echo('<li class="next"><a href="'.$next.'">&rarr; '.__('Next').'</a></li>'."\n");
+        }
+        echo("</ul></div>\n");
+    }
+
+    /**
+     * Anchors on either side of the open module.
+     *
+     * Card view steps through every module. Content overrides this and
+     * stays on the modules its sidebar shows.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     * @return array{0:?string,1:?string}
+     */
+    protected static function pagerStepAnchors($lessons) {
+        $modules = (isset($lessons->lessons->modules) && is_array($lessons->lessons->modules))
+            ? $lessons->lessons->modules : array();
+        $pos = (int) $lessons->position;
+        $prev = null;
+        $next = null;
+        if ( $pos > 1 && isset($modules[$pos - 2]) && isset($modules[$pos - 2]->anchor) ) {
+            $prev = (string) $modules[$pos - 2]->anchor;
+        }
+        if ( $pos >= 1 && $pos < count($modules) && isset($modules[$pos]) && isset($modules[$pos]->anchor) ) {
+            $next = (string) $modules[$pos]->anchor;
+        }
+        return array($prev, $next);
+    }
+
+    /**
+     * Outline omits this bar. Content keeps Previous and Next.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     * @param object $module
+     * @param array<string,float> $allgrades
+     * @param array<string,array<string,mixed>> $duedates
+     */
+    protected static function echoSingleModuleChrome($lessons, $module, $allgrades, $duedates) {
+        static::echoModulePager($lessons);
+        self::echoModuleTitleBarMatchingCard($lessons, $module, $allgrades, $duedates);
+    }
+
+    /**
+     * One step root per module. Outline omits the id so a long page can have several.
+     */
+    protected static function includeStepRoot() {
+        return true;
+    }
+
+    protected static function stepRootUsesId() {
+        return true;
+    }
+
+    /**
+     * The anchor is the checkbox store shared by Lessons, Content, and Outline.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     */
+    protected static function echoStepRootOpen($lessons) {
+        $anchor = '';
+        if ( isset($lessons->module->anchor) ) {
+            $anchor = (string) $lessons->module->anchor;
+        }
+        $id = static::stepRootUsesId() ? ' id="tsugi-step-root"' : '';
+        $key = htmlspecialchars($anchor, ENT_QUOTES, 'UTF-8');
+        echo('<div'.$id.' data-tsugi-step-root data-tsugi-step-key="'.$key.'">'."\n");
+    }
+
+    /**
+     * Google Classroom install dialog. Outline emits this once for the page.
+     */
+    protected static function echoSingleClassroomChrome() {
+        if ( self::isGoogleClassroomInstructor() && isset($_SESSION['gc_count']) ) {
+            echo('<script src="https://apis.google.com/js/platform.js" async defer></script>'."\n");
+            self::echoClassroomInstallDialog();
         }
     }
 
@@ -1540,15 +1897,7 @@ $(function(){
     public static function renderSingle(\Tsugi\Services\Lessons\LessonsService $lessons, $buffer=false) {
         global $CFG, $OUTPUT;
         ob_start();
-        if ( isset($_GET['nostyle']) ) {
-            if ( $_GET['nostyle'] == 'yes' ) {
-                $_SESSION['nostyle'] = 'yes';
-            } else {
-                unset($_SESSION['nostyle']);
-            }
-        }
-        $nostyle = isset($_SESSION['nostyle']);
-
+        $gclass = self::isGoogleClassroomInstructor();
         $module = $lessons->module;
         
         // Ensure module is set
@@ -1574,43 +1923,8 @@ $(function(){
         }
         $lessons->setModuleProgressContext($allgrades, $moduleDueDates);
 
-	if ( $nostyle && isset($_SESSION['gc_count']) ) {
-?>
-<script src="https://apis.google.com/js/platform.js" async defer></script>
-<div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
-   <iframe name="iframe-frame" style="height:200px" id="iframe-frame" title="Install assignment in classroom"
-    src="<?= $OUTPUT->getSpinnerUrl() ?>"></iframe>
-</div>
-<?php
-        }
-            if ( $lessons->getSetting('prev-next') == "right" ) {
-                echo('<div typeof="oer:Lesson" style="float:right; padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
-            } else if ( $lessons->getSetting('prev-next') == "left" ) {
-                echo('<div typeof="oer:Lesson" style="float:left; padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
-            } else {
-                echo('<div typeof="oer:Lesson" style="padding-left: 5px; vertical-align: text-top;"><ul class="pager tsugi-lessons-pager">'."\n");
-            }
-            $all = U::get_rest_parent();
-            if ( $lessons->position == 1 ) {
-                echo('<li class="previous" style="visibility:hidden" aria-hidden="true">&larr; '.__('Previous').'</li>'."\n");
-            } else {
-                $prev = $all . '/' . urlencode($lessons->lessons->modules[$lessons->position-2]->anchor);
-                echo('<li class="previous"><a href="'.$prev.'">&larr; '.__('Previous').'</a></li>'."\n");
-            }
-            echo('<li><a href="'.$all.'">'.__('All').' ('.$lessons->position.' / '.count($lessons->lessons->modules).')</a></li>');
-            if ( $lessons->position >= count($lessons->lessons->modules) ) {
-                echo('<li class="next" style="visibility:hidden" aria-hidden="true">&rarr; '.__('Next').'</li>'."\n");
-            } else {
-                $next = $all . '/' . urlencode($lessons->lessons->modules[$lessons->position]->anchor);
-                echo('<li class="next"><a href="'.$next.'">&rarr; '.__('Next').'</a></li>'."\n");
-            }
-            echo("</ul></div>\n");
-            self::echoModuleTitleBarMatchingCard($lessons, $module, $allgrades, $moduleDueDates);
-            $lessonurl = $CFG->apphome . U::get_rest_path();
-            if ( $nostyle ) {
-                self::nostyleUrl($module->title, $lessonurl);
-                echo("<hr/>\n");
-            }
+            static::echoSingleClassroomChrome();
+            static::echoSingleModuleChrome($lessons, $module, $allgrades, $moduleDueDates);
 
             // Check if module uses items array (new format)
             // Direct access to items property - json_decode creates stdClass objects, arrays stay as arrays
@@ -1629,6 +1943,8 @@ $(function(){
             
             // Check debug flag
             $debug_conversion = $CFG->getExtension('lessons_debug_conversion', false);
+            $stepRoot = $lessons->stepsEnabled() && static::includeStepRoot();
+            $openedStepRoot = false;
             
             if ( $has_items ) {
                 // New format: render items array
@@ -1639,11 +1955,16 @@ $(function(){
                 if ( isset($module->description) ) {
                     echo('<p property="oer:description" class="tsugi-lessons-module-description">'.$module->description."</p>\n");
                 }
+                if ( $stepRoot ) {
+                    static::echoStepRootOpen($lessons);
+                    $openedStepRoot = true;
+                }
                 
                 // Render items in order. Headings (and text / non-list items) sit
                 // outside the list. One <ul> runs until the next heading — subtype
                 // does not start a new list.
                 $in_list = false;
+                $sectionOpen = false;
                 foreach($items_array as $item) {
                     $item_obj = is_array($item) ? (object)$item : $item;
                     // Skip malformed items (e.g., objects that should be arrays)
@@ -1657,12 +1978,25 @@ $(function(){
                     $in_content_list = ( ! $is_heading && ! $is_text
                         && LessonsNormalize::sectionGroup($item_obj) );
 
+                    if ( $is_heading ) {
+                        if ( $in_list ) {
+                            echo("</ul>\n");
+                            $in_list = false;
+                        }
+                        if ( $sectionOpen ) {
+                            static::closeHeadingSection();
+                        }
+                        static::openHeadingSection($item_obj);
+                        $sectionOpen = true;
+                        continue;
+                    }
+
                     if ( ! $in_content_list ) {
                         if ( $in_list ) {
                             echo("</ul>\n");
                             $in_list = false;
                         }
-                        self::renderItem($lessons, $item_obj, $module, $nostyle);
+                        self::renderItem($lessons, $item_obj, $module, $gclass);
                         continue;
                     }
 
@@ -1671,11 +2005,17 @@ $(function(){
                         $in_list = true;
                     }
 
-                    self::renderItem($lessons, $item_obj, $module, $nostyle);
+                    self::renderItem($lessons, $item_obj, $module, $gclass);
                 }
 
                 if ( $in_list ) {
                     echo("</ul>\n");
+                }
+                if ( $sectionOpen ) {
+                    static::closeHeadingSection();
+                }
+                if ( $openedStepRoot ) {
+                    echo("</div>\n");
                 }
                 
                 if ( $debug_conversion && $has_legacy ) {
@@ -1685,18 +2025,7 @@ $(function(){
                 
                 // If debug is off or no legacy format, return early (only render items)
                 if ( !$debug_conversion || !$has_legacy ) {
-                    if ( $nostyle ) {
-                        $styleoff = U::get_rest_path() . '?nostyle=no';
-                        echo('<p><a href="'.$styleoff.'">');
-                        echo(__('Turn styling back on'));
-                        echo("</a>\n");
-                    }
-                    
-                    $ob_output = ob_get_contents();
-                    ob_end_clean();
-                    if ( $buffer ) return $ob_output;
-                    echo($ob_output);
-                    return;
+                    return self::finishSingle($lessons, $buffer);
                 }
                 // Otherwise continue to render legacy format below
             }
@@ -1705,13 +2034,12 @@ $(function(){
             if ( isset($module->carousel) ) {
                 $carousel = $module->carousel;
                 $videotitle = __($lessons->getSetting('videos-title', 'Videos'));
-                echo($nostyle ? $videotitle . ': <ul>' : '<ul class="bxslider">'."\n");
+                echo($gclass ? $videotitle . ': <ul>' : '<ul class="bxslider">'."\n");
                 foreach($carousel as $video ) {
                     echo('<li>');
-                    if ( $nostyle ) {
-                        echo(htmlentities($video->title)."<br/>");
+                    if ( $gclass ) {
                         $yurl = U::youtubeWatchUrl($video->youtube);
-                        self::nostyleUrl($video->title, $yurl);
+                        self::classroomLink($video->title, $yurl);
                     } else if ( !empty($CFG->youtube_use_labnol) ) {
                         $OUTPUT->embedYouTube($video->youtube, $video->title);
                     } else {
@@ -1727,6 +2055,11 @@ $(function(){
                 echo('<p property="oer:description" class="tsugi-lessons-module-description">'.$module->description."</p>\n");
             }
 
+            $legacyStepRoot = false;
+            if ( $stepRoot && ! $openedStepRoot ) {
+                static::echoStepRootOpen($lessons);
+                $legacyStepRoot = true;
+            }
             echo("<ul>\n");
 
             if ( isset($module->videos) ) {
@@ -1745,8 +2078,8 @@ $(function(){
                     echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-video">');
                     $kaltura_url = LessonsService::kalturaEmbedUrl($video);
                     if ( $kaltura_url ) {
-                        if ( $nostyle ) {
-                            self::nostyleUrl($video->title, LessonsService::kalturaTabUrl($video));
+                        if ( $gclass ) {
+                            self::classroomLink($video->title, LessonsService::kalturaTabUrl($video));
                         } else {
                             self::renderKalturaOverlay(
                                 $video->title,
@@ -1817,7 +2150,7 @@ $(function(){
                         echo('</li>');
                     } else if ( isset($lecture->audio) ) {
                         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-lecture tsugi-lessons-module-lecture-audio">');
-                        // self::nostyleLink($lecture->title, $lecture->audio);
+                        // self::classroomLink($lecture->title, $lecture->audio);
                         $navid = md5($lecno.$lecture->audio);
 ?>
 <div id="<?= $navid ?>" class="w3schools-overlay" role="dialog" aria-modal="true" aria-label="Audio: <?= htmlspecialchars($lecture->title, ENT_QUOTES, 'UTF-8') ?>">
@@ -1833,7 +2166,7 @@ $(function(){
                     } else if ( isset($lecture->video) ) {
                         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-lecture tsugi-lessons-module-lecture-video">');
                         $yurl = U::youtubeWatchUrl($lecture->video);
-                        // self::nostyleLink($lecture->title, $lecture->video);
+                        // self::classroomLink($lecture->title, $lecture->video);
                         $navid = md5($lecno.$lecture->video);
 ?>
 <div id="<?= $navid ?>" class="w3schools-overlay" role="dialog" aria-modal="true" aria-label="Video: <?= htmlspecialchars($lecture->title, ENT_QUOTES, 'UTF-8') ?>">
@@ -1870,7 +2203,7 @@ $(function(){
                     echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-'.$singular.'">');
                     echo('<span class="tsugi-lessons-module-'.$singular.'-icon"></span>');
                     echo('<span class="tsugi-lessons-module-'.$singular.'-link">');
-                    self::nostyleLink($slide_title, $slide_href);
+                    self::classroomLink($slide_title, $slide_href);
                     echo("</span>\n");
                     echo('</li>'."\n");
                 }
@@ -1882,21 +2215,21 @@ $(function(){
                 echo('<li typeof="SupportingMaterial">'.__('Chapters').': '.$module->chapters.'</a></li>'."\n");
             }
             if ( isset($module->assignment) ) {
-                if ( $nostyle ) {
-                    echo('<li typeof="oer:assessment">'.__('Assignment Specification').':');
-                    self::nostyleUrl(__('Assignment Specification'), $module->assignment);
+                if ( $gclass ) {
+                    echo('<li typeof="oer:assessment">');
+                    self::classroomLink(__('Assignment Specification'), $module->assignment);
                     echo('</li>'."\n");
                 } else {
                     echo('<li typeof="oer:assessment"><a href="'.$module->assignment.'" target="_blank" rel="noopener noreferrer">'.__('Assignment Specification').'</a></li>'."\n");
                 }
             }
             if ( isset($module->solution) ) {
-                if ( $nostyle ) {
-                    echo('<li typeof="oer:assessment">'.__('Assignment Solution').':');
-                    self::nostyleUrl(__('Assignment Solution'), $module->solution);
+                if ( $gclass ) {
+                    echo('<li typeof="oer:assessment" class="tsugi-lessons-module-solution">');
+                    self::classroomLink(__('Assignment Solution'), $module->solution);
                     echo('</li>'."\n");
                 } else {
-                    echo('<li typeof="oer:assessment"><a href="'.$module->solution.'" target="_blank" rel="noopener noreferrer">'.__('Assignment Solution').'</a></li>'."\n");
+                    echo('<li typeof="oer:assessment" class="tsugi-lessons-module-solution"><a href="'.$module->solution.'" target="_blank" rel="noopener noreferrer">'.__('Assignment Solution').'</a></li>'."\n");
                 }
             }
 
@@ -1916,7 +2249,7 @@ $(function(){
                         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-'.$singular.'">');
                         echo('<span class="tsugi-lessons-module-'.$singular.'-icon"></span>');
                         echo('<span class="tsugi-lessons-module-'.$singular.'-link">');
-                        self::nostyleLink($reference->title, $reference->href);
+                        self::classroomLink($reference->title, $reference->href);
                         echo("</span>\n");
                         echo('</li>'."\n");
                     }
@@ -1925,7 +2258,7 @@ $(function(){
             }
 
             // DISCUSSIONs not logged in
-            if ( isset($module->discussions) && ! isset($_SESSION['secret']) ) {
+            if ( isset($module->discussions) && self::showLaunchLoginRequired() ) {
                 $discussions = $module->discussions;
                 echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussions">');
                 echo(__('Discussions:'));
@@ -1939,9 +2272,7 @@ $(function(){
             }
 
             // DISCUSSIONs logged in
-            if ( isset($module->discussions)
-                && U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
-                && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email') )
+            if ( isset($module->discussions) && self::launchSessionReady() )
             {
                 $discussions = $module->discussions;
                 echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussions">');
@@ -1951,21 +2282,15 @@ $(function(){
                 foreach($discussions as $discussion ) {
                     $resource_link_title = isset($discussion->title) ? $discussion->title : $module->title;
 
-                    if ( $nostyle ) {
-                        echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussion">'.htmlentities($resource_link_title).' (Login Required) <br/>'."\n");
-                        if ( self::discussionUsesLtiLaunch() ) {
-                            $discussionurl = U::add_url_parm(LessonsNormalize::launchUrlForItem($discussion), 'inherit', $discussion->resource_link_id);
-                        } else {
-                            $discussionurl = self::discussionControllerPath($discussion->resource_link_id ?? '');
+                    if ( $gclass ) {
+                        $discussionId = $discussion->resource_link_id ?? '';
+                        $discussionurl = self::discussionHref($lessons, $discussionId);
+                        echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussion">');
+                        self::echoClassroomTitle($resource_link_title, $discussionurl, null, false);
+                        if ( $lessons->resourceLinkPublished($discussionId) !== false ) {
+                            self::echoClassroomInstall($discussionId);
                         }
-                        echo('<span style="color:green">'.htmlentities($discussionurl)."</span>\n");
-                        if ( isset($_SESSION['gc_count']) ) {
-                            echo('<a href="'.$CFG->wwwroot.'/gclass/assign?rlid='.$discussion->resource_link_id);
-                            echo('" title="Install Assignment in Classroom" target="iframe-frame"'."\n");
-                            echo("onclick=\"showModalIframe(this.title, 'iframe-dialog', 'iframe-frame', _TSUGI.spinnerUrl, true);\" >\n");
-                            echo('<img height=16 width=16 src="https://www.gstatic.com/classroom/logo_square_48.svg"></a>'."\n");
-                        }
-                        echo("\n</li>\n");
+                        echo("</li>\n");
                         continue;
                     }
 
@@ -1979,7 +2304,7 @@ $(function(){
             }
 
             // LTIs not logged in
-            if ( isset($module->lti) && ! isset($_SESSION['secret']) ) {
+            if ( isset($module->lti) && self::showLaunchLoginRequired() ) {
                 $ltis = $module->lti;
                 echo('<li typeof="oer:assessment" class="tsugi-lessons-module-ltis">');
                 echo(__('Tools:'));
@@ -1990,15 +2315,15 @@ $(function(){
                     if ( ! self::viewerMaySeePublishedLink($lessons, $legacy_rlid) ) {
                         continue;
                     }
-                    echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti">'.htmlentities($resource_link_title).' ('.__('Login Required').') <br/>'."\n");
+                    $ltiClass = self::ltiStepClass($lessons, $lti);
+                    echo('<li typeof="oer:assessment" class="'.$ltiClass.'">'.htmlentities($resource_link_title).' ('.__('Login Required').') <br/>'."\n");
                     echo("\n</li>\n");
                 }
                 echo("</li></ul><!-- end of ltis -->\n");
             }
 
             // LTIs logged in
-            if ( isset($module->lti) && U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
-                && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email') )
+            if ( isset($module->lti) && self::launchSessionReady() )
             {
                 $ltis = $module->lti;
                 echo('<li typeof="oer:assessment" class="tsugi-lessons-module-ltis">');
@@ -2016,23 +2341,21 @@ $(function(){
                     }
 
                     if ( self::ltiItemIsUnregistered($lti) ) {
-                        echo('<li class="tsugi-lessons-module-lti tsugi-lessons-lti-unregistered">');
+                        echo('<li class="'.self::ltiStepClass($lessons, $lti).' tsugi-lessons-lti-unregistered">');
                         echo(htmlentities($resource_link_title).' ('.__('not provisioned').')');
                         echo('</li>'."\n");
                         continue;
                     }
 
-                    if ( $nostyle ) {
-                        echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti">'.htmlentities($resource_link_title).' (Login Required) <br/>'."\n");
-                        $ltiurl = U::add_url_parm($lti->launch, 'inherit', $lti->resource_link_id);
-                        echo('<span style="color:green">'.htmlentities($ltiurl)."</span>\n");
-                        if ( isset($_SESSION['gc_count']) ) {
-                            echo('<a href="'.$CFG->wwwroot.'/gclass/assign?rlid='.$lti->resource_link_id);
-                            echo('" title="Install Assignment in Classroom" target="iframe-frame"'."\n");
-                            echo("onclick=\"showModalIframe(this.title, 'iframe-dialog', 'iframe-frame', _TSUGI.spinnerUrl, true);\" >\n");
-                            echo('<img height=16 width=16 src="https://www.gstatic.com/classroom/logo_square_48.svg"></a>'."\n");
+                    if ( $gclass ) {
+                        $ltiurl = $lessons->lessonsLaunchPath($lti->resource_link_id);
+                        $ltiClass = self::ltiStepClass($lessons, $lti);
+                        echo('<li typeof="oer:assessment" class="'.$ltiClass.'">');
+                        self::echoClassroomTitle($resource_link_title, $ltiurl, null, false);
+                        if ( $lessons->resourceLinkPublished($legacy_rlid) !== false ) {
+                            self::echoClassroomInstall($lti->resource_link_id ?? '');
                         }
-                        echo("\n</li>\n");
+                        echo("</li>\n");
                         continue;
                     }
 
@@ -2043,7 +2366,8 @@ $(function(){
                     }
                     $target = isset($lti->target) ? $lti->target : false;
 
-                    echo('<li class="tsugi-lessons-module-lti"><a');
+                    $ltiClass = self::ltiStepClass($lessons, $lti);
+                    echo('<li class="'.$ltiClass.'"><a');
                     if ( $target == "_blank" ) echo(' target="_blank" rel="noopener noreferrer" onclick="alert(\'Link will open in a new browser tab...\');" ');
                     echo(' href="'.$launch_path.'">'.htmlentities($title).'</a>');
                     $rlid = isset($lti->resource_link_id) ? $lti->resource_link_id : '';
@@ -2056,24 +2380,78 @@ $(function(){
             }
 
         echo("</ul>\n");
+        if ( $legacyStepRoot ) {
+            echo("</div>\n");
+        }
         
         // Close legacy format div if it was opened (debug mode only)
         if ( $debug_conversion && $has_items && $has_legacy ) {
             echo('</div>');
         }
 
-        if ( $nostyle ) {
-            $styleoff = U::get_rest_path() . '?nostyle=no';
-            echo('<p><a href="'.$styleoff.'">');
-            echo(__('Turn styling back on'));
-            echo("</a>\n");
+        return self::finishSingle($lessons, $buffer);
+    } // End of renderSingle
+
+    /**
+     * One module card. Lessons lays these out in the waterfall. Content stacks them.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     * @param object $module
+     * @param int $count Visible position, starting at 1
+     * @param array<string,float> $allgrades
+     * @param array<string,array<string,mixed>> $duedates
+     * @param string $href
+     * @param bool $selected
+     */
+    protected static function echoModuleCard($lessons, $module, $count, $allgrades, $duedates, $href, $selected = false) {
+        $modProgress = $lessons->moduleLtiProgressPoints($module, $allgrades, $duedates);
+        $possible_points = $modProgress[0];
+        $actual_points = $modProgress[1];
+        $rlids = $modProgress[2];
+        $percent = 0;
+        if ( $possible_points > 0 ) {
+            $percent = (int) round(($actual_points / $possible_points)*100);
+        }
+        $hasDueMode = $possible_points > 0 && $lessons->moduleHasLtiDueDateInContext($rlids, $duedates);
+        $rollupForIcon = null;
+        if ( $hasDueMode && $percent < 100 ) {
+            $rollupForIcon = $lessons->moduleWorstDueRollup($rlids, $allgrades, $duedates);
+            if ( $rollupForIcon !== null && $rollupForIcon['modifier'] === 'tsugi-assignments-due-future' ) {
+                $rollupForIcon = null;
+            }
         }
 
-        $ob_output = ob_get_contents();
-        ob_end_clean();
-        if ( $buffer ) return $ob_output;
-        echo($ob_output);
-    } // End of renderSingle
+        $articleClass = $selected ? 'card tsugi-outline-selected' : 'card';
+        echo('<article class="'.$articleClass.'"><div>'."\n");
+        $link_label = $count.': '.$module->title;
+        $aria = ' aria-label="'.htmlspecialchars($link_label, ENT_QUOTES, 'UTF-8').'"';
+        if ( $selected ) {
+            $aria .= ' aria-current="page"';
+        }
+        echo('<a class="tsugi-lessons-module-card-link" href="'.$href.'"'.$aria.'>'."\n");
+        if ( isset($module->icon) ) {
+            $icon_color = self::moduleCardIconColorStyle($percent, $hasDueMode, $rollupForIcon);
+            echo('<i class="fa '.$module->icon.' fa-2x" aria-hidden="true" style="float: left; padding-right: 5px;'.$icon_color.'"></i>');
+        }
+        if ( isset($module->image) ) {
+            echo('<img class="tsugi-all-modules-image-icon" aria-hidden="true" style="float: left; width: 2em; padding-right: 5px;" src="'.LessonsService::expandLink($module->image).'">');
+        }
+        echo($link_label);
+        self::echoModuleAggregateProgressBadge($lessons, $possible_points, $actual_points, $rlids, $allgrades, $duedates, false);
+        echo("</a>\n");
+        if ( isset($module->description) ) {
+            $desc = $module->description;
+            if ( strlen($desc) > 1000 ) $desc = substr($desc, 0, 1000);
+            echo('<a class="tsugi-lessons-module-card-link" href="'.$href.'">'."\n");
+            echo('<br clear="all"><p class="tsugi-card-description">'.$desc."</p>\n");
+            echo("</a>\n");
+        }
+        echo("</div></article>\n");
+        echo("<!--\n");
+        print_r($allgrades);
+        print_r($rlids);
+        echo("\n-->\n");
+    }
 
     public static function renderAll(\Tsugi\Services\Lessons\LessonsService $lessons, $buffer=false)
     {
@@ -2091,8 +2469,16 @@ $(function(){
             $duedates = GradeUtil::loadDueDatesForDisplay(ReqScope::currentContextId());
         }
 
+        $gclass = self::isGoogleClassroomInstructor();
+        if ( $gclass ) {
+            self::echoClassroomInstallDialog();
+        }
         echo('<div typeof="Course">'."\n");
-        echo('<h1>'.$lessons->lessons->title."</h1>\n");
+        echo('<h1>'.$lessons->lessons->title);
+        if ( $gclass ) {
+            self::echoClassroomCourseInstall((string) ($lessons->lessons->title ?? ''));
+        }
+        echo("</h1>\n");
         echo('<p property="description">'.$lessons->lessons->description."</p>\n");
         echo('<div id="box">'."\n");
         $count = 0;
@@ -2101,47 +2487,9 @@ $(function(){
         if ( isset($module->hidden) && $module->hidden ) continue;
 	    if ( isset($module->login) && $module->login && ! ReqScope::isLoggedIn() ) continue;
 
-            $modProgress = $lessons->moduleLtiProgressPoints($module, $allgrades, $duedates);
-            $possible_points = $modProgress[0];
-            $actual_points = $modProgress[1];
-            $rlids = $modProgress[2];
             $count++;
-            $percent = 0;
-            if ( $possible_points > 0 ) {
-                $percent = (int) round(($actual_points / $possible_points)*100);
-            }
-            $hasDueMode = $possible_points > 0 && $lessons->moduleHasLtiDueDateInContext($rlids, $duedates);
-            $rollupForIcon = null;
-            if ( $hasDueMode && $percent < 100 ) {
-                $rollupForIcon = $lessons->moduleWorstDueRollup($rlids, $allgrades, $duedates);
-                if ( $rollupForIcon !== null && $rollupForIcon['modifier'] === 'tsugi-assignments-due-future' ) {
-                    $rollupForIcon = null;
-                }
-            }
-            
-            echo('<article class="card"><div>'."\n");
             $href = U::get_rest_path() . '/' . urlencode($module->anchor);
-            $link_label = $count.': '.$module->title;
-            echo('<a class="tsugi-lessons-module-card-link" href="'.$href.'" aria-label="'.htmlspecialchars($link_label, ENT_QUOTES, 'UTF-8').'">'."\n");
-            if ( isset($module->icon) ) {
-                $icon_color = self::moduleCardIconColorStyle($percent, $hasDueMode, $rollupForIcon);
-                echo('<i class="fa '.$module->icon.' fa-2x" aria-hidden="true" style="float: left; padding-right: 5px;'.$icon_color.'"></i>');
-            }
-            if ( isset($module->image) ) {
-                echo('<img class="tsugi-all-modules-image-icon" aria-hidden="true" style="float: left; width: 2em; padding-right: 5px;" src="'.LessonsService::expandLink($module->image).'">');
-            }
-            echo($link_label);
-            self::echoModuleAggregateProgressBadge($lessons, $possible_points, $actual_points, $rlids, $allgrades, $duedates, false);
-            if ( isset($module->description) ) {
-                $desc = $module->description;
-                if ( strlen($desc) > 1000 ) $desc = substr($desc, 0, 1000);
-                echo('<br clear="all"><p class="tsugi-card-description">'.$desc."</p>\n");
-            }
-            echo("</a></div></article>\n");
-            echo("<!--\n");
-            print_r($allgrades);
-            print_r($rlids);
-            echo("\n-->\n");
+            self::echoModuleCard($lessons, $module, $count, $allgrades, $duedates, $href, false);
         }
         echo('</div> <!-- box -->'."\n");
         echo('</div> <!-- typeof="Course" -->'."\n");
@@ -2152,7 +2500,7 @@ $(function(){
     }
 
     /**
-     * CSS for module cards, LTI progress/due badges (lessons and labs catalog).
+     * CSS for module cards and result signatures. Progress badges live in tsugi2.css.
      */
     public static function printLtiProgressStyles() {
         echo('<style>
@@ -2169,79 +2517,10 @@ $(function(){
     overflow-y: hidden;
     text-overflow: ellipsis;
 }
-.progress-badge {
-    display: inline-block;
-    margin-left: 0.35em;
-    vertical-align: middle;
-    font-size: 0.75em;
-    line-height: 1.2;
-}
-.progress-badge-check {
-    background-color: #28a745;
-    color: #fff;
-    padding: 0.15em 0.45em;
-    border-radius: 0.25em;
-    font-weight: bold;
-}
-.progress-badge-percent {
-    background-color: #007bff;
-    color: #fff;
-    padding: 0.15em 0.45em;
-    border-radius: 0.25em;
-    font-weight: bold;
-}
-.progress-badge-not-started {
-    background-color: #e9ecef;
-    color: #495057;
-    padding: 0.15em 0.45em;
-    border-radius: 0.25em;
-    font-weight: normal;
-}
 .tsugi-lti-link-meta {
     display: inline;
     margin-left: 0.25em;
     white-space: nowrap;
-}
-.tsugi-assignments-due-badge {
-    display: inline-block;
-    margin-left: 0.35em;
-    padding: 0.12em 0.45em;
-    border-radius: 0.25em;
-    font-size: 0.75em;
-    line-height: 1.2;
-    vertical-align: middle;
-    border: 1px solid transparent;
-}
-.tsugi-assignments-due-completed {
-    background: #d4edda;
-    color: #155724;
-    border-color: #c3e6cb;
-}
-.tsugi-assignments-due-past {
-    background: #f8d7da;
-    color: #721c24;
-    border-color: #f5c6cb;
-}
-.tsugi-assignments-due-soon {
-    background: #fff3cd;
-    color: #856404;
-    border-color: #ffeeba;
-}
-.tsugi-assignments-due-future {
-    background: #e9ecef;
-    color: #495057;
-    border-color: #dee2e6;
-}
-.tsugi-assignments-due-neutral {
-    background: #f8f9fa;
-    color: #6c757d;
-    border-color: #dee2e6;
-}
-.tsugi-assignments-due-state {
-    font-weight: bold;
-}
-.tsugi-assignments-due-detail {
-    font-weight: normal;
 }
 .tsugi-assignments-rl-sig-sep {
     color: #767676;
@@ -2312,30 +2591,228 @@ $(function(){
 </style>'."\n");
     }
 
-    /*
-     * A Nostyle URL Link with title
+    /**
+     * Show or hide install icons for the rest of this session.
+     *
+     * @param LessonsService $lessons
+     * @return string
      */
-    public static function nostyleUrl($title, $url) {
-        $url = LessonsService::expandLink($url);
-        echo('<a href="'.$url.'" target="_blank" rel="noopener noreferrer" typeof="oer:SupportingMaterial">'.htmlentities($url)."</a>\n");
-        if ( isset($_SESSION['gc_count']) ) {
-            echo('<div class="g-sharetoclassroom" data-size="16" data-url="'.$url.'" ');
-	    echo(' data-title="'.htmlentities($title).'" ');
-	    echo('></div>');
+    private static function classroomInstallLinksToggleMarkup($lessons) {
+        if ( ! self::canToggleClassroomInstallLinks() || ! $lessons->isSingle() ) {
+            return '';
         }
+        $open = self::classroomInstallLinksOpen();
+        $path = $lessons->lessonsHome();
+        $anchor = isset($lessons->module->anchor) ? trim((string) $lessons->module->anchor) : '';
+        if ( $anchor !== '' ) {
+            $path = rtrim($path, '/').'/'.rawurlencode($anchor);
+        }
+        $href = U::addSession(U::add_url_parm($path, 'classroom_links', $open ? 'hide' : 'show'));
+        $label = $open ? __('Hide classroom links') : __('Show classroom install links');
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        $safeLabel = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+        return '<p class="tsugi-classroom-links-toggle" style="margin:1.5em 0 0.5em;">'
+            .'<a href="'.$safeHref.'" style="display:inline-flex;align-items:center;gap:6px;">'
+            .'<img height="16" width="16" alt="" src="https://www.gstatic.com/classroom/logo_square_48.svg">'
+            .$safeLabel
+            .'</a></p>'."\n";
     }
 
-    /*
-     * A Nostyle URL Link with title as the href text
+    /**
+     * Classroom install icon for a lesson resource link. Shown in the
+     * install view after the teacher has connected.
+     *
+     * @param string $resource_link_id
      */
-    public static function nostyleLink($title, $url) {
-        $url = LessonsService::expandLink($url);
-        echo('<a href="'.$url.'" target="_blank" rel="noopener noreferrer" class="tsugi-lessons-link" typeof="oer:SupportingMaterial">'.htmlentities($title)."</a>\n");
-        if ( isset($_SESSION['gc_count']) ) {
-            echo('<div class="g-sharetoclassroom" data-size="16" data-url="'.$url.'" ');
-	    echo(' data-title="'.htmlentities($title).'" ');
-	    echo('></div>');
+    private static function echoClassroomInstall($resource_link_id) {
+        global $CFG;
+        if ( ! self::isGoogleClassroomInstructor() ) {
+            return;
         }
+        if ( ! is_string($resource_link_id) || $resource_link_id === '' ) {
+            return;
+        }
+        $contextId = (int) ReqScope::currentContextId();
+        if ( $contextId < 1 ) {
+            $contextId = (int) ReqScope::currentContextIdLegacy();
+        }
+        $href = $CFG->wwwroot.'/gclass/assign?'.http_build_query(array(
+            'rlid' => $resource_link_id,
+            'context' => $contextId,
+        ));
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        echo('<a href="'.$safeHref.'"');
+        echo(' title="Install in Classroom" target="iframe-frame"'."\n");
+        echo('onclick="showModalIframeUrl(this.title, \'iframe-dialog\', \'iframe-frame\', this.href, _TSUGI.spinnerUrl, true); return false;">'."\n");
+        echo('<img height="16" width="16" alt="" src="https://www.gstatic.com/classroom/logo_square_48.svg"></a>'."\n");
+    }
+
+    /**
+     * Classroom material for this lesson page. It signs the course and
+     * does not create a resource link.
+     *
+     * @param string $anchor
+     * @param string $title
+     */
+    private static function echoClassroomInstallDialog() {
+        global $OUTPUT;
+        if ( ! self::isGoogleClassroomInstructor() ) {
+            return;
+        }
+        $src = htmlspecialchars((string) $OUTPUT->getSpinnerUrl(), ENT_QUOTES, 'UTF-8');
+        echo('<style>
+.ui-dialog:has(#iframe-dialog) {
+    width: 440px !important;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(32,33,36,.28);
+}
+.ui-dialog:has(#iframe-dialog) .ui-dialog-titlebar {
+    background: #fff;
+    border: 0;
+    color: #3c4043;
+    font-family: Roboto, Arial, sans-serif;
+    font-weight: 500;
+    padding: 14px 16px 0;
+}
+.ui-dialog:has(#iframe-dialog) .ui-dialog-titlebar-close {
+    background: transparent;
+    border: 0;
+}
+.ui-dialog:has(#iframe-dialog) .ui-dialog-content {
+    padding: 0;
+    overflow: hidden;
+}
+#iframe-frame {
+    display: block;
+    width: 100%;
+    height: 480px !important;
+    border: 0;
+}
+</style>
+<div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
+   <iframe name="iframe-frame" id="iframe-frame" title="Install in Classroom" src="'.$src.'"></iframe>
+</div>'."\n");
+    }
+
+    /**
+     * Classroom material for the whole course. Opening it joins the course.
+     *
+     * @param string $title
+     */
+    private static function echoClassroomCourseInstall($title) {
+        global $CFG;
+        if ( ! self::lessonsUseManifest() ) {
+            return;
+        }
+        if ( ! self::isGoogleClassroomInstructor() ) {
+            return;
+        }
+        $contextId = (int) ReqScope::currentContextId();
+        if ( $contextId < 1 ) {
+            $contextId = (int) ReqScope::currentContextIdLegacy();
+        }
+        if ( $contextId < 1 ) {
+            return;
+        }
+        $href = $CFG->wwwroot.'/gclass/assign?'.http_build_query(array(
+            'join' => 'course',
+            'title' => $title,
+            'context' => $contextId,
+        ));
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        echo(' <a href="'.$safeHref.'"');
+        echo(' title="Install this course in Classroom" target="iframe-frame"'."\n");
+        echo('onclick="showModalIframeUrl(this.title, \'iframe-dialog\', \'iframe-frame\', this.href, _TSUGI.spinnerUrl, true); return false;">'."\n");
+        echo('<img height="16" width="16" alt="" src="https://www.gstatic.com/classroom/logo_square_48.svg"></a>'."\n");
+    }
+
+    protected static function echoClassroomModuleInstall($anchor, $title) {
+        global $CFG;
+        if ( ! self::lessonsUseManifest() ) {
+            return;
+        }
+        if ( ! self::isGoogleClassroomInstructor() ) {
+            return;
+        }
+        $anchor = trim($anchor);
+        if ( $anchor === '' ) {
+            return;
+        }
+        $contextId = (int) ReqScope::currentContextId();
+        if ( $contextId < 1 ) {
+            $contextId = (int) ReqScope::currentContextIdLegacy();
+        }
+        $href = $CFG->wwwroot.'/gclass/assign?'.http_build_query(array(
+            'module' => $anchor,
+            'title' => $title,
+            'context' => $contextId,
+        ));
+        $safeHref = htmlspecialchars($href, ENT_QUOTES, 'UTF-8');
+        echo('<a href="'.$safeHref.'"');
+        echo(' title="Install this lesson in Classroom" target="iframe-frame"'."\n");
+        echo('onclick="showModalIframeUrl(this.title, \'iframe-dialog\', \'iframe-frame\', this.href, _TSUGI.spinnerUrl, true); return false;">'."\n");
+        echo('<img height="16" width="16" alt="" src="https://www.gstatic.com/classroom/logo_square_48.svg"></a>'."\n");
+    }
+
+    /**
+     * Share-to-Classroom button for a plain link. The button carries the URL.
+     *
+     * @param string $title
+     * @param string $url Already expanded
+     */
+    private static function echoClassroomShare($title, $url) {
+        if ( ! self::isGoogleClassroomInstructor() ) {
+            return;
+        }
+        if ( ! is_string($url) || $url === '' ) {
+            return;
+        }
+        $safeUrl = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        $safeTitle = htmlspecialchars((string) $title, ENT_QUOTES, 'UTF-8');
+        echo('<span class="tsugi-classroom-share" style="display:inline-flex;align-items:center;">');
+        echo('<div class="g-sharetoclassroom" data-size="16" data-url="'.$safeUrl.'" ');
+        echo(' data-itemtype="material" data-title="'.$safeTitle.'"></div>');
+        echo('</span>');
+    }
+
+    /**
+     * One classroom-mode line: the title is the link. Plain links also get share.
+     *
+     * @param string $title
+     * @param string $url
+     * @param mixed $icon_key
+     * @param bool $share
+     */
+    private static function echoClassroomTitle($title, $url, $icon_key = null, $share = true) {
+        $url = LessonsService::expandLink((string) $url);
+        $safe = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        echo('<span class="tsugi-gclass-line" style="display:inline-flex;align-items:center;gap:6px;">');
+        echo('<a href="'.$safe.'" target="_blank" rel="noopener noreferrer" class="tsugi-lessons-link" typeof="oer:SupportingMaterial" style="display:inline-flex;align-items:center;">');
+        if ( $icon_key !== null && $icon_key !== false && $icon_key !== '' ) {
+            self::renderItemIcon($icon_key, $url);
+        }
+        echo(htmlentities((string) $title).'</a>');
+        if ( $share ) {
+            self::echoClassroomShare($title, $url);
+        }
+        echo('</span>');
+    }
+
+    /**
+     * Classroom-mode link. The visible text is the title.
+     */
+    public static function classroomUrl($title, $url) {
+        self::classroomLink($title, $url);
+    }
+
+    /**
+     * Classroom-mode link. The visible text is the title.
+     *
+     * @param mixed $icon_key
+     */
+    public static function classroomLink($title, $url, $icon_key = null) {
+        self::echoClassroomTitle($title, $url, $icon_key, true);
     }
 
     /**
@@ -2368,10 +2845,10 @@ $(function(){
         $grade = (float) $allgrades[$resource_link_id];
         $pct = (int) round($grade * 100);
         if ( $grade > 0.8 ) {
-            echo('<span class="progress-badge progress-badge-check" title="'.htmlspecialchars(__('Complete').': 100%', ENT_QUOTES, 'UTF-8').'">100%</span>');
+            echo('<span class="tsugi-progress-badge tsugi-progress-badge-check" title="'.htmlspecialchars(__('Complete').': 100%', ENT_QUOTES, 'UTF-8').'">100%</span>');
         } elseif ( $pct > 0 ) {
             $tip = __('Score').': '.$pct.'%';
-            echo('<span class="progress-badge progress-badge-percent" title="'.htmlspecialchars($tip, ENT_QUOTES, 'UTF-8').'">'.$pct.'%</span>');
+            echo('<span class="tsugi-progress-badge tsugi-progress-badge-percent" title="'.htmlspecialchars($tip, ENT_QUOTES, 'UTF-8').'">'.$pct.'%</span>');
         }
     }
 
@@ -2413,7 +2890,7 @@ $(function(){
         if ( isset($allgrades[$resource_link_id]) && is_numeric($allgrades[$resource_link_id]) ) {
             self::echoLtiGradePercentBadge($resource_link_id, $allgrades);
         } elseif ( ! $has_due_badge ) {
-            echo('<span class="progress-badge progress-badge-not-started" title="'.htmlspecialchars(__('Not started'), ENT_QUOTES, 'UTF-8').'">');
+            echo('<span class="tsugi-progress-badge tsugi-progress-badge-not-started" title="'.htmlspecialchars(__('Not started'), ENT_QUOTES, 'UTF-8').'">');
             echo(htmlspecialchars(__('Not started')));
             echo('</span>');
         }
@@ -2599,7 +3076,7 @@ $(function(){
     /**
      * Render a single item from the items array
      */
-    public static function renderItem($lessons, $item, $module, $nostyle=false) {
+    public static function renderItem($lessons, $item, $module, $gclass=false) {
         global $CFG, $OUTPUT;
         
         if ( is_array($item) ) {
@@ -2621,31 +3098,31 @@ $(function(){
                 self::renderItemText($item);
                 break;
             case 'web_link':
-            case 'html_page':
             case 'file':
-                self::renderCanonicalResource($item, $module, $kind, $nostyle);
+            case 'html_page':
+                self::renderCanonicalResource($item, $module, $kind, $gclass);
                 break;
             case 'lti':
                 if ( $kind === 'discussion' ) {
-                    self::renderItemDiscussion($lessons, $item, $module, $nostyle);
+                    self::renderItemDiscussion($lessons, $item, $module, $gclass);
                 } else {
-                    self::renderItemLti($lessons, $item, $module, $nostyle);
+                    self::renderItemLti($lessons, $item, $module, $gclass);
                 }
                 break;
             case 'video':
-                self::renderItemVideo($item, $nostyle);
+                self::renderItemVideo($item, $gclass);
                 break;
             case 'slide':
-                self::renderItemSlide($item, $nostyle);
+                self::renderItemSlide($item, $gclass);
                 break;
             case 'reference':
-                self::renderItemReference($item, $nostyle);
+                self::renderItemReference($item, $gclass);
                 break;
             case 'discussion':
-                self::renderItemDiscussion($lessons, $item, $module, $nostyle);
+                self::renderItemDiscussion($lessons, $item, $module, $gclass);
                 break;
             case 'quiz':
-                self::renderItemQuiz1($lessons, $item, $module, $nostyle);
+                self::renderItemQuiz1($lessons, $item, $module, $gclass);
                 break;
             // Legacy plural types - convert to singular and re-render (backward compatibility)
             case 'videos':
@@ -2659,25 +3136,25 @@ $(function(){
                     foreach($item->items as $subitem) {
                         $subitem_obj = is_array($subitem) ? (object)$subitem : $subitem;
                         if (!isset($subitem_obj->type)) $subitem_obj->type = $singular_type;
-                        self::renderItem($lessons, $subitem_obj, $module, $nostyle);
+                        self::renderItem($lessons, $subitem_obj, $module, $gclass);
                     }
                 } else if ($type == 'slides' && (isset($item->href) || isset($item->url))) {
                     // Handle single slide object (legacy format)
                     $item->type = 'slide';
-                    self::renderItem($lessons, $item, $module, $nostyle);
+                    self::renderItem($lessons, $item, $module, $gclass);
                 }
                 break;
             case 'assignment':
-                self::renderItemAssignment($item, $nostyle);
+                self::renderItemAssignment($item, $gclass);
                 break;
             case 'solution':
-                self::renderItemSolution($item, $nostyle);
+                self::renderItemSolution($item, $gclass);
                 break;
             case 'chapters':
                 self::renderItemChapters($item);
                 break;
             case 'carousel':
-                self::renderItemCarousel($lessons, $item, $nostyle);
+                self::renderItemCarousel($lessons, $item, $gclass);
                 break;
             default:
                 // Unknown type, skip
@@ -2688,28 +3165,28 @@ $(function(){
     /**
      * Dispatch a normalized web_link / html_page / file to the matching presentation.
      */
-    private static function renderCanonicalResource($item, $module, $kind, $nostyle=false) {
+    private static function renderCanonicalResource($item, $module, $kind, $gclass=false) {
         if ( $kind === 'video' ) {
-            self::renderItemVideo($item, $nostyle);
+            self::renderItemVideo($item, $gclass);
             return;
         }
         if ( $kind === 'slide' ) {
-            self::renderItemSlide($item, $nostyle);
+            self::renderItemSlide($item, $gclass);
             return;
         }
         if ( $kind === 'reference' ) {
-            self::renderItemReference($item, $nostyle);
+            self::renderItemReference($item, $gclass);
             return;
         }
         if ( $kind === 'assignment' ) {
-            self::renderItemAssignment($item, $nostyle);
+            self::renderItemAssignment($item, $gclass);
             return;
         }
         if ( $kind === 'solution' ) {
-            self::renderItemSolution($item, $nostyle);
+            self::renderItemSolution($item, $gclass);
             return;
         }
-        self::renderItemGenericLink($item, $kind, $nostyle);
+        self::renderItemGenericLink($item, $kind, $gclass);
     }
 
     /**
@@ -2735,7 +3212,7 @@ $(function(){
     /**
      * Generic fallback for foundational file / web_link / html_page items.
      */
-    private static function renderItemGenericLink($item, $kind, $nostyle=false) {
+    private static function renderItemGenericLink($item, $kind, $gclass=false) {
         $title = isset($item->title) ? $item->title : (isset($item->text) ? $item->text : (isset($item->filename) ? $item->filename : ''));
         $href = isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '');
         $href = LessonsService::expandLink($href);
@@ -2743,12 +3220,12 @@ $(function(){
         $icon_key = LessonsNormalize::iconKey($item);
 
         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-'.$css.'">');
-        if ( $nostyle ) {
-            echo(htmlentities($title).':');
-            self::nostyleUrl($title, $href);
-        } else {
-            self::renderWebLinkOpenControl($item, $href, $title, $icon_key);
+        echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+        self::renderWebLinkOpenControl($item, $href, $title, $icon_key);
+        if ( $gclass ) {
+            self::echoClassroomShare($title, $href);
         }
+        echo('</span>');
         echo("</li>\n");
     }
 
@@ -2827,6 +3304,15 @@ $(function(){
      * @param string $href Expanded URL (not yet HTML-encoded)
      */
     private static function renderWebLinkOpenControl($item, $href, $title, $icon_key, $css_class='tsugi-lessons-link') {
+        if ( ReqScope::isAnonymousLessonView() && FileRepository::isUploadedFileHref($href) ) {
+            echo('<span style="display: inline-flex; align-items: center;">');
+            if ( $icon_key !== null && $icon_key !== false ) {
+                self::renderItemIcon($icon_key);
+            }
+            echo(htmlentities($title).' ('.__('Login Required').')');
+            echo('</span>');
+            return;
+        }
         $safe_href = self::safeWebHref($href);
         $mode = self::webLinkOpenMode($item);
         if ( $mode === 'modal' && $safe_href !== '' ) {
@@ -2876,6 +3362,29 @@ $(function(){
     }
 
     /**
+     * A heading sits outside the content list. Outline wraps it in an expando.
+     *
+     * @param object $item
+     */
+    protected static function openHeadingSection($item) {
+        static::echoItemHeading($item);
+    }
+
+    protected static function closeHeadingSection() {
+    }
+
+    /**
+     * @param object|array<string,mixed> $item
+     */
+    protected static function echoItemHeading($item) {
+        if ( is_array($item) ) {
+            $item = (object) $item;
+        }
+        $item = LessonsNormalize::normalizeItemObject($item);
+        self::renderItemHeader($item);
+    }
+
+    /**
      * Render a header item
      */
     private static function renderItemHeader($item) {
@@ -2919,7 +3428,7 @@ $(function(){
     /**
      * Render a single video item
      */
-    private static function renderItemVideo($item, $nostyle=false) {
+    private static function renderItemVideo($item, $gclass=false) {
         global $CFG, $OUTPUT;
         
         $media_folder = $CFG->getExtension('media_folder', null);
@@ -2928,18 +3437,34 @@ $(function(){
         $kaltura_url = LessonsService::kalturaEmbedUrl($item);
         
         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-video">');
-        
-        if ( $kaltura_url ) {
-            if ( $nostyle ) {
-                self::nostyleUrl($item->title, LessonsService::kalturaTabUrl($item));
-            } else {
-                self::renderKalturaOverlay(
-                    $item->title,
-                    $kaltura_url,
-                    true,
-                    LessonsService::kalturaTabUrl($item)
-                );
+
+        if ( $gclass ) {
+            $shareUrl = '';
+            if ( $kaltura_url ) {
+                $shareUrl = LessonsService::kalturaTabUrl($item);
+            } else if ( is_string($media_file) && is_string($media_base) && is_string($media_folder) &&
+                file_exists($media_folder . '/' . $media_file) ) {
+                $shareUrl = $media_base . '/' . $media_file;
+            } else if ( isset($item->youtube) && is_string($item->youtube) && $item->youtube !== '' ) {
+                $shareUrl = U::youtubeWatchUrl($item->youtube);
             }
+            $videoTitle = isset($item->title) ? $item->title : '';
+            if ( $shareUrl !== '' ) {
+                self::classroomLink($videoTitle, $shareUrl, LessonsNormalize::iconKey($item));
+            } else {
+                echo(htmlentities($videoTitle));
+            }
+            echo("</li>\n");
+            return;
+        }
+
+        if ( $kaltura_url ) {
+            self::renderKalturaOverlay(
+                $item->title,
+                $kaltura_url,
+                true,
+                LessonsService::kalturaTabUrl($item)
+            );
         } else if ( is_string($media_file) && is_string($media_base) && is_string($media_folder) &&
             file_exists($media_folder . '/' . $media_file) ) {
             $media_path = $media_base . '/' . $media_file;
@@ -2978,10 +3503,10 @@ $(function(){
     /**
      * Render slides item (can be single slide or array)
      */
-    private static function renderItemSlides($item, $nostyle=false) {
+    private static function renderItemSlides($item, $gclass=false) {
         if (isset($item->href) || isset($item->url)) {
             // Single slide
-            self::renderItemSlide($item, $nostyle);
+            self::renderItemSlide($item, $gclass);
         } else if (isset($item->items) && is_array($item->items)) {
             // Multiple slides
             $singular = 'slide';
@@ -2995,7 +3520,7 @@ $(function(){
             foreach($item->items as $slide) {
                 $slide_obj = is_array($slide) ? (object)$slide : $slide;
                 $slide_obj->type = 'slide';
-                self::renderItemSlide($slide_obj, $nostyle);
+                self::renderItemSlide($slide_obj, $gclass);
             }
             echo("</ul></li>\n");
         }
@@ -3004,15 +3529,18 @@ $(function(){
     /**
      * Render a single slide item
      */
-    private static function renderItemSlide($item, $nostyle=false) {
+    private static function renderItemSlide($item, $gclass=false) {
         $slide_title = isset($item->title) ? $item->title : (isset($item->text) ? $item->text : basename(isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '')));
         $slide_href = isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '');
         // Process {apphome} and other macros in the URL
         $slide_href = LessonsService::expandLink($slide_href);
         
         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-slide">');
-        echo('<span class="tsugi-lessons-module-slide-link">');
+        echo('<span class="tsugi-lessons-module-slide-link" style="display:inline-flex;align-items:center;gap:6px;">');
         self::renderWebLinkOpenControl($item, $slide_href, $slide_title, LessonsNormalize::iconKey($item));
+        if ( $gclass ) {
+            self::echoClassroomShare($slide_title, $slide_href);
+        }
         echo("\n</span>\n");
         echo('</li>'."\n");
     }
@@ -3020,15 +3548,18 @@ $(function(){
     /**
      * Render a reference item
      */
-    private static function renderItemReference($item, $nostyle=false) {
+    private static function renderItemReference($item, $gclass=false) {
         $title = isset($item->title) ? $item->title : '';
         $href = isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '');
         // Process {apphome} and other macros in the URL
         $href = LessonsService::expandLink($href);
         
         echo('<li typeof="oer:SupportingMaterial" class="tsugi-lessons-module-reference">');
-        echo('<span class="tsugi-lessons-module-reference-link">');
+        echo('<span class="tsugi-lessons-module-reference-link" style="display:inline-flex;align-items:center;gap:6px;">');
         self::renderWebLinkOpenControl($item, $href, $title, LessonsNormalize::iconKey($item));
+        if ( $gclass ) {
+            self::echoClassroomShare($title, $href);
+        }
         echo("\n</span>\n");
         echo('</li>'."\n");
     }
@@ -3077,15 +3608,59 @@ $(function(){
     }
 
     /**
+     * A full launch session for this course. Anonymous lesson readers never have one.
+     *
+     * @return bool
+     */
+    private static function launchSessionReady() {
+        if ( ReqScope::isAnonymousLessonView() ) {
+            return false;
+        }
+        return (bool) (U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
+            && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email'));
+    }
+
+    /**
+     * Show the title with Login Required instead of a launch link.
+     *
+     * A partial session (secret set, course keys missing) still hides the
+     * item, matching the older lessons page.
+     *
+     * @return bool
+     */
+    private static function showLaunchLoginRequired() {
+        if ( ReqScope::isAnonymousLessonView() ) {
+            return true;
+        }
+        return ! isset($_SESSION['secret']);
+    }
+
+    /**
+     * Lesson item that stays closed for an anonymous reader.
+     *
+     * @param object $item
+     * @param string $class
+     */
+    private static function renderAnonymousClosedItem($item, $class) {
+        $title = isset($item->title) && is_string($item->title) && $item->title !== ''
+            ? $item->title
+            : __('Page');
+        echo('<li class="tsugi-lessons-module-'.$class.'">');
+        echo('<span style="display: inline-flex; align-items: center;">');
+        self::renderItemIcon(LessonsNormalize::iconKey($item));
+        echo(htmlentities($title).' ('.__('Login Required').')');
+        echo('</span></li>'."\n");
+    }
+
+    /**
      * Render a discussion item
      */
-    private static function renderItemDiscussion($lessons, $item, $module, $nostyle=false) {
+    private static function renderItemDiscussion($lessons, $item, $module, $gclass=false) {
         $resource_link_title = isset($item->title) ? $item->title : $module->title;
-        $launch = LessonsNormalize::launchUrlForItem($item);
         $resource_link_id = isset($item->resource_link_id) ? $item->resource_link_id : '';
         
-        // Not logged in
-        if ( ! isset($_SESSION['secret']) ) {
+        // Not logged in, or an anonymous reader of this course
+        if ( self::showLaunchLoginRequired() ) {
             echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussion">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($resource_link_title).' ('.__('Login Required').') <br/>'."\n");
@@ -3094,22 +3669,23 @@ $(function(){
         }
         
         // Logged in
-        if ( U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
-            && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email') )
+        if ( self::launchSessionReady() )
         {
-            if ( $nostyle ) {
-                echo('<li typeof="oer:discussion" class="tsugi-lessons-module-discussion">');
-                echo('<span style="display: inline-flex; align-items: center;">');
-                self::renderItemIcon(LessonsNormalize::iconKey($item));
-                echo(htmlentities($resource_link_title).' (Login Required)');
-                echo('</span><br/>'."\n");
-                if ( self::discussionUsesLtiLaunch() ) {
-                    $discussionurl = U::add_url_parm($launch, 'inherit', $resource_link_id);
+            if ( $gclass ) {
+                $launch_path = self::discussionHref($lessons, $resource_link_id);
+                echo('<li class="tsugi-lessons-module-discussion">');
+                echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+                if ( $launch_path !== '' ) {
+                    self::echoClassroomTitle($resource_link_title, $launch_path, LessonsNormalize::iconKey($item), false);
                 } else {
-                    $discussionurl = self::discussionControllerPath($resource_link_id);
+                    echo('<span style="display:inline-flex;align-items:center;">');
+                    self::renderItemIcon(LessonsNormalize::iconKey($item));
+                    echo(htmlentities($resource_link_title).'</span>');
                 }
-                echo('<span style="color:green">'.htmlentities($discussionurl)."</span>\n");
-                echo("\n</li>\n");
+                if ( $lessons->resourceLinkPublished($resource_link_id) !== false ) {
+                    self::echoClassroomInstall($resource_link_id);
+                }
+                echo("</span></li>\n");
                 return;
             }
 
@@ -3266,10 +3842,10 @@ $(function(){
      * @param object $item
      * @param object $module
      * @param int $contentId
-     * @param bool $nostyle
+     * @param bool $gclass
      * @return void
      */
-    private static function renderContentLti($lessons, $item, $module, $contentId, $nostyle=false) {
+    private static function renderContentLti($lessons, $item, $module, $contentId, $gclass=false) {
         $row = LtiContentService::find(ReqScope::currentContextId(), (int) $contentId);
         $title = isset($item->title) && is_string($item->title) && $item->title !== ''
             ? $item->title
@@ -3279,7 +3855,7 @@ $(function(){
             if ( ! $instructor ) {
                 return;
             }
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti tsugi-lessons-lti-missing">');
+            echo('<li typeof="oer:assessment" class="'.self::ltiStepClass($lessons, $item).' tsugi-lessons-lti-missing">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($title).' ('.__('Tool not found').')');
@@ -3296,15 +3872,22 @@ $(function(){
             if ( ! $instructor ) {
                 return;
             }
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti tsugi-lessons-lti-missing">');
+            echo('<li typeof="oer:assessment" class="'.self::ltiStepClass($lessons, $item).' tsugi-lessons-lti-missing">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($title.$unpublished_suffix).' ('.__('Tool not found').')');
             echo('</span></li>'."\n");
             return;
         }
-        if ( ! isset($_SESSION['secret']) ) {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti">');
+        $contentStep = clone $item;
+        if ( (int) $row['send_grade'] !== 1 && empty($row['link_id']) ) {
+            $contentStep->result = false;
+        } else if ( property_exists($contentStep, 'result') ) {
+            unset($contentStep->result);
+        }
+        $ltiClass = self::ltiStepClass($lessons, $contentStep);
+        if ( self::showLaunchLoginRequired() ) {
+            echo('<li typeof="oer:assessment" class="'.$ltiClass.'">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($title).' ('.__('Login Required').')');
@@ -3328,13 +3911,14 @@ $(function(){
             $view->target = '_blank';
         }
         $rl_dom_id = LessonsService::domIdForResourceLink($resource_link_id);
-        echo('<li class="tsugi-lessons-module-lti" id="'.htmlspecialchars($rl_dom_id, ENT_QUOTES, 'UTF-8').'">');
-        if ( $nostyle ) {
-            echo('<span style="display: inline-flex; align-items: center;">');
-            self::renderItemIcon(LessonsNormalize::iconKey($item));
-            echo(htmlentities($shown).' (Login Required)');
-            echo('</span><br/>'."\n");
-            echo('<span style="color:green">'.htmlentities($launch_path)."</span>\n");
+        echo('<li class="'.$ltiClass.'" id="'.htmlspecialchars($rl_dom_id, ENT_QUOTES, 'UTF-8').'">');
+        if ( $gclass ) {
+            echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+            self::echoClassroomTitle($shown, $launch_path, LessonsNormalize::iconKey($item), false);
+            if ( $visible === true ) {
+                self::echoClassroomInstall($resource_link_id);
+            }
+            echo('</span>'."\n");
         } else {
             self::renderRegisteredLtiOpen($view, $launch_path, $shown);
             self::echoLtiLinkProgressIndicators($resource_link_id, $view, $lessons->moduleProgressGrades(), $lessons->moduleProgressDueDates());
@@ -3344,18 +3928,46 @@ $(function(){
     }
 
     /**
+     * Content and Outline set toolHome to their own path. A quiz opened from
+     * there returns to that view.
+     *
+     * @param object $lessons
+     * @return string content, outline, or empty
+     */
+    private static function quizReturnView($lessons) {
+        if ( ! is_object($lessons) || ! isset($lessons->toolHome) || ! is_string($lessons->toolHome) ) {
+            return '';
+        }
+        $home = rtrim($lessons->toolHome, '/');
+        if ( $home === '' ) {
+            return '';
+        }
+        if ( substr($home, -strlen(Content::ROUTE)) === Content::ROUTE ) {
+            return 'content';
+        }
+        if ( substr($home, -strlen(Outline::ROUTE)) === Outline::ROUTE ) {
+            return 'outline';
+        }
+        return '';
+    }
+
+    /**
+     * @param object $lessons
+     */
+    private static function quizOpenedFromContent($lessons) {
+        return self::quizReturnView($lessons) === 'content';
+    }
+
+    /**
      * Render an LTI item
      */
-    private static function renderItemLti($lessons, $item, $module, $nostyle=false) {
-        global $CFG;
-        
+    private static function renderItemLti($lessons, $item, $module, $gclass=false) {
         $content_id = isset($item->content_id) ? (int) $item->content_id : 0;
         if ( $content_id > 0 ) {
-            self::renderContentLti($lessons, $item, $module, $content_id, $nostyle);
+            self::renderContentLti($lessons, $item, $module, $content_id, $gclass);
             return;
         }
         $resource_link_title = isset($item->title) ? $item->title : $module->title;
-        $launch = isset($item->launch) ? $item->launch : '';
         $resource_link_id = isset($item->resource_link_id) ? $item->resource_link_id : '';
         $target = isset($item->target) ? $item->target : false;
         $tool_deployment_id = self::lessonDeploymentId($item);
@@ -3366,7 +3978,7 @@ $(function(){
             ? ' ('.__('unpublished').')'
             : '';
         if ( self::ltiItemIsUnregistered($item) ) {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti tsugi-lessons-lti-unregistered">');
+            echo('<li typeof="oer:assessment" class="'.self::ltiStepClass($lessons, $item).' tsugi-lessons-lti-unregistered">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($resource_link_title.$unpublished_suffix).' ('.__('not provisioned').')');
@@ -3377,7 +3989,7 @@ $(function(){
             if ( ! $lessons->lessonsViewerIsInstructor() ) {
                 return;
             }
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti tsugi-lessons-lti-missing">');
+            echo('<li typeof="oer:assessment" class="'.self::ltiStepClass($lessons, $item).' tsugi-lessons-lti-missing">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($resource_link_title.$unpublished_suffix).' ('.__('Tool not found').')');
@@ -3385,9 +3997,10 @@ $(function(){
             return;
         }
         
-        // Not logged in
-        if ( ! isset($_SESSION['secret']) ) {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti">');
+        $ltiClass = self::ltiStepClass($lessons, $item);
+        // Not logged in, or an anonymous reader of this course
+        if ( self::showLaunchLoginRequired() ) {
+            echo('<li typeof="oer:assessment" class="'.$ltiClass.'">');
             echo('<span style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($resource_link_title).' ('.__('Login Required').')');
@@ -3397,22 +4010,17 @@ $(function(){
         }
         
         // Logged in
-        if ( U::get($_SESSION,'secret') && U::get($_SESSION,'context_key')
-            && U::get($_SESSION,'user_key') && U::get($_SESSION,'displayname') && U::get($_SESSION,'email') )
+        if ( self::launchSessionReady() )
         {
-            if ( $nostyle ) {
-                echo('<li typeof="oer:assessment" class="tsugi-lessons-module-lti">');
-                echo('<span style="display: inline-flex; align-items: center;">');
-                self::renderItemIcon(LessonsNormalize::iconKey($item));
-                echo(htmlentities($resource_link_title.$unpublished_suffix).' (Login Required)');
-                echo('</span><br/>'."\n");
-                if ( $tool_deployment_id > 0 ) {
-                    $ltiurl = $lessons->lessonsLaunchPath($resource_link_id);
-                } else {
-                    $ltiurl = U::add_url_parm($launch, 'inherit', $resource_link_id);
+            if ( $gclass ) {
+                $ltiurl = $lessons->lessonsLaunchPath($resource_link_id);
+                echo('<li class="'.$ltiClass.'">');
+                echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+                self::echoClassroomTitle($resource_link_title.$unpublished_suffix, $ltiurl, LessonsNormalize::iconKey($item), false);
+                if ( $lessons->resourceLinkPublished($resource_link_id) !== false ) {
+                    self::echoClassroomInstall($resource_link_id);
                 }
-                echo('<span style="color:green">'.htmlentities($ltiurl)."</span>\n");
-                echo("\n</li>\n");
+                echo("</span></li>\n");
                 return;
             }
             
@@ -3420,7 +4028,7 @@ $(function(){
             $title = (isset($item->title) ? $item->title : "Autograder").$unpublished_suffix;
             
             $rl_dom_id = LessonsService::domIdForResourceLink($resource_link_id);
-            echo('<li class="tsugi-lessons-module-lti" id="'.htmlspecialchars($rl_dom_id, ENT_QUOTES, 'UTF-8').'">');
+            echo('<li class="'.$ltiClass.'" id="'.htmlspecialchars($rl_dom_id, ENT_QUOTES, 'UTF-8').'">');
             if ( $tool_deployment_id > 0 ) {
                 self::renderRegisteredLtiOpen($item, $launch_path, $title);
             } else {
@@ -3443,7 +4051,7 @@ $(function(){
      * so they can try the quiz before it is published. A published quiz is a
      * take link for students and instructors.
      */
-    private static function renderItemQuiz1($lessons, $item, $module, $nostyle=false) {
+    private static function renderItemQuiz1($lessons, $item, $module, $gclass=false) {
         $title = isset($item->title) && is_string($item->title) && $item->title !== ''
             ? $item->title
             : __('Quiz');
@@ -3455,14 +4063,10 @@ $(function(){
                 return;
             }
             echo('<li typeof="oer:assessment" class="tsugi-lessons-module-quiz1 tsugi-lessons-quiz-missing">');
-            if ( $nostyle ) {
-                echo(htmlentities($title).' ('.__('Quiz not found').')');
-            } else {
-                echo('<span style="display: inline-flex; align-items: center;">');
-                self::renderItemIcon(LessonsNormalize::iconKey($item));
-                echo(htmlentities($title).' ('.__('Quiz not found').')');
-                echo('</span>');
-            }
+            echo('<span style="display: inline-flex; align-items: center;">');
+            self::renderItemIcon(LessonsNormalize::iconKey($item));
+            echo(htmlentities($title).' ('.__('Quiz not found').')');
+            echo('</span>');
             echo("</li>\n");
             return;
         }
@@ -3473,7 +4077,7 @@ $(function(){
         }
 
         $href = '';
-        $logged_in = ReqScope::isLoggedIn();
+        $logged_in = ReqScope::isLoggedIn() && ! ReqScope::isAnonymousLessonView();
         $open = $published || $instructor;
         if ( $open && $quiz_id > 0 && $logged_in && class_exists('\\Tsugi\\Controllers\\Quiz1') ) {
             $home = \Tsugi\Controllers\Tool::determineToolHome(\Tsugi\Controllers\Quiz1::ROUTE);
@@ -3485,6 +4089,10 @@ $(function(){
                     $anchor = (is_object($module) && isset($module->anchor)) ? (string) $module->anchor : '';
                     if ( preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/', $anchor) ) {
                         $href .= (str_contains($href, '?') ? '&' : '?').'from='.rawurlencode($anchor);
+                    }
+                    $quizView = self::quizReturnView($lessons);
+                    if ( $quizView === 'content' || $quizView === 'outline' ) {
+                        $href .= (str_contains($href, '?') ? '&' : '?').'view='.$quizView;
                     }
                 }
             }
@@ -3498,12 +4106,11 @@ $(function(){
         }
 
         echo('<li typeof="oer:assessment" class="tsugi-lessons-module-quiz1">');
-        if ( $nostyle ) {
-            echo(htmlentities($title).htmlentities($suffix));
-            if ( $href !== '' ) {
-                echo(': <a href="'.htmlspecialchars($href, ENT_QUOTES, 'UTF-8').'">'.htmlentities($title).'</a>');
-            }
-        } else if ( $href !== '' ) {
+        $quizLinkKey = Quiz1Repository::resourceLinkId($quiz_id, ReqScope::currentContextIdLegacy());
+        if ( $gclass ) {
+            echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+        }
+        if ( $href !== '' ) {
             echo('<a href="'.htmlspecialchars($href, ENT_QUOTES, 'UTF-8').'" style="display: inline-flex; align-items: center;">');
             self::renderItemIcon(LessonsNormalize::iconKey($item));
             echo(htmlentities($title).htmlentities($suffix).'</a>');
@@ -3513,16 +4120,20 @@ $(function(){
             echo(htmlentities($title).htmlentities($suffix));
             echo('</span>');
         }
-        if ( ! $nostyle ) {
-            $linkKey = Quiz1Repository::resourceLinkId($quiz_id, ReqScope::currentContextIdLegacy());
+        if ( $gclass ) {
+            if ( $quizLinkKey !== '' && (int) $lessons->quiz1LinkId($quiz_id) > 0 ) {
+                self::echoClassroomInstall($quizLinkKey);
+            }
+            echo('</span>');
+        } else {
             echo('<span class="tsugi-lti-link-meta">');
             self::echoDueDateBadgeForResourceLink(
-                $linkKey,
+                $quizLinkKey,
                 $lessons->moduleProgressGrades(),
                 $lessons->moduleProgressDueDates(),
                 true
             );
-            self::echoItemDue($item, $linkKey, $lessons->moduleProgressDueDates());
+            self::echoItemDue($item, $quizLinkKey, $lessons->moduleProgressDueDates());
             echo('</span>');
         }
         echo("</li>\n");
@@ -3531,42 +4142,36 @@ $(function(){
     /**
      * Render an assignment item
      */
-    private static function renderItemAssignment($item, $nostyle=false) {
+    private static function renderItemAssignment($item, $gclass=false) {
         $title = isset($item->title) ? $item->title : (isset($item->text) ? $item->text : __('Assignment Specification'));
         $url = isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '');
         // Process {apphome} and other macros in the URL
         $url = LessonsService::expandLink($url);
         
-        if ( $nostyle ) {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-assignment">');
-            echo(htmlentities($title).':');
-            self::nostyleUrl($title, $url);
-            echo('</li>'."\n");
-        } else {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-assignment">');
-            self::renderWebLinkOpenControl($item, $url, $title, LessonsNormalize::iconKey($item));
-            echo('</li>'."\n");
+        echo('<li typeof="oer:assessment" class="tsugi-lessons-module-assignment">');
+        echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+        self::renderWebLinkOpenControl($item, $url, $title, LessonsNormalize::iconKey($item));
+        if ( $gclass ) {
+            self::echoClassroomShare($title, $url);
         }
+        echo('</span></li>'."\n");
     }
 
     /**
      * Render a solution item
      */
-    private static function renderItemSolution($item, $nostyle=false) {
+    private static function renderItemSolution($item, $gclass=false) {
         $url = isset($item->href) ? $item->href : (isset($item->url) ? $item->url : '');
         // Process {apphome} and other macros in the URL
         $url = LessonsService::expandLink($url);
         
-        if ( $nostyle ) {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-solution">');
-            echo(__('Assignment Solution').':');
-            self::nostyleUrl(__('Assignment Solution'), $url);
-            echo('</li>'."\n");
-        } else {
-            echo('<li typeof="oer:assessment" class="tsugi-lessons-module-solution">');
-            self::renderWebLinkOpenControl($item, $url, __('Assignment Solution'), LessonsNormalize::iconKey($item));
-            echo('</li>'."\n");
+        echo('<li typeof="oer:assessment" class="tsugi-lessons-module-solution">');
+        echo('<span style="display:inline-flex;align-items:center;gap:6px;">');
+        self::renderWebLinkOpenControl($item, $url, __('Assignment Solution'), LessonsNormalize::iconKey($item));
+        if ( $gclass ) {
+            self::echoClassroomShare(__('Assignment Solution'), $url);
         }
+        echo('</span></li>'."\n");
     }
 
     /**
@@ -3580,7 +4185,7 @@ $(function(){
     /**
      * Render carousel item
      */
-    private static function renderItemCarousel($lessons, $item, $nostyle=false) {
+    private static function renderItemCarousel($lessons, $item, $gclass=false) {
         global $CFG, $OUTPUT;
         
         if (!isset($item->items) || !is_array($item->items)) {
@@ -3588,13 +4193,12 @@ $(function(){
         }
         
         $videotitle = __($lessons->getSetting('videos-title', 'Videos'));
-        echo($nostyle ? $videotitle . ': <ul>' : '<ul class="bxslider">'."\n");
+        echo($gclass ? $videotitle . ': <ul>' : '<ul class="bxslider">'."\n");
         foreach($item->items as $video) {
             echo('<li>');
-            if ( $nostyle ) {
-                echo(htmlentities($video->title)."<br/>");
+            if ( $gclass ) {
                 $yurl = U::youtubeWatchUrl($video->youtube);
-                self::nostyleUrl($video->title, $yurl);
+                self::classroomLink($video->title, $yurl);
             } else if ( !empty($CFG->youtube_use_labnol) ) {
                 $OUTPUT->embedYouTube($video->youtube, $video->title);
             } else {
@@ -3604,6 +4208,182 @@ $(function(){
             echo('</li>');
         }
         echo("</ul>\n");
+    }
+
+    /**
+     * End a single-module render. Step checkboxes are added here so both
+     * the items list and the legacy lists pick them up in one place.
+     *
+     * @param LessonsService $lessons
+     * @param bool $buffer
+     * @return string|null
+     */
+    private static function finishSingle($lessons, $buffer) {
+        $html = ob_get_clean();
+        if ( $lessons->stepsEnabled() ) {
+            $html = self::applyStepCheckboxes($html);
+        }
+        $html .= static::classroomToggleMarkup($lessons);
+        if ( $buffer ) {
+            return $html;
+        }
+        echo($html);
+        return null;
+    }
+
+    /**
+     * Show / hide classroom install links. Outline emits this once for the page.
+     *
+     * @param \Tsugi\Services\Lessons\LessonsService $lessons
+     */
+    protected static function classroomToggleMarkup($lessons) {
+        return self::classroomInstallLinksToggleMarkup($lessons);
+    }
+
+    /**
+     * Class for an LTI link. Every row gets a step box when steps are on,
+     * including tools that are not provisioned, so the titles line up.
+     *
+     * @param LessonsService $lessons
+     * @param object $item
+     */
+    private static function ltiStepClass($lessons, $item, $base = 'tsugi-lessons-module-lti') {
+        if ( ! $lessons->stepsEnabled() ) {
+            return $base;
+        }
+        return $base.' tsugi-step';
+    }
+
+    /**
+     * Add a step checkbox to readings, media, quizzes, and LTI links.
+     * The box sits after the type icon, between the icon and the title.
+     *
+     * @param string $html
+     * @return string
+     */
+    public static function applyStepCheckboxes($html) {
+        if ( ! is_string($html) || $html === '' ) {
+            return $html;
+        }
+        $box = '<input type="checkbox" class="tsugi-step-box" aria-label="'
+            .htmlspecialchars(__('Mark this done'), ENT_QUOTES, 'UTF-8')
+            .'" autocomplete="off">';
+        return self::rewriteStepLis($html, $box);
+    }
+
+    /**
+     * @param string $html
+     * @param string $box
+     * @return string
+     */
+    private static function rewriteStepLis($html, $box) {
+        $out = '';
+        $offset = 0;
+        $len = strlen($html);
+        while ( $offset < $len && preg_match('/<li\b([^>]*)>/', $html, $m, PREG_OFFSET_CAPTURE, $offset) ) {
+            $start = $m[0][1];
+            $out .= substr($html, $offset, $start - $offset);
+            $innerStart = $start + strlen($m[0][0]);
+            $innerEnd = self::liInnerEnd($html, $innerStart);
+            if ( $innerEnd === null || substr($html, $innerEnd, 5) !== '</li>' ) {
+                return $html;
+            }
+            $attrs = $m[1][0];
+            $inner = substr($html, $innerStart, $innerEnd - $innerStart);
+            if ( self::liWantsStep($attrs) ) {
+                $attrs = self::ensureStepClass($attrs);
+                $inner = self::insertStepBox($inner, $box);
+            } else {
+                $inner = self::rewriteStepLis($inner, $box);
+            }
+            $out .= '<li'.$attrs.'>'.$inner.'</li>';
+            $offset = $innerEnd + 5;
+        }
+        $out .= substr($html, $offset);
+        return $out;
+    }
+
+    /**
+     * @param string $html
+     * @param int $innerStart
+     * @return int|null Offset of the matching </li>
+     */
+    private static function liInnerEnd($html, $innerStart) {
+        $depth = 1;
+        $i = $innerStart;
+        $len = strlen($html);
+        while ( $i < $len && $depth > 0 ) {
+            $nextOpen = stripos($html, '<li', $i);
+            $nextClose = stripos($html, '</li>', $i);
+            if ( $nextClose === false ) {
+                return null;
+            }
+            if ( $nextOpen !== false && $nextOpen < $nextClose ) {
+                $depth++;
+                $i = $nextOpen + 3;
+                continue;
+            }
+            $depth--;
+            if ( $depth === 0 ) {
+                return $nextClose;
+            }
+            $i = $nextClose + 5;
+        }
+        return null;
+    }
+
+    /**
+     * @param string $attrs
+     */
+    private static function liWantsStep($attrs) {
+        if ( ! preg_match('/\bclass="([^"]*)"/', $attrs, $cm) ) {
+            return false;
+        }
+        $class = $cm[1];
+        if ( preg_match('/(?:^|\s)tsugi-step(?:\s|$)/', $class) ) {
+            return true;
+        }
+        return (bool) preg_match('/(?:^|\s)tsugi-lessons-module-(?:video|lecture|slide|reference|discussion|solution|assignment|web_link|file|html_page|quiz1|lti)(?:\s|$)/', $class);
+    }
+
+    /**
+     * @param string $attrs
+     * @return string
+     */
+    private static function ensureStepClass($attrs) {
+        if ( ! preg_match('/\bclass="([^"]*)"/', $attrs, $cm) ) {
+            return $attrs;
+        }
+        if ( preg_match('/(?:^|\s)tsugi-step(?:\s|$)/', $cm[1]) ) {
+            return $attrs;
+        }
+        $class = trim($cm[1].' tsugi-step');
+        return preg_replace('/\bclass="[^"]*"/', 'class="'.$class.'"', $attrs, 1);
+    }
+
+    /**
+     * Place the checkbox after the type icon. Kaltura keeps its icon in the
+     * component, so the box is slotted between that icon and the title.
+     *
+     * @param string $inner
+     * @param string $box
+     * @return string
+     */
+    private static function insertStepBox($inner, $box) {
+        if ( preg_match('/<span\b[^>]*\bclass="[^"]*\btsugi-item-type-icon\b[^"]*"[^>]*>/', $inner, $im, PREG_OFFSET_CAPTURE) ) {
+            $afterOpen = $im[0][1] + strlen($im[0][0]);
+            $close = strpos($inner, '</span>', $afterOpen);
+            if ( $close !== false ) {
+                $at = $close + strlen('</span>');
+                return substr($inner, 0, $at).$box.substr($inner, $at);
+            }
+        }
+        $kalturaClose = strpos($inner, '</tsugi-kaltura-video>');
+        if ( $kalturaClose !== false && strpos($inner, '<tsugi-kaltura-video') !== false ) {
+            $slotted = str_replace('class="tsugi-step-box"', 'slot="step" class="tsugi-step-box"', $box);
+            return substr($inner, 0, $kalturaClose).$slotted.substr($inner, $kalturaClose);
+        }
+        return $box.$inner;
     }
 
 }

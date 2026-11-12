@@ -14,6 +14,7 @@ use \Tsugi\Services\Outbound\LtiContentService;
 use \Tsugi\Services\Quiz1\Quiz1Repository;
 
 use \Tsugi\Core\ReqScope;
+use \Tsugi\Services\ContextUser\ContextUserSettings;
 
 if ( ! class_exists(__NAMESPACE__.'\\LessonsNormalize', false) ) {
     require_once __DIR__ . '/LessonsNormalize.php';
@@ -95,6 +96,53 @@ class LessonsService {
     /** @return array<string,array<string,mixed>> */
     public function moduleProgressDueDates() {
         return $this->lessonModuleDueDatesForBadges;
+    }
+
+    /**
+     * Student step checkboxes on ungraded lesson items.
+     * Missing means on. "steps": false in the lessons document turns them off.
+     * The same key is the course manifest and a file-based lessons.json.
+     */
+    public function stepsEnabled() {
+        if ( ! $this->courseStepsOn() ) {
+            return false;
+        }
+        return ! ContextUserSettings::stepsHiddenForCurrentUser();
+    }
+
+    /**
+     * The course document's own flag. Missing means on.
+     */
+    public function courseStepsOn() {
+        if ( ! isset($this->lessons) || ! is_object($this->lessons) ) {
+            return true;
+        }
+        if ( ! property_exists($this->lessons, 'steps') ) {
+            return true;
+        }
+        return self::stepsFlag($this->lessons->steps);
+    }
+
+    /**
+     * @param mixed $value
+     */
+    public static function stepsFlag($value) {
+        if ( is_bool($value) ) {
+            return $value;
+        }
+        if ( is_int($value) || is_float($value) ) {
+            return ((int) $value) !== 0;
+        }
+        if ( is_string($value) ) {
+            $v = strtolower(trim($value));
+            if ( in_array($v, array('0', 'false', 'no', 'off'), true) ) {
+                return false;
+            }
+            if ( in_array($v, array('1', 'true', 'yes', 'on'), true) ) {
+                return true;
+            }
+        }
+        return true;
     }
 
     /**
@@ -689,11 +737,14 @@ class LessonsService {
     }
 
     /**
-     * LTI assignment totals for module progress (items array, else legacy lti).
+     * Graded-link totals for module progress (items array, else legacy lti).
+     *
+     * A published quiz counts, the same as a graded LTI launch or a content
+     * row that can return a grade. Discussions, files, and pages do not.
      * When $duedates_for_display is non-empty ({@see GradeUtil::loadDueDatesForDisplay}), only
      * resource links with a non-empty end_datetime in the current context are counted (due-date mode).
-     * When it is empty (no course due dates, or the learner has hidden due dates), every graded LTI
-     * launch in the module counts so percent-complete badges still work.
+     * When it is empty (no course due dates, or the learner has hidden due dates), every graded
+     * link in the module counts so percent-complete badges still work.
      * LTI entries with "result": false are excluded from points, actuals, and rollup rlids.
      *
      * @param array<string,array<string,mixed>> $duedates_for_display
@@ -706,20 +757,9 @@ class LessonsService {
         $require_scheduled = ($duedates_for_display !== array());
         if ( isset($module->items) ) {
             foreach ( $module->items as $item ) {
-                $contentRow = self::contentAssignmentRow($item);
-                if ( $contentRow !== null ) {
-                    if ( empty($contentRow['graded']) ) {
-                        continue;
-                    }
-                    $resourceLinkId = $contentRow['resource_link_id'];
-                } else {
-                    if ( ! LessonsNormalize::isAssignmentLti($item) ) {
-                        continue;
-                    }
-                    if ( ! self::ltiLaunchIsGraded($item) ) {
-                        continue;
-                    }
-                    $resourceLinkId = $item->resource_link_id;
+                $resourceLinkId = $this->gradedProgressLinkId($item);
+                if ( $resourceLinkId === null || $resourceLinkId === '' ) {
+                    continue;
                 }
                 if ( $require_scheduled && ! $this->resourceLinkHasDueDateInContext($resourceLinkId, $duedates_for_display) ) {
                     continue;
@@ -753,6 +793,46 @@ class LessonsService {
             }
         }
         return array($possible, $actual, $rlids);
+    }
+
+    /**
+     * Resource link id for one gradable lesson item, or null when it does not count.
+     *
+     * A published native quiz uses the quiz's grade-book key. An lti_content
+     * row counts when it can return a grade. An LTI launch counts unless the
+     * lesson marks it ungraded. A discussion is not a grade.
+     *
+     * @param mixed $item
+     * @return string|null
+     */
+    private function gradedProgressLinkId($item) {
+        if ( is_array($item) ) {
+            $item = (object) $item;
+        }
+        if ( ! is_object($item) ) {
+            return null;
+        }
+        if ( LessonsNormalize::isNativeQuiz($item) ) {
+            $quizId = LessonsNormalize::quizIdOf($item);
+            if ( $quizId < 1 || ! $this->quiz1IsPublished($quizId) ) {
+                return null;
+            }
+            $key = Quiz1Repository::resourceLinkId($quizId, ReqScope::currentContextIdLegacy());
+            return $key !== '' ? $key : null;
+        }
+        $contentRow = self::contentAssignmentRow($item);
+        if ( $contentRow !== null ) {
+            if ( empty($contentRow['graded']) ) {
+                return null;
+            }
+            $resourceLinkId = trim((string) $contentRow['resource_link_id']);
+            return $resourceLinkId !== '' ? $resourceLinkId : null;
+        }
+        if ( ! LessonsNormalize::isAssignmentLti($item) || ! self::ltiLaunchIsGraded($item) ) {
+            return null;
+        }
+        $resourceLinkId = trim((string) $item->resource_link_id);
+        return $resourceLinkId !== '' ? $resourceLinkId : null;
     }
 
     /**
@@ -1023,6 +1103,89 @@ class LessonsService {
             }
         }
         return $list;
+    }
+
+    /**
+     * Native Quiz1 rows for the home due list and calendar.
+     * Same shape as enumerateLtiAssignmentItems(). A student does not see an unpublished quiz.
+     *
+     * @return array[]
+     */
+    public function enumerateQuizDueItems() {
+        $list = array();
+        if ( ! isset($this->lessons->modules) || ! is_array($this->lessons->modules) ) {
+            return $list;
+        }
+        $instructor = null;
+        $seen = array();
+        foreach ( $this->lessons->modules as $modIndex => $module ) {
+            if ( ! isset($module->items) || ! is_array($module->items) ) {
+                continue;
+            }
+            $this->collectQuizDueItems($module->items, $module, (int) $modIndex, $instructor, $seen, $list);
+        }
+        return $list;
+    }
+
+    /**
+     * @param array<int,mixed> $items
+     * @param object $module
+     * @param bool|null $instructor
+     * @param array<int,true> $seen
+     * @param array<int,array<string,mixed>> $list
+     */
+    private function collectQuizDueItems($items, $module, $modIndex, &$instructor, array &$seen, array &$list) {
+        if ( ! is_array($items) ) {
+            return;
+        }
+        foreach ( $items as $item ) {
+            if ( is_array($item) ) {
+                $item = (object) $item;
+            }
+            if ( ! is_object($item) ) {
+                continue;
+            }
+            if ( isset($item->items) && is_array($item->items) ) {
+                $this->collectQuizDueItems($item->items, $module, $modIndex, $instructor, $seen, $list);
+            }
+            if ( ! LessonsNormalize::isNativeQuiz($item) ) {
+                continue;
+            }
+            $quizId = LessonsNormalize::quizIdOf($item);
+            if ( $quizId < 1 || isset($seen[$quizId]) || ! $this->quiz1ExistsInCourse($quizId) ) {
+                continue;
+            }
+            if ( ! $this->quiz1IsPublished($quizId) ) {
+                if ( $instructor === null ) {
+                    $instructor = $this->lessonsViewerIsInstructor();
+                }
+                if ( ! $instructor ) {
+                    continue;
+                }
+            }
+            $key = Quiz1Repository::resourceLinkId($quizId, ReqScope::currentContextId());
+            if ( $key === '' ) {
+                continue;
+            }
+            $seen[$quizId] = true;
+            $title = isset($item->title) && is_string($item->title) && $item->title !== ''
+                ? $item->title
+                : 'Quiz';
+            $moduleHidden = isset($module->hidden) && $module->hidden;
+            $list[] = array(
+                'module_index' => $modIndex,
+                'module_title' => isset($module->title) ? $module->title : '',
+                'module_anchor' => isset($module->anchor) ? $module->anchor : '',
+                'module_hidden' => $moduleHidden,
+                'item_title' => $title,
+                'resource_link_id' => $key,
+                'content_id' => 0,
+                'tool_deployment_id' => 0,
+                'due' => self::assignmentDue($item),
+                'participates_in_grades' => true,
+                'quiz_id' => $quizId,
+            );
+        }
     }
 
     /**

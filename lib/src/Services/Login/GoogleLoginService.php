@@ -4,6 +4,7 @@ namespace Tsugi\Services\Login;
 
 use \Tsugi\Util\U;
 use \Tsugi\Util\Net;
+use \Tsugi\Core\Guid;
 use \Tsugi\Core\LTIX;
 use \Tsugi\Core\Cache;
 use \Tsugi\Core\User;
@@ -183,9 +184,10 @@ class GoogleLoginService {
                 $context_id = $row['context_id'];
             } else {
                 $sql = "INSERT INTO {$CFG->dbprefix}lti_context
-                        ( context_key, context_sha256, title, key_id, created_at, updated_at ) VALUES
-                        ( :context_key, :context_sha256, :title, :key_id, NOW(), NOW() )";
+                        ( guid, context_key, context_sha256, title, key_id, created_at, updated_at ) VALUES
+                        ( UNHEX(:guid), :context_key, :context_sha256, :title, :key_id, NOW(), NOW() )";
                 $PDOX->queryDie($sql, array(
+                        ':guid' => Guid::uuid7(),
                         ':context_key' => $context_key,
                         ':context_sha256' => lti_sha256($context_key),
                         ':title' => $context_title,
@@ -299,10 +301,10 @@ class GoogleLoginService {
         } else if ( $user_row === false ) {
             $stmt = $PDOX->queryReturnError(
                 "INSERT INTO {$CFG->dbprefix}lti_user
-                (user_sha256, user_key, key_id, profile_id,
+                (guid, user_sha256, user_key, key_id, profile_id,
                     email, displayname, image, created_at, updated_at, login_at, ipaddr) ".
-                "VALUES ( :SHA, :UKEY, :KEY, :PROF, :EMAIL, :DN, :IM, NOW(), NOW(), NOW(), :IP )",
-                array('SHA' => $userSHA, ':UKEY' => $user_key, ':KEY' => $google_key_id,
+                "VALUES ( UNHEX(:GUID), :SHA, :UKEY, :KEY, :PROF, :EMAIL, :DN, :IM, NOW(), NOW(), NOW(), :IP )",
+                array(':GUID' => Guid::uuid7(), 'SHA' => $userSHA, ':UKEY' => $user_key, ':KEY' => $google_key_id,
                     ':PROF' => $profile_id, ':EMAIL' => $userEmail, ':DN' => $displayName,
                     ':IM' => $userAvatar, ':IP' => Net::getIP())
             );
@@ -364,6 +366,12 @@ class GoogleLoginService {
             }
         }
 
+        // Google has accepted this user. Read the redirect, then drop the whole
+        // session. The open cookie may still be a Plus launch.
+        $loginReturn = Login::peekReturnUrl();
+        self::resetSessionToEmpty();
+        \Tsugi\Core\ReqScope::resetIdentity();
+
         $welcome = "Welcome ";
         if ( ! $didinsert ) $welcome .= "back ";
         U::flashSuccess($welcome.$displayName." (".$userEmail.")");
@@ -420,6 +428,7 @@ class GoogleLoginService {
         // Drop all Tsugi session caches (cache_*) so membership, due dates, lti_user, lti_link, etc. match this login
         Cache::clearAllSessionCaches();
         \Tsugi\UI\Output::clearTopNavSession();
+        \Tsugi\Core\ReqScope::resetIdentity();
 
         $is_instructor = false;
         if ( isset($context_id) && $context_id ) {
@@ -448,6 +457,7 @@ class GoogleLoginService {
         $_SESSION[TSUGI_SESSION_LTI] = $lti;
         LTIX::ensureCsrfToken(true);
         LTIX::noteLoggedIn($lti);
+        \Tsugi\Controllers\GoogleClassroom::rememberCourseCount((int) $user_id);
 
         $result->success = true;
         $result->user_id = $user_id;
@@ -455,13 +465,22 @@ class GoogleLoginService {
         $result->display_name = $displayName;
         $result->did_insert = $didinsert;
 
-        if ( $redirect_callback && is_callable($redirect_callback) ) {
+        if ( is_string($loginReturn) && $loginReturn !== '' ) {
+            $result->redirect_url = $loginReturn;
+        } else if ( $redirect_callback && is_callable($redirect_callback) ) {
             $result->redirect_url = call_user_func($redirect_callback, $result);
         } else {
             $result->redirect_url = Login::returnAfterLogin($result, null, false);
         }
 
         return $result;
+    }
+
+    /**
+     * Remove every key in the current PHP session.
+     */
+    public static function resetSessionToEmpty() {
+        $_SESSION = array();
     }
 
     /**

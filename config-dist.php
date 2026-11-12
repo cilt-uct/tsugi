@@ -170,6 +170,7 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // Legacy: $CFG->setExtension('home_path', $CFG->apphome);
 
 // Temporary ReqScope dump at /reqscope and tool/reqscope. Remove around December 2026.
+// /admin lists this with the QA settings when it is on.
 // $CFG->setExtension('reqscope_debug', true);
 
 // If we are going to use the lessons tool and/or badges, we need to
@@ -179,6 +180,11 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // Lessons discussion links open the discussions controller.
 // Set true in dev to send those links through an LTI launch of tool/tdiscus instead.
 // $CFG->setExtension('discussion_lti_launch', true);
+
+// Classroom icons on file-based lessons ($CFG->lessons, no course manifest).
+// False hides the link and assignment install icons. Manifest courses are unchanged.
+// Course and module install icons are only shown on a manifest course.
+// $CFG->setExtension('lessons_global_classroom', false);
 
 // If we are going to use the Topics section, we need to create and
 // point to the topics.json file
@@ -509,6 +515,20 @@ $CFG->certification = false;
 // and the LTI 2 custom_result_url; in this case we have to decide which
 // to use for the gradeSend service.  The LTI 1 method is more established...
 $CFG->prefer_lti1_for_grade_send = true;
+
+// 1EdTech Personal Needs & Preferences (PNP) on LTI 1.3 launches.
+// The @ sign is a placeholder for the launch user guid, or the email (see below).
+// When this is empty, launches omit the PNP claim.
+// $CFG->lti_pnp_baseurl = 'https://pnp.amp-up.io/ims/afapnp/v1p0/users/@/activities/default/afapnprecords';
+$CFG->lti_pnp_baseurl = false;
+
+// Normally @ is the user guid from the LTI launch. For a dev or test server it
+// can be simpler to use the email, so a tester can recreate a user on an
+// empty system. Leave this false in production. If the launch does not
+// release an email, @ stays the user guid. Has no effect when lti_pnp_baseurl
+// is empty.
+// $CFG->lti_pnp_use_email = true;
+$CFG->lti_pnp_use_email = false;
 
 // On a Mac localhost, if you have git installed, you should be able to
 // use the auto-install with no further configuration.

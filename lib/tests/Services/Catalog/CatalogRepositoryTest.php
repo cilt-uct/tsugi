@@ -6,6 +6,15 @@ use \Tsugi\Services\Catalog\CatalogRepository;
 
 class CatalogRepositoryTest extends \PHPUnit\Framework\TestCase
 {
+    public function testUnsetSortOrderSortsAfterNumberedRows()
+    {
+        $method = new \ReflectionMethod(CatalogRepository::class, 'catalogOrderSql');
+        $sql = $method->invoke(null);
+        $this->assertStringContainsString('CASE WHEN CAT.sort_order = 0 THEN 1 ELSE 0 END ASC', $sql);
+        $this->assertStringContainsString('CAT.sort_order ASC', $sql);
+        $this->assertStringContainsString('CAT.title ASC', $sql);
+    }
+
     public function testNormalizeRequiresTitle()
     {
         $out = CatalogRepository::normalizeInput(array('kind' => 'link', 'external_url' => 'https://example.com'));
@@ -141,5 +150,38 @@ class CatalogRepositoryTest extends \PHPUnit\Framework\TestCase
         $this->assertFalse(CatalogRepository::hasRichDescription('<p>&nbsp;</p>'));
         $this->assertTrue(CatalogRepository::hasRichDescription('<p>Hello</p>'));
         $this->assertTrue(CatalogRepository::hasRichDescription('<img src="x.jpg" alt="">'));
+    }
+
+    public function testPreviewUrlUsesTheCourseColumn()
+    {
+        global $CFG;
+        $saved = $CFG ?? null;
+        $CFG = new \Tsugi\Config\ConfigInfo(basename(__FILE__), 'http://localhost/tsugi');
+        $CFG->wwwroot = 'https://local.dj4e.com/tsugi';
+        try {
+            $this->assertSame('', CatalogRepository::previewUrl(array(
+                'anonymous_lessons' => 0,
+                'context_id' => 7,
+            )));
+            $this->assertSame('', CatalogRepository::previewUrl(array(
+                'anonymous_lessons' => 1,
+                'context_id' => 0,
+            )));
+            $this->assertSame(
+                'https://local.dj4e.com/tsugi/courses/7/lessons',
+                CatalogRepository::previewUrl(array(
+                    'anonymous_lessons' => '1',
+                    'context_id' => 7,
+                ))
+            );
+        } finally {
+            $CFG = $saved;
+        }
+    }
+
+    public function testPublishedIdForContextWithoutACourseIsZero()
+    {
+        $this->assertSame(0, CatalogRepository::publishedIdForContext(0));
+        $this->assertSame(0, CatalogRepository::publishedIdForContext(-3));
     }
 }

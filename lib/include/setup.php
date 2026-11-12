@@ -10,7 +10,7 @@ require_once __DIR__ . '/tsugi_constants.php';
 // upgrade checking - don't change this unless you want to trigger
 // database upgrade messages it should be the max of all versions in
 // all database.php files.
-$CFG->dbversion = 202610180002;
+$CFG->dbversion = 202611070002;
 
 function die_with_error_log($msg, $extra=false, $prefix="DIE:") {
     error_log($prefix.' '.$msg.' '.$extra);
@@ -182,5 +182,20 @@ if (!defined('TSUGI_VERSION')) {
 
 if (!defined('TSUGI_MINIMUM_PHP')) {
     define('TSUGI_MINIMUM_PHP', '8.4');   // ← update this occasionally
+}
+
+if (!defined('TSUGI_MINIMUM_MYSQL')) {
+    define('TSUGI_MINIMUM_MYSQL', '8.0.16');
+}
+
+// Organization walks use recursive queries, and CHECK constraints are enforced
+// starting in MySQL 8.0.16. The product and version rules live in PDOX.
+function tsugi_mysql_version_too_low($version) {
+    $version = trim((string) $version);
+    if ( $version === '' ) {
+        return false;
+    }
+    $info = \Tsugi\Util\PDOX::parseServerVersion($version);
+    return ! $info['modern'];
 }
 // No trailer

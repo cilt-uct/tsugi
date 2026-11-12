@@ -15,6 +15,7 @@ require_once "src/Core/ContextImages.php";
 
 use Tsugi\Controllers\Courses;
 use Tsugi\Core\ContextImages;
+use Tsugi\Core\ReqScope;
 use Tsugi\Services\CourseNav\CourseNav;
 
 class CourseNavTest extends \PHPUnit\Framework\TestCase
@@ -52,14 +53,16 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         foreach ( $doc['items'] as $item ) {
             $ids[] = $item['id'];
         }
-        $this->assertSame(array('lessons', 'files', 'pages', 'quiz1', 'courses_widget', 'logout'), $ids);
+        $this->assertSame(array('lessons', 'content', 'outline', 'files', 'pages', 'quiz1', 'courses_widget', 'logout'), $ids);
         $this->assertTrue($doc['items'][0]['left']);
         $this->assertTrue($doc['items'][1]['left']);
         $this->assertTrue($doc['items'][2]['left']);
         $this->assertTrue($doc['items'][3]['left']);
-        $this->assertTrue($doc['items'][4]['right']);
-        $this->assertArrayNotHasKey('dropdown', $doc['items'][4]);
-        $this->assertTrue($doc['items'][5]['dropdown']);
+        $this->assertTrue($doc['items'][4]['left']);
+        $this->assertTrue($doc['items'][5]['left']);
+        $this->assertTrue($doc['items'][6]['right']);
+        $this->assertArrayNotHasKey('dropdown', $doc['items'][6]);
+        $this->assertTrue($doc['items'][7]['dropdown']);
         $this->assertNotContains('exit_course', $ids);
     }
 
@@ -184,6 +187,7 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         $_SERVER['REQUEST_URI'] = '/courses/42/home';
         $_SESSION['id'] = 1;
         $_SESSION['displayname'] = 'Pat';
+        $_SESSION['oauth_consumer_key'] = 'google.com';
         $doc = array(
             'items' => array(
                 array('id' => 'courses_widget', 'right' => true, 'instructor' => true),
@@ -204,6 +208,7 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         $_SERVER['REQUEST_URI'] = '/courses/42/home';
         $_SESSION['id'] = 1;
         $_SESSION['displayname'] = 'Pat';
+        $_SESSION['oauth_consumer_key'] = 'google.com';
         $doc = array(
             'items' => array(
                 array('id' => 'courses_widget', 'left' => true),
@@ -241,6 +246,34 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
 
     /**
      * @param \Tsugi\UI\MenuSet $set
+     * @return list<string>
+     */
+    private function navLabels($set)
+    {
+        $labels = array();
+        if ( $set->left !== false ) {
+            foreach ( $set->left->menu as $entry ) {
+                if ( is_string($entry->link) ) {
+                    $labels[] = $entry->link;
+                }
+            }
+        }
+        if ( $set->right === false ) {
+            return $labels;
+        }
+        $last = $set->right->menu[count($set->right->menu) - 1];
+        if ( is_array($last->href) ) {
+            foreach ( $last->href as $entry ) {
+                if ( is_string($entry->link) ) {
+                    $labels[] = $entry->link;
+                }
+            }
+        }
+        return $labels;
+    }
+
+    /**
+     * @param \Tsugi\UI\MenuSet $set
      * @return string|null
      */
     private function dropdownHref($set, $label)
@@ -262,35 +295,99 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
 
     public function testEditorRowsPinsExitCourseThenLogout()
     {
+        $_SESSION['oauth_consumer_key'] = 'google.com';
         $rows = CourseNav::editorRows(CourseNav::defaultDocument());
         $this->assertSame('logout', $rows[count($rows)-1]['id']);
-        $this->assertSame('login', $rows[count($rows)-2]['id']);
-        $this->assertSame('settings', $rows[count($rows)-3]['id']);
-        $this->assertSame('chrome', $rows[count($rows)-3]['kind']);
+        $this->assertSame('leave_course', $rows[count($rows)-2]['id']);
+        $this->assertSame('exit_course', $rows[count($rows)-3]['id']);
+        $this->assertSame('login', $rows[count($rows)-4]['id']);
+        $this->assertSame('settings', $rows[count($rows)-5]['id']);
+        $this->assertSame('student', $rows[count($rows)-6]['id']);
+        $this->assertSame('Student View', $rows[count($rows)-6]['label']);
+        $this->assertSame('roster', $rows[count($rows)-7]['id']);
+        $this->assertSame('chrome', $rows[count($rows)-5]['kind']);
+        $this->assertSame('chrome', $rows[count($rows)-6]['kind']);
+        $this->assertStringContainsString('before Settings', $rows[count($rows)-6]['hint']);
         $this->assertTrue($rows[count($rows)-1]['dropdown']);
-        $this->assertStringContainsString('not logged in', $rows[count($rows)-2]['hint']);
+        $this->assertStringContainsString('not logged in', $rows[count($rows)-4]['hint']);
         $this->assertStringContainsString('logged in', $rows[count($rows)-1]['hint']);
+        $this->assertSame('last', $rows[count($rows)-3]['pin']);
+        $this->assertSame('last', $rows[count($rows)-2]['pin']);
         $this->assertSame('home', $rows[0]['id']);
         $this->assertSame('chrome', $rows[0]['kind']);
         $this->assertTrue($rows[0]['rename']);
         $this->assertFalse($rows[0]['custom']);
         $this->assertSame('lessons', $rows[1]['id']);
+        $this->assertSame('Lessons', $rows[1]['label']);
+        $this->assertSame('Card View', $rows[1]['settings_label']);
+        $this->assertSame('content', $rows[2]['id']);
+        $this->assertSame('Content', $rows[2]['label']);
+        $this->assertSame('Content', $rows[2]['settings_label']);
+        $this->assertSame('outline', $rows[3]['id']);
+        $this->assertSame('Outline', $rows[3]['label']);
+        $this->assertSame('Outline', $rows[3]['settings_label']);
         $ids = array();
         foreach ( $rows as $row ) {
             $ids[] = $row['id'];
         }
         $sites = array_search('courses_widget', $ids, true);
+        $login = array_search('login', $ids, true);
         $exit = array_search('exit_course', $ids, true);
+        $leave = array_search('leave_course', $ids, true);
+        $logout = array_search('logout', $ids, true);
         $this->assertNotFalse($sites);
-        $this->assertSame($sites + 1, $exit);
         $this->assertSame('catalog', $rows[$sites]['pin']);
         $this->assertSame('widget', $rows[$sites]['kind']);
         $this->assertTrue($rows[$sites]['right']);
         $this->assertFalse($rows[$exit]['dropdown']);
+        $this->assertSame(array($login, $exit, $leave, $logout), array($login, $login + 1, $login + 2, $login + 3));
+        $this->assertSame(count($ids) - 1, $logout);
     }
 
-    public function testEditorRowsKeepsSitesWidgetBesideExitEvenWhenEnabled()
+    public function testEditorRowsPutsContentImmediatelyAfterLessons()
     {
+        $doc = array(
+            'items' => array(
+                array('id' => 'files', 'left' => true),
+                array('id' => 'lessons', 'left' => true),
+                array('id' => 'content', 'right' => true),
+            ),
+        );
+        $rows = CourseNav::editorRows($doc);
+        $ids = array();
+        foreach ( $rows as $row ) {
+            $ids[] = $row['id'];
+        }
+        $lessons = array_search('lessons', $ids, true);
+        $content = array_search('content', $ids, true);
+        $this->assertNotFalse($lessons);
+        $this->assertSame($lessons + 1, $content);
+        $this->assertSame('Lessons', $rows[$lessons]['label']);
+        $this->assertSame('Card View', $rows[$lessons]['settings_label']);
+        $this->assertSame('Content', $rows[$content]['label']);
+        $this->assertSame('Content', $rows[$content]['settings_label']);
+        $this->assertTrue($rows[$content]['right']);
+        $outline = array_search('outline', $ids, true);
+        $this->assertNotFalse($outline);
+        $this->assertSame($content + 1, $outline);
+        $this->assertSame('Outline', $rows[$outline]['label']);
+        $this->assertSame('Outline', $rows[$outline]['settings_label']);
+    }
+
+    public function testStoredOutlineNavIdStaysOutline()
+    {
+        $doc = CourseNav::normalize(array(
+            'items' => array(
+                array('id' => 'outline', 'left' => true),
+            ),
+        ));
+        $this->assertSame('outline', $doc['items'][0]['id']);
+        $this->assertTrue($doc['items'][0]['left']);
+    }
+
+    public function testEditorRowsKeepsExitAfterLoginEvenWhenEnabled()
+    {
+        $_SESSION['oauth_consumer_key'] = 'google.com';
         $doc = array(
             'items' => array(
                 array('id' => 'files', 'left' => true),
@@ -305,10 +402,16 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
             $ids[] = $row['id'];
         }
         $this->assertSame('files', $ids[1]);
+        $n = count($ids);
+        $this->assertSame('login', $ids[$n - 4]);
+        $this->assertSame('exit_course', $ids[$n - 3]);
+        $this->assertSame('leave_course', $ids[$n - 2]);
+        $this->assertSame('logout', $ids[$n - 1]);
         $sites = array_search('courses_widget', $ids, true);
-        $exit = array_search('exit_course', $ids, true);
-        $this->assertSame($sites + 1, $exit);
+        $this->assertNotFalse($sites);
         $this->assertTrue($rows[$sites]['right']);
+        $exit = array_search('exit_course', $ids, true);
+        $this->assertTrue($rows[$exit]['dropdown']);
     }
 
     public function testCatalogOrder()
@@ -320,6 +423,8 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         $this->assertSame(
             array(
                 'lessons',
+                'content',
+                'outline',
                 'assignments',
                 'announcements',
                 'files',
@@ -337,14 +442,17 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
                 'profile',
                 'analytics',
                 'courses_widget',
-                'exit_course',
+                'roster',
                 'login',
+                'exit_course',
+                'leave_course',
                 'logout',
             ),
             $ids
         );
         $this->assertNotContains('topics', $ids);
         $this->assertContains('badges', $ids);
+        $this->assertTrue(CourseNav::catalogById()['roster']['instructor_locked']);
     }
 
     public function testStoredBadgesLinkIsKept()
@@ -376,10 +484,166 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         foreach ( $doc['items'] as $item ) {
             $ids[] = $item['id'];
         }
-        $this->assertSame(array('lessons', 'files', 'pages', 'quiz1', 'courses_widget', 'logout'), $ids);
+        $this->assertSame(array('lessons', 'content', 'outline', 'files', 'pages', 'quiz1', 'courses_widget', 'logout'), $ids);
         $this->assertTrue($doc['items'][0]['left']);
-        $this->assertTrue($doc['items'][4]['right']);
-        $this->assertTrue($doc['items'][5]['dropdown']);
+        $this->assertTrue($doc['items'][6]['right']);
+        $this->assertTrue($doc['items'][7]['dropdown']);
+    }
+
+    public function testFromPostStoresCourseViewsInOnePlace()
+    {
+        $doc = CourseNav::fromPost(array(
+            'nav_order' => array('course_views', 'files', 'logout'),
+            'nav' => array(
+                'course_views' => array('right' => '1', 'dropdown' => '1'),
+                'files' => array('left' => '1'),
+                'logout' => array('dropdown' => '1'),
+            ),
+            'view_default' => array(
+                'lessons' => '1',
+            ),
+            'view_available' => array(
+                'lessons' => '1',
+                'outline' => '1',
+            ),
+            'view_test' => array(
+                'content' => '1',
+                'outline' => '1',
+            ),
+        ));
+        $this->assertSame(array('lessons', 'content', 'outline', 'files', 'logout'), array_column($doc['items'], 'id'));
+        $this->assertTrue($doc['items'][0]['right']);
+        $this->assertTrue($doc['items'][0]['dropdown']);
+        $this->assertTrue($doc['items'][0]['default']);
+        $this->assertTrue($doc['items'][0]['available']);
+        $this->assertArrayNotHasKey('instructor', $doc['items'][0]);
+        $this->assertTrue($doc['items'][1]['test']);
+        $this->assertArrayNotHasKey('default', $doc['items'][1]);
+        $this->assertArrayNotHasKey('available', $doc['items'][1]);
+        $this->assertTrue($doc['items'][2]['right']);
+        $this->assertTrue($doc['items'][2]['available']);
+        $this->assertTrue($doc['items'][2]['test']);
+        $this->assertArrayNotHasKey('default', $doc['items'][2]);
+    }
+
+    public function testOnlyOneReadingViewStaysDefault()
+    {
+        $doc = CourseNav::fromPost(array(
+            'nav_order' => array('course_views'),
+            'nav' => array(
+                'course_views' => array('left' => '1'),
+            ),
+            'view_default' => array(
+                'content' => '1',
+                'outline' => '1',
+            ),
+            'view_available' => array(
+                'outline' => '1',
+            ),
+        ));
+        $byId = array();
+        foreach ( $doc['items'] as $item ) {
+            $byId[$item['id']] = $item;
+        }
+        $this->assertTrue($byId['content']['default']);
+        $this->assertArrayNotHasKey('default', $byId['outline']);
+        $this->assertTrue($byId['outline']['available']);
+        $this->assertArrayNotHasKey('lessons', $byId);
+
+        $stored = CourseNav::documentFromJson(json_encode(array(
+            'items' => array(
+                array('id' => 'outline', 'left' => true, 'default' => true),
+                array('id' => 'content', 'left' => true, 'default' => true, 'available' => true),
+                array('id' => 'files', 'left' => true),
+            ),
+        )));
+        $loaded = array();
+        foreach ( $stored['items'] as $item ) {
+            $loaded[$item['id']] = $item;
+        }
+        $this->assertTrue($loaded['content']['default']);
+        $this->assertArrayNotHasKey('outline', $loaded);
+        $this->assertSame(array('content', 'files'), array_column($stored['items'], 'id'));
+    }
+
+    public function testMissingDefaultUsesCardView()
+    {
+        $doc = CourseNav::fromPost(array(
+            'nav_order' => array('course_views'),
+            'nav' => array(
+                'course_views' => array('left' => '1'),
+            ),
+            'view_available' => array(
+                'content' => '1',
+            ),
+            'view_test' => array(
+                'outline' => '1',
+            ),
+        ));
+        $this->assertSame(array('lessons', 'content', 'outline'), array_column($doc['items'], 'id'));
+        $this->assertTrue($doc['items'][0]['default']);
+        $this->assertTrue($doc['items'][0]['left']);
+
+        $shown = CourseNav::applyContentView(array(
+            'items' => array(
+                array('id' => 'content', 'left' => true, 'available' => true),
+                array('id' => 'files', 'left' => true),
+            ),
+        ), '');
+        $this->assertSame(array('lessons', 'files'), array_column($shown['items'], 'id'));
+        $this->assertTrue($shown['items'][0]['default']);
+    }
+
+    public function testApplyContentViewKeepsTheChosenReading()
+    {
+        $doc = array(
+            'items' => array(
+                array('id' => 'lessons', 'left' => true),
+                array('id' => 'content', 'left' => true),
+                array('id' => 'outline', 'left' => true, 'instructor' => true),
+                array('id' => 'files', 'left' => true),
+            ),
+        );
+        $same = CourseNav::applyContentView($doc, '');
+        $this->assertSame(array('lessons', 'files'), array_column($same['items'], 'id'));
+
+        $picked = CourseNav::applyContentView($doc, 'content');
+        $this->assertSame(array('content', 'files'), array_column($picked['items'], 'id'));
+        $this->assertSame('Lessons', $picked['items'][0]['nav_label']);
+
+        $missing = CourseNav::applyContentView($doc, 'outline');
+        $this->assertSame(array('lessons', 'files'), array_column($missing['items'], 'id'));
+    }
+
+    public function testApplyContentViewShowsDefaultsUntilPicked()
+    {
+        $doc = array(
+            'items' => array(
+                array('id' => 'lessons', 'left' => true, 'default' => true, 'available' => true),
+                array('id' => 'content', 'left' => true, 'available' => true),
+                array('id' => 'outline', 'left' => true, 'instructor' => true, 'available' => true),
+                array('id' => 'files', 'left' => true),
+            ),
+        );
+        $shown = CourseNav::applyContentView($doc, '');
+        $this->assertSame(array('lessons', 'files'), array_column($shown['items'], 'id'));
+
+        $picked = CourseNav::applyContentView($doc, 'content');
+        $this->assertSame(array('content', 'files'), array_column($picked['items'], 'id'));
+        $this->assertSame('Lessons', $picked['items'][0]['nav_label']);
+        $this->assertSame(array('lessons', 'content'), CourseNav::studentContentViews($doc));
+    }
+
+    public function testStudentContentViewsSkipsInstructorOnly()
+    {
+        $views = CourseNav::studentContentViews(array(
+            'items' => array(
+                array('id' => 'lessons', 'left' => true),
+                array('id' => 'content', 'left' => true, 'instructor' => true),
+                array('id' => 'outline', 'dropdown' => true),
+            ),
+        ));
+        $this->assertSame(array('lessons', 'outline'), $views);
     }
 
     public function testFromPostHonorsOrderAndFlags()
@@ -415,6 +679,104 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         $this->assertTrue($rows[0]['custom']);
     }
 
+    public function testNonGoogleLoginHidesMapAndProfile()
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SESSION['id'] = 1;
+        $_SESSION['displayname'] = 'Jane';
+        $_SESSION['lti_post'] = array('oauth_nonce' => 'plus');
+        $_SESSION['oauth_consumer_key'] = 'sakai.plus';
+        $doc = array(
+            'items' => array(
+                array('id' => 'map', 'left' => true),
+                array('id' => 'profile', 'dropdown' => true),
+                array('id' => 'courses_widget', 'right' => true),
+                array('id' => 'lessons', 'left' => true),
+            ),
+        );
+        $ids = array();
+        foreach ( CourseNav::editorRows($doc) as $row ) {
+            $ids[] = $row['id'];
+        }
+        $this->assertNotContains('map', $ids);
+        $this->assertNotContains('profile', $ids);
+        $this->assertNotContains('courses_widget', $ids);
+
+        $set = CourseNav::compile($doc, 42);
+        $labels = $this->navLabels($set);
+        $this->assertNotContains('Map', $labels);
+        $this->assertNotContains('Profile', $labels);
+        $this->assertFalse($this->rightMenuContains($set, 'tsugi-courses'));
+
+        $kept = CourseNav::retainSiteAccountItems($doc, array(
+            'items' => array(
+                array('id' => 'lessons', 'left' => true),
+            ),
+        ));
+        $keptIds = array();
+        foreach ( $kept['items'] as $item ) {
+            $keptIds[] = $item['id'];
+        }
+        $this->assertSame(
+            array('map', 'profile', 'courses_widget', 'lessons'),
+            $keptIds
+        );
+    }
+
+    public function testRetainSiteAccountItemsKeepsHiddenPositions()
+    {
+        $_SESSION['lti_post'] = array('oauth_nonce' => 'plus');
+        $_SESSION['oauth_consumer_key'] = 'sakai.plus';
+        $previous = array(
+            'items' => array(
+                array('id' => 'map', 'left' => true),
+                array('id' => 'lessons', 'left' => true),
+                array('id' => 'profile', 'dropdown' => true),
+                array('id' => 'files', 'left' => true),
+            ),
+        );
+        $posted = array(
+            'items' => array(
+                array('id' => 'files', 'left' => true),
+                array('id' => 'lessons', 'left' => true),
+            ),
+        );
+        $kept = CourseNav::retainSiteAccountItems($previous, $posted);
+        $ids = array();
+        foreach ( $kept['items'] as $item ) {
+            $ids[] = $item['id'];
+        }
+        $this->assertSame(array('map', 'files', 'profile', 'lessons'), $ids);
+    }
+
+    public function testGoogleLoginOffersMapAndProfile()
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SESSION['id'] = 1;
+        $_SESSION['displayname'] = 'Jane';
+        $_SESSION['oauth_consumer_key'] = 'google.com';
+        $doc = array(
+            'items' => array(
+                array('id' => 'map', 'left' => true),
+                array('id' => 'profile', 'dropdown' => true),
+                array('id' => 'courses_widget', 'right' => true),
+            ),
+        );
+        $ids = array();
+        foreach ( CourseNav::editorRows($doc) as $row ) {
+            $ids[] = $row['id'];
+        }
+        $this->assertContains('map', $ids);
+        $this->assertContains('profile', $ids);
+        $this->assertContains('courses_widget', $ids);
+
+        $set = CourseNav::compile($doc, 42);
+        $labels = $this->navLabels($set);
+        $this->assertContains('Map', $labels);
+        $this->assertContains('Profile', $labels);
+        $this->assertTrue($this->rightMenuContains($set, 'tsugi-courses'));
+    }
+
     public function testCompileInjectsHomeAndAvatar()
     {
         $_SERVER['REQUEST_URI'] = '/courses/42/home';
@@ -443,7 +805,7 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         }
         $this->assertNotContains('Exit course', $labels);
         $this->assertContains('Logout', $labels);
-        $this->assertTrue($this->rightMenuContains($set, 'tsugi-courses'));
+        $this->assertFalse($this->rightMenuContains($set, 'tsugi-courses'));
         $this->assertNotContains('Settings', $labels);
     }
 
@@ -462,6 +824,142 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         );
         $set = CourseNav::compile($doc, 42);
         $this->assertSame('https://example.org/portal', $this->dropdownHref($set, 'Exit course'));
+    }
+
+    public function testAnonymousLessonViewKeepsOnlyTheAppHomeLink()
+    {
+        global $CFG;
+        $_SERVER['REQUEST_URI'] = '/courses/42/lessons';
+        $CFG->apphome = 'https://local.dj4e.com/';
+        $CFG->servicename = 'DJ4E';
+        ReqScope::beginAnonymousLessonView(42);
+        try {
+            $doc = CourseNav::defaultDocument();
+            $doc['home'] = 'DJ Free';
+            $doc['items'][] = array('id' => 'exit_course', 'dropdown' => true);
+            $doc['items'][] = array('id' => 'pages', 'left' => true);
+            $set = CourseNav::compile($doc, 42);
+            $this->assertSame('DJ4E', $set->home->link);
+            $this->assertSame('https://local.dj4e.com', $set->home->href);
+            $this->assertStringNotContainsString('/courses/42', $set->home->href);
+            $this->assertFalse($set->left);
+            $this->assertFalse($set->right);
+        } finally {
+            ReqScope::endAnonymousLessonView();
+            ReqScope::reset();
+        }
+    }
+
+    public function testAnonymousLessonViewReturnsToTheCatalogWhenItIsOn()
+    {
+        global $CFG;
+        $_SERVER['REQUEST_URI'] = '/courses/42/lessons';
+        $CFG->apphome = 'https://local.dj4e.com/';
+        $CFG->wwwroot = 'https://local.dj4e.com/tsugi';
+        $CFG->servicename = 'DJ4E';
+        $CFG->show_course_catalog = true;
+        ReqScope::beginAnonymousLessonView(42);
+        try {
+            $doc = CourseNav::defaultDocument();
+            $doc['home'] = 'DJ Free';
+            $set = CourseNav::compile($doc, 42);
+            $this->assertSame('Catalog', $set->home->link);
+            $this->assertSame('https://local.dj4e.com/tsugi/catalog', $set->home->href);
+            $this->assertFalse($set->left);
+            $this->assertFalse($set->right);
+        } finally {
+            ReqScope::endAnonymousLessonView();
+            ReqScope::reset();
+        }
+    }
+
+    public function testAnonymousPageViewReturnsToLessons()
+    {
+        global $CFG;
+        $_SERVER['REQUEST_URI'] = '/courses/42/pages/syllabus';
+        $CFG->apphome = 'https://local.dj4e.com/';
+        $CFG->wwwroot = 'https://local.dj4e.com/tsugi';
+        $CFG->servicename = 'DJ4E';
+        $CFG->show_course_catalog = true;
+        ReqScope::beginAnonymousLessonView(42);
+        try {
+            $set = CourseNav::compile(CourseNav::defaultDocument(), 42);
+            $this->assertSame('Lessons', $set->home->link);
+            $this->assertSame('https://local.dj4e.com/tsugi/courses/42/lessons', $set->home->href);
+            $this->assertFalse($set->left);
+            $this->assertFalse($set->right);
+        } finally {
+            ReqScope::endAnonymousLessonView();
+            ReqScope::reset();
+        }
+    }
+
+    public function testCompileLeaveCourseClosesTheWindow()
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SESSION['id'] = 1;
+        $_SESSION['displayname'] = 'Jane';
+        $doc = array(
+            'items' => array(
+                array('id' => 'leave_course', 'dropdown' => true),
+            ),
+        );
+        $set = CourseNav::compile($doc, 42);
+        $dropdown = $set->right->menu[count($set->right->menu)-1]->href;
+        $found = null;
+        foreach ( $dropdown as $entry ) {
+            if ( $entry->link === 'Leave course' ) {
+                $found = $entry;
+            }
+        }
+        $this->assertNotNull($found);
+        $this->assertSame('#', $found->href);
+        $this->assertStringContainsString('window.close()', $found->attr);
+    }
+
+    public function testMenuTextStaysWithTheDefaultView()
+    {
+        try {
+            $_SERVER['REQUEST_URI'] = '/courses/42/home';
+            $user = new \stdClass();
+            $user->id = 3;
+            $scope = new \stdClass();
+            $scope->user = $user;
+            $current = new \ReflectionProperty(ReqScope::class, 'current');
+            $current->setValue(null, $scope);
+            \Tsugi\Core\Cache::setContext('context_user_settings', 42, array(
+                'user_id' => 3,
+                'note' => '',
+                'settings' => array('view' => 'content'),
+            ));
+            $doc = array(
+                'items' => array(
+                    array('id' => 'lessons', 'left' => true, 'default' => true, 'available' => true),
+                    array('id' => 'content', 'left' => true, 'available' => true),
+                ),
+            );
+            $set = CourseNav::compile($doc, 42);
+            $this->assertSame('Lessons', $set->left->menu[0]->link);
+            $this->assertStringContainsString('/content', $set->left->menu[0]->href);
+
+            \Tsugi\Core\Cache::setContext('context_user_settings', 42, array(
+                'user_id' => 3,
+                'note' => '',
+                'settings' => array('view' => 'outline'),
+            ));
+            $ref = new \ReflectionProperty(\Tsugi\Services\ContextUser\ContextUserSettings::class, 'cache');
+            $ref->setValue(null, array());
+            $doc['items'][0]['default'] = false;
+            $doc['items'][] = array('id' => 'outline', 'left' => true, 'available' => true);
+            $doc['items'][1]['default'] = true;
+            $set = CourseNav::compile($doc, 42);
+            $this->assertSame('Content', $set->left->menu[0]->link);
+            $this->assertStringContainsString('/outline', $set->left->menu[0]->href);
+        } finally {
+            ReqScope::reset();
+            $ref = new \ReflectionProperty(\Tsugi\Services\ContextUser\ContextUserSettings::class, 'cache');
+            $ref->setValue(null, array());
+        }
     }
 
     public function testCompileUsesCustomHomeLabel()
@@ -513,6 +1011,46 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
         $this->assertContains('Lessons', $left);
     }
 
+    public function testInstructorTestViewsSitInTheAvatarMenu()
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SESSION['id'] = 1;
+        $_SESSION['displayname'] = 'Pat';
+        $_SESSION['isinstructor'] = true;
+        $doc = array(
+            'items' => array(
+                array('id' => 'lessons', 'left' => true, 'default' => true, 'available' => true, 'test' => true),
+                array('id' => 'content', 'left' => true, 'available' => true, 'test' => true),
+                array('id' => 'outline', 'left' => true, 'test' => true),
+                array('id' => 'logout', 'dropdown' => true),
+            ),
+        );
+        $set = CourseNav::compile($doc, 42);
+        $left = array();
+        foreach ( $set->left->menu as $entry ) {
+            $left[] = $entry->link;
+        }
+        $this->assertSame(array('Lessons'), $left);
+        $labels = array();
+        $dropdown = $set->right->menu[count($set->right->menu)-1]->href;
+        foreach ( $dropdown as $entry ) {
+            $labels[] = $entry->link;
+        }
+        $this->assertContains('Content (test)', $labels);
+        $this->assertContains('Outline (test)', $labels);
+        $this->assertNotContains('Lessons (test)', $labels);
+        $this->assertSame('http://localhost/courses/42/content', $this->dropdownHref($set, 'Content (test)'));
+
+        unset($_SESSION['isinstructor']);
+        $set = CourseNav::compile($doc, 42);
+        $left = array();
+        foreach ( $set->left->menu as $entry ) {
+            $left[] = $entry->link;
+        }
+        $this->assertSame(array('Lessons'), $left);
+        $this->assertNotContains('Content (test)', $this->navLabels($set));
+    }
+
     public function testCompileShowsLoginOnlyWhenLoggedOut()
     {
         $_SERVER['REQUEST_URI'] = '/courses/42/home';
@@ -555,6 +1093,73 @@ class CourseNavTest extends \PHPUnit\Framework\TestCase
             $labels[] = $entry->link;
         }
         $this->assertContains('Logout', $labels);
+    }
+
+    public function testCompileShowsRosterOnlyWhereAnInstructorPlacedIt()
+    {
+        $_SERVER['REQUEST_URI'] = '/courses/42/home';
+        $_SESSION['id'] = 1;
+        $_SESSION['displayname'] = 'Jane';
+        $_SESSION['isinstructor'] = true;
+        $set = CourseNav::compile(CourseNav::defaultDocument(), 42);
+        $dropdown = $set->right->menu[count($set->right->menu)-1]->href;
+        $labels = array();
+        foreach ( $dropdown as $entry ) {
+            $labels[] = $entry->link;
+        }
+        $this->assertNotContains('Roster', $labels);
+
+        $doc = CourseNav::fromPost(array(
+            'nav_order' => array('roster', 'logout'),
+            'nav' => array(
+                'roster' => array('dropdown' => '1', 'left' => '1'),
+                'logout' => array('dropdown' => '1'),
+            ),
+        ));
+        $roster = $doc['items'][0];
+        $this->assertSame('roster', $roster['id']);
+        $this->assertTrue($roster['instructor']);
+        $this->assertTrue($roster['left']);
+        $this->assertTrue($roster['dropdown']);
+
+        $set = CourseNav::compile($doc, 42);
+        $left = array();
+        foreach ( $set->left->menu as $entry ) {
+            $left[] = $entry->link;
+        }
+        $this->assertContains('Roster', $left);
+        $dropdown = $set->right->menu[count($set->right->menu)-1]->href;
+        $labels = array();
+        $hrefs = array();
+        foreach ( $dropdown as $entry ) {
+            $labels[] = $entry->link;
+            $hrefs[] = $entry->href;
+        }
+        $this->assertContains('Roster', $labels);
+        $matched = false;
+        foreach ( $hrefs as $href ) {
+            if ( is_string($href) && str_contains($href, '/courses/42/roster') ) {
+                $matched = true;
+            }
+        }
+        $this->assertTrue($matched);
+
+        $_SESSION['isinstructor'] = false;
+        unset($_SESSION['instructor']);
+        $set = CourseNav::compile($doc, 42);
+        $left = array();
+        if ( $set->left ) {
+            foreach ( $set->left->menu as $entry ) {
+                $left[] = $entry->link;
+            }
+        }
+        $this->assertNotContains('Roster', $left);
+        $dropdown = $set->right->menu[count($set->right->menu)-1]->href;
+        $labels = array();
+        foreach ( $dropdown as $entry ) {
+            $labels[] = $entry->link;
+        }
+        $this->assertNotContains('Roster', $labels);
     }
 
     public function testIsCourseMountedRequest()

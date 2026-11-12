@@ -7,7 +7,7 @@
  *
  * Expected: $quiz, $home, $lessons_url, $can_edit, $result (null or grade array),
  * $requestContextLines (label => text), $viewing (instructor preview),
- * $printing (clean paper layout)
+ * $printing (clean paper layout), $from_module, $from_content, $from_outline, $back_label
  */
 $questions = $quiz->orderedQuestions();
 $submitted = $result !== null;
@@ -17,6 +17,12 @@ $action = $viewing ? $home.'/'.$quiz->id.'/view' : $home.'/link/'.$quiz->link_id
 if ( isset($from_module) && is_string($from_module) && $from_module !== '' ) {
     $action .= (str_contains($action, '?') ? '&' : '?').'from='.rawurlencode($from_module);
 }
+if ( ! empty($from_outline) ) {
+    $action .= (str_contains($action, '?') ? '&' : '?').'view=outline';
+} else if ( ! empty($from_content) ) {
+    $action .= (str_contains($action, '?') ? '&' : '?').'view=content';
+}
+$action = \Tsugi\Util\U::addSession($action);
 ?>
 <style>
 .quiz1-take .quiz1-q { margin: 1.5em 0; padding: 1em; border: 1px solid #ddd; border-radius: 4px; }
@@ -81,7 +87,7 @@ if ( isset($from_module) && is_string($from_module) && $from_module !== '' ) {
     <?php if ( ! $printing ) { ?>
     <p class="quiz1-chrome">
         <?php if ( $lessons_url ) { ?>
-            <a href="<?= htmlspecialchars($lessons_url) ?>">&larr; <?= htmlspecialchars(__('Back to Lessons')) ?></a>
+            <a href="<?= htmlspecialchars($lessons_url) ?>">&larr; <?= htmlspecialchars(isset($back_label) ? $back_label : __('Back to Lessons')) ?></a>
         <?php } else { ?>
             <a href="<?= htmlspecialchars($home) ?>">&larr; <?= htmlspecialchars(__('Back to Quizzes')) ?></a>
         <?php } ?>

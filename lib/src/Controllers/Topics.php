@@ -33,14 +33,7 @@ class Topics extends Tool {
             die_with_error_log('Cannot find topics.json ($CFG->topics)');
         }
 
-        // Turning on and off styling
-        if ( isset($_GET['nostyle']) ) {
-            if ( $_GET['nostyle'] == 'yes' ) {
-                $_SESSION['nostyle'] = 'yes';
-            } else {
-                unset($_SESSION['nostyle']);
-            }
-        }
+        Lessons::applyClassroomViewQuery();
 
         // Load the Topic
         $t = new \Tsugi\UI\Topics($CFG->topics,$anchor);
@@ -125,7 +118,10 @@ class Topics extends Tool {
             'lis_person_contact_email_primary' => $_SESSION['email'],
             'roles' => 'Learner'
         );
-        if ( isset($_SESSION['avatar']) ) $parms['user_image'] = $_SESSION['avatar'];
+        if ( isset($_SESSION['avatar']) && is_string($_SESSION['avatar'])
+                && strncmp($_SESSION['avatar'], 'data:', 5) !== 0 ) {
+            $parms['user_image'] = $_SESSION['avatar'];
+        }
 
         if ( isset($lti->custom) ) {
             foreach($lti->custom as $custom) {

@@ -81,6 +81,7 @@ class SettingsControllerTest extends \PHPUnit\Framework\TestCase
         $this->assertContains('/settings/import', $uris);
         $this->assertContains('/settings/navigation', $uris);
         $this->assertContains('/settings/images', $uris);
+        $this->assertContains('/settings/configuration', $uris);
         $this->assertContains('/settings/export/download', $uris);
     }
 
@@ -140,6 +141,18 @@ class SettingsControllerTest extends \PHPUnit\Framework\TestCase
         $this->assertFalse(Settings::selectedImportModules($described, 'missing'));
         $this->assertSame(array('M_one'), Settings::selectedImportModules($described, 'M_one'));
         $this->assertSame(array('M_one', 'M_two'), Settings::selectedImportModules($described, 'M_two, M_one'));
+    }
+
+    public function testNormalizeCourseTitle()
+    {
+        $this->assertNull(Settings::normalizeCourseTitle(null));
+        $this->assertNull(Settings::normalizeCourseTitle(''));
+        $this->assertNull(Settings::normalizeCourseTitle('   '));
+        $this->assertSame('Django for Everybody', Settings::normalizeCourseTitle('  Django for Everybody  '));
+        $this->assertSame('Économie', Settings::normalizeCourseTitle('Économie'));
+        $long = str_repeat('a', Settings::COURSE_TITLE_MAX);
+        $this->assertSame($long, Settings::normalizeCourseTitle($long));
+        $this->assertFalse(Settings::normalizeCourseTitle($long.'b'));
     }
 
     public function testCourseHeadingTitleUsesSessionThenFallback()

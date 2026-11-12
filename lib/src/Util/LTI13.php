@@ -1511,13 +1511,15 @@ class LTI13 {
     /**
      * Extract a public key from a string containing a JSON keyset
      */
-    public static function extractKeyFromKeySet($keyset_str, $kid)
+    public static function extractKeyFromKeySet($keyset_str, $kid, $defaultAlg = 'RS256')
     {
         $key_set_arr = json_decode($keyset_str, true);
-        if  ($key_set_arr == null ) return null;
+        if ($key_set_arr == null) return null;
+
         try {
-            $key_set = JWK::parseKeySet($key_set_arr);
-        } catch (\Exception $e ) {
+            $key_set = JWK::parseKeySet($key_set_arr, $defaultAlg);
+        } catch (\Exception $e) {
+            error_log('LTI13::extractKeyFromKeySet failed: ' . $e->getMessage());
             return null;
         }
 
@@ -1525,9 +1527,8 @@ class LTI13 {
         if ( ! $key ) return null;
 
         $details = openssl_pkey_get_details($key->getKeyMaterial());
-        if ( $details && is_array($details) && isset($details['key']) ) {
-            $new_public_key = $details['key'];
-            return $new_public_key;
+        if ($details && is_array($details) && isset($details['key'])) {
+            return $details['key'];
         }
         return null;
     }

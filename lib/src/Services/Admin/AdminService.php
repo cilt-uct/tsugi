@@ -187,17 +187,45 @@ class AdminService {
         foreach( $folders AS $tool_folder) {
             if ( $tool_folder == 'core' ) continue;
             if ( $tool_folder == 'admin' ) continue;
-            $some = self::findFiles('register.php', $CFG->dirroot . '/');
+
+            // Resolve the physical directory for this configured tool folder.
+            $tool_root = realpath($CFG->dirroot . '/' . $tool_folder);
+
+            if ( $tool_root === false || ! is_dir($tool_root) ) {
+                error_log('Invalid tool folder: ' . $tool_folder);
+                continue;
+            }
+
+            // Search this folder only (not every configured folder again).
+            $some = self::searchTwoLevels('register.php', $tool_root);
+
+            // Map the configured folder to its public URL path.
+            // Examples: ../mod -> mod, ../tools -> tools
+            $url_folder = preg_replace('#^(?:\.\./)+#', '', $tool_folder);
+            $url_folder = trim(str_replace(DIRECTORY_SEPARATOR, '/', $url_folder), '/');
+
             foreach($some as $reg_file) {
-                // Take off the $CFG->dirroot
-                $relative = substr($reg_file,strlen($CFG->dirroot)+1);
-                $url = $CFG->wwwroot . '/' . $relative;
-                $url = U::remove_relative_path($url);
-                $pieces = explode('/', $url);
-                if ( count($pieces) < 2 || $pieces[count($pieces)-1] != 'register.php') {
-                    error_log('Unable to load tool registration from '.$tool_folder);
+                $reg_file_real = realpath($reg_file);
+
+                // Ensure the registration file belongs to this tool folder.
+                if ($reg_file_real === false || strpos($reg_file_real, $tool_root . DIRECTORY_SEPARATOR) !== 0) {
+                    error_log('Invalid registration path: ' . $reg_file);
                     continue;
                 }
+
+                $relative = substr($reg_file_real, strlen($tool_root) + 1);
+                $relative = str_replace(DIRECTORY_SEPARATOR, '/', $relative);
+
+                $url = rtrim($CFG->wwwroot, '/') . '/' .
+                    $url_folder . '/' . $relative;
+
+                $pieces = explode('/', $url);
+
+                if (count($pieces) < 2 || $pieces[count($pieces) - 1] != 'register.php') {
+                    error_log('Unable to load tool registration from ' . $tool_folder);
+                    continue;
+                }
+
                 $key = $pieces[count($pieces)-2];
                 unset($REGISTER_LTI);
                 unset($REGISTER_LTI2);
@@ -893,7 +921,7 @@ class AdminService {
     /**
      * Get expirable WHERE clause with parameterized query
      * Returns array with 'sql' and 'params' keys
-     * 
+     *
      * Note: We use both :DAYS and :DAYS2 even though they have the same value.
      * PDO requires unique placeholder names within a single query - you cannot
      * reuse the same placeholder name (:DAYS) multiple times in one SQL statement.
@@ -914,7 +942,7 @@ class AdminService {
     /**
      * Get PII WHERE clause with parameterized query
      * Returns array with 'sql' and 'params' keys
-     * 
+     *
      * Note: We use both :DAYS and :DAYS2 even though they have the same value.
      * PDO requires unique placeholder names within a single query - you cannot
      * reuse the same placeholder name (:DAYS) multiple times in one SQL statement.
@@ -1032,7 +1060,7 @@ class AdminService {
     // https://stackoverflow.com/questions/3433465/mysql-delete-all-rows-older-than-10-minutes
     public static function ghostBust() {
         global $PDOX, $CFG;
-        $PDOX->queryDie("DELETE FROM {$CFG->dbprefix}lms_tools_status 
+        $PDOX->queryDie("DELETE FROM {$CFG->dbprefix}lms_tools_status
                 WHERE updated_at < (NOW() - INTERVAL 55 MINUTE)");
         return;
     }
@@ -1383,13 +1411,13 @@ class AdminService {
 
         $serverIP = Net::serverIP();
         $sql = "INSERT INTO {$CFG->dbprefix}lms_tools_status
-                ( tool_id, ipaddr, status_note, commit_log, 
-                    commit, created_at, updated_at ) 
+                ( tool_id, ipaddr, status_note, commit_log,
+                    commit, created_at, updated_at )
             VALUES
-                ( :tool_id, :ipaddr, :status_note, :commit_log, 
+                ( :tool_id, :ipaddr, :status_note, :commit_log,
                     :commit, NOW(), NOW() )
             ON DUPLICATE KEY UPDATE
-                 status_note = :status_note, commit_log=:commit_log, 
+                 status_note = :status_note, commit_log=:commit_log,
                 commit=:commit, updated_at = NOW()";
         $values = array(
             ":tool_id" => $tool_id,
@@ -1442,7 +1470,7 @@ class AdminService {
         $detail->commit = '';
         if ( count($lines) > 0 ) {
             $line = $lines[0];
-            $matches = array();            
+            $matches = array();
             preg_match( '/^commit\s+([0-9a-f]*)$/', $line, $matches);
             if ( count($matches) >= 2 ) {
                 $detail->commit = trim($matches[1]);

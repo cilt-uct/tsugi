@@ -63,6 +63,10 @@ $OUTPUT->bodyStart();
 $OUTPUT->topNav();
 $OUTPUT->flashMessages();
 echo \Tsugi\Services\Admin\AdminService::issuerClientDuplicateNotice();
+echo \Tsugi\Services\Admin\AdminService::clientConfigConflictNotice();
+echo \Tsugi\Services\Admin\AdminService::keyDeploymentConflictNotice();
+echo \Tsugi\Services\Admin\AdminService::valuesLongerThan255Notice();
+echo \Tsugi\Services\Admin\AdminService::nonAsciiValuesNotice();
 ?>
 <h1>LTI Tenants (Keys)</h1>
 <p>

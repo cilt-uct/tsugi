@@ -536,6 +536,673 @@ class AdminService {
     }
 
     /**
+     * Red warning for the admin console and the key list. Empty when URLs agree.
+     *
+     * Same lti_key scan shape as the duplicate notice. Not a per-launch query.
+     */
+    public static function clientConfigConflictNotice() {
+        $count = count(self::clientConfigConflictGroups());
+        if ( $count < 1 ) {
+            return '';
+        }
+        $pairs = $count === 1 ? 'pair' : 'pairs';
+        return '<div class="alert alert-danger" style="margin: 10px;">'."\n"
+            .'<p>'.$count.' issuer and client id '.$pairs.' will collide when collapsed.</p>'."\n"
+            ."</div>\n";
+    }
+
+    /**
+     * Red warning for the admin console and the key list. Empty when each key
+     * has a single deployment id.
+     *
+     * Reads lti_key and the contexts that stored a deployment id. Admin only.
+     */
+    public static function keyDeploymentConflictNotice() {
+        $count = count(self::keyDeploymentConflictGroups());
+        if ( $count < 1 ) {
+            return '';
+        }
+        $verb = $count === 1 ? 'key has' : 'keys have';
+        return '<div class="alert alert-danger" style="margin: 10px;">'."\n"
+            .'<p>'.$count.' '.$verb.' more than one deployment id.</p>'."\n"
+            ."</div>\n";
+    }
+
+    /**
+     * Red warning for the admin console and the key list. Empty when every
+     * issuer, client id, deployment id, context id, resource link id,
+     * consumer key, and secret fits in varchar(255).
+     *
+     * Same admin-only scan as the other Client ID Check notices.
+     */
+    public static function valuesLongerThan255Notice() {
+        $count = count(self::valuesLongerThan255());
+        if ( $count < 1 ) {
+            return '';
+        }
+        $verb = $count === 1 ? 'value is' : 'values are';
+        return '<div class="alert alert-danger" style="margin: 10px;">'."\n"
+            .'<p>'.$count.' '.$verb.' longer than 255 characters.</p>'."\n"
+            ."</div>\n";
+    }
+
+    /**
+     * Red warning for the admin console and the key list. Empty when every
+     * checked identifier is ASCII.
+     *
+     * Same columns and same admin-only scan as the varchar(255) length notice.
+     */
+    public static function nonAsciiValuesNotice() {
+        $count = count(self::nonAsciiValues());
+        if ( $count < 1 ) {
+            return '';
+        }
+        $verb = $count === 1 ? 'value contains' : 'values contain';
+        return '<div class="alert alert-danger" style="margin: 10px;">'."\n"
+            .'<p>'.$count.' '.$verb.' a character outside ASCII.</p>'."\n"
+            ."</div>\n";
+    }
+
+    /**
+     * URL columns that would move onto one client row for an issuer and client id.
+     *
+     * @return array<string, string> column => label
+     */
+    public static function clientConfigColumns() {
+        return array(
+            'lms_oidc_auth' => 'OIDC auth URL',
+            'lms_keyset_url' => 'Keyset URL',
+            'lms_token_url' => 'Token URL',
+            'lms_token_audience' => 'Token audience',
+        );
+    }
+
+    /**
+     * Value used to decide whether two configuration URLs are the same.
+     *
+     * Scheme and host are case-insensitive. The path, query, and fragment are
+     * compared as stored, so a path that differs only by case still conflicts.
+     */
+    private static function clientConfigCompareValue($value) {
+        $value = trim((string) $value);
+        if ( ! preg_match('#^([a-z][a-z0-9+.-]*:)(//[^/?\#]*)#i', $value, $match) ) {
+            return $value;
+        }
+        $scheme = strtolower($match[1]);
+        $authority = $match[2];
+        $rest = substr($value, strlen($match[0]));
+        if ( preg_match('#^(//(?:[^@/]*@)?)(\[[^\]]+\]|[^:/]*)(:[0-9]+)?$#', $authority, $parts) ) {
+            $authority = $parts[1].strtolower($parts[2]).(isset($parts[3]) ? $parts[3] : '');
+        }
+        return $scheme.$authority.$rest;
+    }
+
+    /**
+     * Keys that share an issuer and client id but disagree on URL configuration.
+     *
+     * A blank value is ignored. Two different non-blank values for one column
+     * collide when those keys collapse onto one client row. Scheme and host
+     * case does not. Path, query, and fragment case does.
+     *
+     * @return array<int, array{lms_issuer:string, lms_client:string, fields:array<string, string>, keys:array<int, array<string, mixed>>}>
+     */
+    public static function clientConfigConflictGroups() {
+        global $PDOX, $CFG;
+
+        $empty = array();
+        $table = "{$CFG->dbprefix}lti_key";
+        if ( ! is_object($PDOX) ) {
+            return $empty;
+        }
+        $columns = $PDOX->describe($table);
+        if ( ! is_array($columns) ) {
+            return $empty;
+        }
+        $names = array();
+        foreach ( $columns as $column ) {
+            if ( is_array($column) && isset($column['Field']) ) $names[] = $column['Field'];
+        }
+        if ( ! in_array('lms_issuer', $names, true) || ! in_array('lms_client', $names, true) ) {
+            return $empty;
+        }
+
+        $present = array();
+        foreach ( self::clientConfigColumns() as $column => $label ) {
+            if ( in_array($column, $names, true) ) $present[$column] = $label;
+        }
+        if ( count($present) < 1 ) {
+            return $empty;
+        }
+
+        $having = array();
+        $select = array();
+        foreach ( $present as $column => $label ) {
+            // The column collation folds case, including the path. Compare the
+            // bytes here so a path that differs only by case still reaches PHP.
+            $having[] = "COUNT(DISTINCT CAST(NULLIF(TRIM({$column}), '') AS BINARY)) > 1";
+            $select[] = "NULLIF(TRIM(k.{$column}), '') AS {$column}";
+        }
+        $deleted_sql = in_array('deleted', $names, true) ? 'k.deleted' : '0';
+        $rows = $PDOX->allRowsDie(
+            "SELECT k.key_id, k.key_title, {$deleted_sql} AS deleted,
+                    TRIM(k.lms_issuer) AS lms_issuer, TRIM(k.lms_client) AS lms_client,
+                    ".implode(",\n                    ", $select)."
+                FROM {$table} AS k
+                INNER JOIN (
+                    SELECT TRIM(lms_issuer) AS lms_issuer, TRIM(lms_client) AS lms_client
+                        FROM {$table}
+                        WHERE lms_issuer IS NOT NULL AND TRIM(lms_issuer) <> ''
+                            AND lms_client IS NOT NULL AND TRIM(lms_client) <> ''
+                        GROUP BY TRIM(lms_issuer), TRIM(lms_client)
+                        HAVING ".implode("\n                            OR ", $having)."
+                ) AS d
+                    ON TRIM(k.lms_issuer) = d.lms_issuer
+                    AND TRIM(k.lms_client) = d.lms_client
+                ORDER BY TRIM(k.lms_issuer), TRIM(k.lms_client), k.key_id"
+        );
+        if ( ! is_array($rows) || count($rows) < 1 ) {
+            return $empty;
+        }
+
+        $grouped = array();
+        foreach ( $rows as $row ) {
+            $issuer = trim((string) U::get($row, 'lms_issuer', ''));
+            $client = trim((string) U::get($row, 'lms_client', ''));
+            $bucket = $issuer."\n".$client;
+            if ( ! isset($grouped[$bucket]) ) {
+                $grouped[$bucket] = array(
+                    'lms_issuer' => $issuer,
+                    'lms_client' => $client,
+                    'keys' => array(),
+                );
+            }
+            $grouped[$bucket]['keys'][] = $row;
+        }
+
+        $groups = array();
+        foreach ( $grouped as $group ) {
+            $fields = array();
+            foreach ( $present as $column => $label ) {
+                $values = array();
+                foreach ( $group['keys'] as $keyrow ) {
+                    $value = U::get($keyrow, $column);
+                    if ( ! is_string($value) ) continue;
+                    $value = trim($value);
+                    if ( $value === '' ) continue;
+                    $values[self::clientConfigCompareValue($value)] = true;
+                }
+                if ( count($values) > 1 ) $fields[$column] = $label;
+            }
+            if ( count($fields) < 1 ) continue;
+            $group['fields'] = $fields;
+            $groups[] = $group;
+        }
+        return $groups;
+    }
+
+    /**
+     * Tables that store an LTI deployment id which should be a function of key_id.
+     *
+     * lti_link is listed so a column added later is included. It has none today.
+     * lti_tool_deployment.deployment_id is an outbound tool id. One key may have many.
+     *
+     * @return array<int, array{table:string, column:string, id_column:string, label:string, via_context?:bool}>
+     */
+    private static function deploymentIdCopies() {
+        return array(
+            array(
+                'table' => 'lti_key',
+                'column' => 'deploy_key',
+                'id_column' => 'key_id',
+                'label' => 'Key',
+            ),
+            array(
+                'table' => 'lti_context',
+                'column' => 'lti13_deployment_id',
+                'id_column' => 'context_id',
+                'label' => 'Context',
+            ),
+            array(
+                'table' => 'lti_link',
+                'column' => 'lti13_deployment_id',
+                'id_column' => 'link_id',
+                'label' => 'Link',
+                'via_context' => true,
+            ),
+        );
+    }
+
+    /**
+     * Keys whose deployment id is not a single value.
+     *
+     * The key's own deployment id and every copy on a context (and a link, when
+     * that column exists) are read together. A blank value, or the literal
+     * word "null" in any ASCII case, does not count. That matches how the key
+     * form stores a blank deployment id. Every other value is compared as
+     * stored bytes, so a difference in case or accents is a conflict. Deleted
+     * rows are included.
+     *
+     * @return array<int, array{key_id:int, key_title:string, deleted:int, values:array<int, array{deployment_id:string, places:array<int, array{label:string, count:int, example_id:int}>}>}>
+     */
+    public static function keyDeploymentConflictGroups() {
+        global $PDOX, $CFG;
+
+        $empty = array();
+        if ( ! is_object($PDOX) ) {
+            return $empty;
+        }
+        $prefix = $CFG->dbprefix;
+        $key_table = "{$prefix}lti_key";
+        $key_columns = $PDOX->describe($key_table);
+        if ( ! is_array($key_columns) ) {
+            return $empty;
+        }
+        $key_names = array();
+        foreach ( $key_columns as $column ) {
+            if ( is_array($column) && isset($column['Field']) ) $key_names[] = $column['Field'];
+        }
+        $deleted_sql = in_array('deleted', $key_names, true) ? 'MIN(k.deleted)' : '0';
+        $title_sql = in_array('key_title', $key_names, true) ? 'MIN(k.key_title)' : "''";
+
+        $found_rows = array();
+        foreach ( self::deploymentIdCopies() as $copy ) {
+            $table = "{$prefix}{$copy['table']}";
+            $described = ($copy['table'] === 'lti_key') ? $key_columns : $PDOX->describe($table);
+            if ( ! is_array($described) ) continue;
+            $names = array();
+            foreach ( $described as $column ) {
+                if ( is_array($column) && isset($column['Field']) ) $names[] = $column['Field'];
+            }
+            if ( ! in_array($copy['column'], $names, true) || ! in_array($copy['id_column'], $names, true) ) {
+                continue;
+            }
+            if ( ! empty($copy['via_context']) && ! in_array('context_id', $names, true) ) {
+                continue;
+            }
+
+            $expr = 't.'.$copy['column'];
+            $key_sql = 't.key_id';
+            $join = '';
+            if ( ! empty($copy['via_context']) ) {
+                $key_sql = 'ctx.key_id';
+                $join = "INNER JOIN {$prefix}lti_context AS ctx ON ctx.context_id = t.context_id";
+            }
+            $label_sql = str_replace("'", "''", $copy['label']);
+            $sql = "SELECT {$key_sql} AS key_id,
+                           {$title_sql} AS key_title,
+                           {$deleted_sql} AS deleted,
+                           '{$label_sql}' AS source,
+                           MIN(TRIM({$expr})) AS deployment_id,
+                           COUNT(*) AS row_count,
+                           MIN(t.{$copy['id_column']}) AS example_id
+                        FROM {$table} AS t
+                        {$join}
+                        INNER JOIN {$key_table} AS k ON k.key_id = {$key_sql}
+                        WHERE {$expr} IS NOT NULL
+                            AND TRIM({$expr}) <> ''
+                            -- The word null, in any ASCII case, is a blank. Compare
+                            -- those bytes so the column collation cannot fold an
+                            -- accented value into that word. The GROUP BY below
+                            -- keeps every other difference, including case.
+                            AND CAST(LOWER(TRIM({$expr})) AS BINARY) <> 'null'
+                        GROUP BY {$key_sql}, CAST(TRIM({$expr}) AS BINARY)";
+            $found = $PDOX->allRowsDie($sql);
+            if ( ! is_array($found) ) continue;
+            foreach ( $found as $row ) $found_rows[] = $row;
+        }
+
+        $by_key = array();
+        foreach ( $found_rows as $row ) {
+            $key_id = (int) U::get($row, 'key_id', 0);
+            if ( $key_id < 1 ) continue;
+            $raw = U::get($row, 'deployment_id');
+            $deployment = self::normalize_deploy_key_input(is_scalar($raw) ? (string) $raw : null);
+            if ( $deployment === null ) continue;
+            if ( ! isset($by_key[$key_id]) ) {
+                $title = U::get($row, 'key_title');
+                $by_key[$key_id] = array(
+                    'key_id' => $key_id,
+                    'key_title' => is_string($title) ? $title : '',
+                    'deleted' => (int) U::get($row, 'deleted', 0),
+                    'values' => array(),
+                );
+            }
+            if ( ! isset($by_key[$key_id]['values'][$deployment]) ) {
+                $by_key[$key_id]['values'][$deployment] = array(
+                    'deployment_id' => $deployment,
+                    'places' => array(),
+                );
+            }
+            $by_key[$key_id]['values'][$deployment]['places'][] = array(
+                'label' => (string) U::get($row, 'source', ''),
+                'count' => (int) U::get($row, 'row_count', 0),
+                'example_id' => (int) U::get($row, 'example_id', 0),
+            );
+        }
+
+        ksort($by_key);
+        $groups = array();
+        foreach ( $by_key as $group ) {
+            if ( count($group['values']) < 2 ) continue;
+            ksort($group['values']);
+            $group['values'] = array_values($group['values']);
+            $groups[] = $group;
+        }
+        return $groups;
+    }
+
+    /**
+     * TEXT columns that store an issuer, client id, deployment id, context id,
+     * resource link id, LTI 1.1 consumer key, or secret.
+     *
+     * These are the values a varchar(255) column would have to hold, and the
+     * values an ascii column would have to hold. The length check and the
+     * non-ASCII check both read this list. Outbound
+     * lti_tool_registration.lti13_client_id, lti_tool_registration.lti11_key,
+     * and lti_tool_deployment.deployment_id are already varchar(255). lti_link
+     * is listed so a deployment column added later is included. It has none
+     * today. A link's resource link id is link_key. lti_content keeps its own
+     * copy. cal_context keeps the course id. A secret column is marked redact
+     * so a check can report the row without returning the secret.
+     *
+     * @return array<int, array{table:string, column:string, label:string, id_column:string, via_context?:bool, redact?:bool}>
+     */
+    private static function valuesLongerThan255Copies() {
+        return array(
+            array(
+                'table' => 'lti_key',
+                'column' => 'lms_issuer',
+                'label' => 'Issuer',
+                'id_column' => 'key_id',
+            ),
+            array(
+                'table' => 'lti_key',
+                'column' => 'lms_client',
+                'label' => 'Client id',
+                'id_column' => 'key_id',
+            ),
+            array(
+                'table' => 'lti_key',
+                'column' => 'deploy_key',
+                'label' => 'Deployment id',
+                'id_column' => 'key_id',
+            ),
+            array(
+                'table' => 'lti_context',
+                'column' => 'lti13_deployment_id',
+                'label' => 'Deployment id',
+                'id_column' => 'context_id',
+            ),
+            array(
+                'table' => 'lti_link',
+                'column' => 'lti13_deployment_id',
+                'label' => 'Deployment id',
+                'id_column' => 'link_id',
+                'via_context' => true,
+            ),
+            array(
+                'table' => 'lti_context',
+                'column' => 'context_key',
+                'label' => 'Context id',
+                'id_column' => 'context_id',
+            ),
+            array(
+                'table' => 'cal_context',
+                'column' => 'context_key',
+                'label' => 'Context id',
+                'id_column' => 'context_id',
+            ),
+            array(
+                'table' => 'lti_link',
+                'column' => 'link_key',
+                'label' => 'Resource link id',
+                'id_column' => 'link_id',
+                'via_context' => true,
+            ),
+            array(
+                'table' => 'lti_content',
+                'column' => 'resource_link_id',
+                'label' => 'Resource link id',
+                'id_column' => 'content_id',
+            ),
+            array(
+                'table' => 'lti_key',
+                'column' => 'key_key',
+                'label' => 'Consumer key',
+                'id_column' => 'key_id',
+            ),
+            array(
+                'table' => 'lti_key',
+                'column' => 'secret',
+                'label' => 'Secret',
+                'id_column' => 'key_id',
+                'redact' => true,
+            ),
+            array(
+                'table' => 'lti_key',
+                'column' => 'new_secret',
+                'label' => 'New secret',
+                'id_column' => 'key_id',
+                'redact' => true,
+            ),
+            array(
+                'table' => 'cal_key',
+                'column' => 'key_key',
+                'label' => 'Consumer key',
+                'id_column' => 'key_id',
+            ),
+            array(
+                'table' => 'lti_domain',
+                'column' => 'consumer_key',
+                'label' => 'Consumer key',
+                'id_column' => 'domain_id',
+            ),
+            array(
+                'table' => 'lti_domain',
+                'column' => 'secret',
+                'label' => 'Secret',
+                'id_column' => 'domain_id',
+                'redact' => true,
+            ),
+            array(
+                'table' => 'lti_tool_registration',
+                'column' => 'lti11_secret',
+                'label' => 'Secret',
+                'id_column' => 'registration_id',
+                'redact' => true,
+            ),
+        );
+    }
+
+    /**
+     * Identity values that do not fit in varchar(255).
+     *
+     * CHAR_LENGTH counts characters, which is the varchar limit. Blank values
+     * are short, so they are absent. Deleted rows are included.
+     *
+     * @return array<int, array{label:string, table:string, column:string, row_id:int, key_id:int, length:int, sample:string, redacted:bool}>
+     */
+    public static function valuesLongerThan255() {
+        global $PDOX, $CFG;
+
+        $empty = array();
+        if ( ! is_object($PDOX) ) {
+            return $empty;
+        }
+        $prefix = $CFG->dbprefix;
+        $found = array();
+        foreach ( self::valuesLongerThan255Copies() as $copy ) {
+            $table = "{$prefix}{$copy['table']}";
+            $described = $PDOX->describe($table);
+            if ( ! is_array($described) ) continue;
+            $names = array();
+            foreach ( $described as $column ) {
+                if ( is_array($column) && isset($column['Field']) ) $names[] = $column['Field'];
+            }
+            if ( ! in_array($copy['column'], $names, true) || ! in_array($copy['id_column'], $names, true) ) {
+                continue;
+            }
+            if ( ! empty($copy['via_context']) && ! in_array('context_id', $names, true) ) {
+                continue;
+            }
+
+            $expr = 't.'.$copy['column'];
+            $redact = ! empty($copy['redact']);
+            $key_sql = in_array('key_id', $names, true) ? 't.key_id' : '0';
+            $join = '';
+            if ( ! empty($copy['via_context']) ) {
+                $key_sql = 'ctx.key_id';
+                $join = "INNER JOIN {$prefix}lti_context AS ctx ON ctx.context_id = t.context_id";
+            }
+            $sample_sql = $redact ? 'NULL AS sample_value' : "SUBSTRING({$expr}, 1, 80) AS sample_value";
+            $rows = $PDOX->allRowsDie(
+                "SELECT {$key_sql} AS key_id,
+                        t.{$copy['id_column']} AS row_id,
+                        CHAR_LENGTH({$expr}) AS value_length,
+                        {$sample_sql}
+                    FROM {$table} AS t
+                    {$join}
+                    WHERE {$expr} IS NOT NULL
+                        AND CHAR_LENGTH({$expr}) > 255
+                    ORDER BY CHAR_LENGTH({$expr}) DESC, t.{$copy['id_column']}"
+            );
+            if ( ! is_array($rows) ) continue;
+            foreach ( $rows as $row ) {
+                $length = (int) U::get($row, 'value_length', 0);
+                $sample = $redact ? '' : (string) U::get($row, 'sample_value', '');
+                if ( ! $redact && $length > 80 ) $sample .= '...';
+                $found[] = array(
+                    'label' => $copy['label'],
+                    'table' => $copy['table'],
+                    'column' => $copy['column'],
+                    'row_id' => (int) U::get($row, 'row_id', 0),
+                    'key_id' => (int) U::get($row, 'key_id', 0),
+                    'length' => $length,
+                    'sample' => $sample,
+                    'redacted' => $redact,
+                );
+            }
+        }
+
+        usort($found, function ($a, $b) {
+            if ( $a['length'] !== $b['length'] ) return $b['length'] - $a['length'];
+            if ( $a['key_id'] !== $b['key_id'] ) return $a['key_id'] - $b['key_id'];
+            return $a['row_id'] - $b['row_id'];
+        });
+        return $found;
+    }
+
+    /**
+     * Identity values that contain a character outside ASCII.
+     *
+     * These columns are utf8, so a character outside ASCII is more than one
+     * byte. LENGTH counts bytes and CHAR_LENGTH counts characters. An ascii
+     * column, including ascii_bin, cannot store that character. Blank values
+     * are ASCII, so they are absent. Deleted rows are included. A secret is
+     * reported by its lengths only.
+     *
+     * @return array<int, array{label:string, table:string, column:string, row_id:int, key_id:int, length:int, bytes:int, sample:string, redacted:bool}>
+     */
+    public static function nonAsciiValues() {
+        global $PDOX, $CFG;
+
+        $empty = array();
+        if ( ! is_object($PDOX) ) {
+            return $empty;
+        }
+        $prefix = $CFG->dbprefix;
+        $found = array();
+        foreach ( self::valuesLongerThan255Copies() as $copy ) {
+            $table = "{$prefix}{$copy['table']}";
+            $described = $PDOX->describe($table);
+            if ( ! is_array($described) ) continue;
+            $names = array();
+            foreach ( $described as $column ) {
+                if ( is_array($column) && isset($column['Field']) ) $names[] = $column['Field'];
+            }
+            if ( ! in_array($copy['column'], $names, true) || ! in_array($copy['id_column'], $names, true) ) {
+                continue;
+            }
+            if ( ! empty($copy['via_context']) && ! in_array('context_id', $names, true) ) {
+                continue;
+            }
+
+            $expr = 't.'.$copy['column'];
+            $redact = ! empty($copy['redact']);
+            $key_sql = in_array('key_id', $names, true) ? 't.key_id' : '0';
+            $join = '';
+            if ( ! empty($copy['via_context']) ) {
+                $key_sql = 'ctx.key_id';
+                $join = "INNER JOIN {$prefix}lti_context AS ctx ON ctx.context_id = t.context_id";
+            }
+            $sample_sql = $redact ? 'NULL AS sample_value' : "SUBSTRING({$expr}, 1, 255) AS sample_value";
+            $rows = $PDOX->allRowsDie(
+                "SELECT {$key_sql} AS key_id,
+                        t.{$copy['id_column']} AS row_id,
+                        CHAR_LENGTH({$expr}) AS value_length,
+                        LENGTH({$expr}) AS value_bytes,
+                        {$sample_sql}
+                    FROM {$table} AS t
+                    {$join}
+                    WHERE {$expr} IS NOT NULL
+                        AND CHAR_LENGTH({$expr}) <> LENGTH({$expr})
+                    ORDER BY LENGTH({$expr}) DESC, t.{$copy['id_column']}"
+            );
+            if ( ! is_array($rows) ) continue;
+            foreach ( $rows as $row ) {
+                $length = (int) U::get($row, 'value_length', 0);
+                $bytes = (int) U::get($row, 'value_bytes', 0);
+                $sample = '';
+                if ( ! $redact ) {
+                    $raw = (string) U::get($row, 'sample_value', '');
+                    $sample = self::nonAsciiSample($raw, $length > 255);
+                }
+                $found[] = array(
+                    'label' => $copy['label'],
+                    'table' => $copy['table'],
+                    'column' => $copy['column'],
+                    'row_id' => (int) U::get($row, 'row_id', 0),
+                    'key_id' => (int) U::get($row, 'key_id', 0),
+                    'length' => $length,
+                    'bytes' => $bytes,
+                    'sample' => $sample,
+                    'redacted' => $redact,
+                );
+            }
+        }
+
+        usort($found, function ($a, $b) {
+            if ( $a['bytes'] !== $b['bytes'] ) return $b['bytes'] - $a['bytes'];
+            if ( $a['key_id'] !== $b['key_id'] ) return $a['key_id'] - $b['key_id'];
+            return $a['row_id'] - $b['row_id'];
+        });
+        return $found;
+    }
+
+    /**
+     * A short window of a non-secret value, centered on the first character
+     * outside ASCII when that character is in the fetched prefix.
+     */
+    private static function nonAsciiSample($raw, $truncated) {
+        $raw = (string) $raw;
+        $at_byte = null;
+        if ( $raw !== '' && preg_match('/[^\x00-\x7F]/u', $raw, $match, PREG_OFFSET_CAPTURE) ) {
+            $at_byte = $match[0][1];
+        }
+        if ( $at_byte === null ) {
+            $sample = mb_substr($raw, 0, 80);
+            if ( $truncated || mb_strlen($raw) > 80 ) $sample .= '...';
+            return $sample;
+        }
+        $char_at = mb_strlen(substr($raw, 0, $at_byte));
+        $start = max(0, $char_at - 20);
+        $sample = mb_substr($raw, $start, 60);
+        if ( $start > 0 ) $sample = '...'.$sample;
+        if ( $truncated || mb_strlen($raw) > $start + 60 ) $sample .= '...';
+        return $sample;
+    }
+
+    /**
      * Reject a new or updated tenant when another live key already has this
      * issuer, client id, and deployment id.
      *

@@ -39,6 +39,10 @@ if ( $stmt->success ) {
 }
 if ( is_object($PDOX) ) {
     echo \Tsugi\Services\Admin\AdminService::issuerClientDuplicateNotice();
+    echo \Tsugi\Services\Admin\AdminService::clientConfigConflictNotice();
+    echo \Tsugi\Services\Admin\AdminService::keyDeploymentConflictNotice();
+    echo \Tsugi\Services\Admin\AdminService::valuesLongerThan255Notice();
+    echo \Tsugi\Services\Admin\AdminService::nonAsciiValuesNotice();
 }
 ?>
 <div id="iframe-dialog" title="Read Only Dialog" style="display: none;">
@@ -118,6 +122,7 @@ if ( $php_charset && strtoupper($php_charset) !== 'UTF-8' ) {
 <li><a href="activity/">View Activity</a></li>
 <li><a href="badges/">Badges Awarded</a></li>
 <li><a href="users/">View Users</a></li>
+<li><a href="permissions/">Permissions</a></li>
 <li><a href="profile/">View Profiles</a></li>
 <li>
   <a href="#" title="Recent Logins"

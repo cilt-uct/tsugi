@@ -49,8 +49,9 @@ if ( $apphome ) {
 // $wwwroot = "https://fb610139.ngrok.io/tsugi";  // To test with ngrok
 
 // We store the configuration in a global object
-// Additional documentation on these fields is
-// available in that class or in the PHPDoc for that class
+// Additional documentation on these fields is in the docblocks
+// on Tsugi\Config\ConfigInfo.
+// https://tsugiproject.github.io/tsugi/classes/Tsugi-Config-ConfigInfo.html
 unset($CFG);
 global $CFG;
 $CFG = new \Tsugi\Config\ConfigInfo($dirroot, $wwwroot);
@@ -158,6 +159,10 @@ $CFG->adminpw = getenv('TSUGI_ADMIN_PW') ?: false;
 // more than one course to switch between. Course-nav editing is separate.
 // $CFG->show_courses_widget = true;
 // Legacy: $CFG->setExtension('show_courses_widget', true);
+
+// Instructor home: "Add Course" when the user may create one, otherwise
+// "Apply to add course". Off leaves both links out. Separate from the waffle.
+// $CFG->allow_course_create = true;
 
 // Course catalog link in the courses waffle footer. Catalog itself is public.
 // $CFG->show_course_catalog = true;

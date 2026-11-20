@@ -1546,7 +1546,9 @@ class LTI13 {
     }
 
     /**
-     * Extract a public key from a string containing a JSON keyset
+     * Extract a public key from a string containing a JSON keyset.
+     *
+     * $defaultAlg is used when a key omits alg. LTI 1.3 platform keys are RS256.
      */
     public static function extractKeyFromKeySet($keyset_str, $kid, $defaultAlg = 'RS256')
     {
@@ -1555,7 +1557,7 @@ class LTI13 {
 
         try {
             $key_set = JWK::parseKeySet($key_set_arr, $defaultAlg);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             error_log('LTI13::extractKeyFromKeySet failed: ' . $e->getMessage());
             return null;
         }
@@ -1564,7 +1566,7 @@ class LTI13 {
         if ( ! $key ) return null;
 
         $details = openssl_pkey_get_details($key->getKeyMaterial());
-        if ($details && is_array($details) && isset($details['key'])) {
+        if ( $details && is_array($details) && isset($details['key']) ) {
             return $details['key'];
         }
         return null;
